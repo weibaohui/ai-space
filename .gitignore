@@ -1,0 +1,9 @@
+ai_space
+*.o
+shot*.png
+test_*
+CUI/build/
+data/*.db
+data/*.db-wal
+data/*.db-shm
+.DS_Store
