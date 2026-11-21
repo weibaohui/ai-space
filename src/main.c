@@ -480,7 +480,7 @@ static void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
             s->hub_subview = 0;
         }
 
-        cui_gap(ui, 10);
+        cui_gap(ui, 12);
 
         cui_box(ui, .width = CUI_PX(36), .height = CUI_PX(36), .radius = 8,
                 .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_ACCENT), 0.15f),
@@ -488,10 +488,10 @@ static void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
             cui_icon(ui, CUI_ICON_LAYERS, 18, CUI_COLOR_ACCENT);
         }
 
-        cui_column(ui, .gap = 2) {
+        cui_column(ui, .gap = 2, .width = CUI_PX(520)) {
             cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                char t_title[256];
-                snprintf(t_title, sizeof(t_title), "技能对比与同步: %s", entry->skill_name);
+                char t_title[128];
+                snprintf(t_title, sizeof(t_title), "技能对比: %s", entry->skill_name);
                 cui_heading(ui, t_title, 4);
 
                 if (!entry->in_hub) {
@@ -505,7 +505,13 @@ static void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
                 }
             }
             if (entry->description[0] != '\0') {
-                cui_text(ui, entry->description, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                char short_desc[100];
+                strncpy(short_desc, entry->description, sizeof(short_desc) - 1);
+                short_desc[sizeof(short_desc) - 1] = '\0';
+                if (strlen(entry->description) > 80) {
+                    strcpy(short_desc + 77, "...");
+                }
+                cui_text(ui, short_desc, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
             }
         }
 
@@ -562,18 +568,20 @@ static void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
 
             /* 2. Tool Copies Header */
             cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                cui_label(ui, "各工具物理副本");
+                cui_label(ui, "已安装的工具副本");
                 cui_spacer(ui);
                 char copies_cnt[32];
-                snprintf(copies_cnt, sizeof(copies_cnt), "%d / %d 已装", entry->installed_count, entry->tool_count);
+                snprintf(copies_cnt, sizeof(copies_cnt), "%d / %d 工具", entry->installed_count, entry->tool_count);
                 cui_text(ui, copies_cnt, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
             }
 
             /* Scrollable Tool Copies */
             cui_scroll(ui, .id = "diff_tools_scroll", .width = CUI_FILL, .height = CUI_FILL) {
                 cui_column(ui, .width = CUI_FILL, .gap = 8) {
+                    /* Section 1: Installed Tool Copies (Shown First!) */
                     for (int t = 0; t < entry->tool_count; t++) {
                         tool_copy_status_t *tc = &entry->tool_copies[t];
+                        if (!tc->exists) continue;
                         bool is_cur = (s->selected_hub_tool_idx == t);
 
                         cui_push_id_int(ui, t);
@@ -587,9 +595,7 @@ static void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
                                 }
                                 cui_spacer(ui);
 
-                                if (!tc->exists) {
-                                    cui_badge(ui, "未安装", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
-                                } else if (tc->status == HUB_STATUS_IN_SYNC) {
+                                if (tc->status == HUB_STATUS_IN_SYNC) {
                                     cui_badge(ui, "完全一致", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
                                 } else if (tc->status == HUB_STATUS_LOCAL_MODIFIED) {
                                     cui_badge(ui, "本地已改动", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
@@ -600,50 +606,70 @@ static void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
                                 }
                             }
 
-                            if (tc->exists) {
-                                char tc_sub[64];
-                                snprintf(tc_sub, sizeof(tc_sub), "指纹: %.12s...", tc->hash);
-                                cui_text(ui, tc_sub, .size = 11, .color = CUI_COLOR_TEXT_SECONDARY);
+                            char tc_sub[64];
+                            snprintf(tc_sub, sizeof(tc_sub), "指纹: %.12s...", tc->hash);
+                            cui_text(ui, tc_sub, .size = 11, .color = CUI_COLOR_TEXT_SECONDARY);
 
-                                /* Buttons Row */
-                                cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                                    if (cui_button(ui, is_cur ? "当前比对" : "对比差异",
-                                                   .variant = is_cur ? CUI_BUTTON_PRIMARY : CUI_BUTTON_OUTLINE,
-                                                   .size = CUI_SIZE_SM, .icon = CUI_ICON_SEARCH)) {
-                                        s->selected_hub_tool_idx = t;
+                            /* Buttons Row */
+                            cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                                if (cui_button(ui, is_cur ? "当前比对" : "对比差异",
+                                               .variant = is_cur ? CUI_BUTTON_PRIMARY : CUI_BUTTON_OUTLINE,
+                                               .size = CUI_SIZE_SM, .icon = CUI_ICON_SEARCH)) {
+                                    s->selected_hub_tool_idx = t;
+                                    load_hub_diff(s, entry->skill_name, t, s->diff_file_rel);
+                                }
+
+                                if (cui_button(ui, "采纳为主版本",
+                                               .variant = CUI_BUTTON_OUTLINE,
+                                               .size = CUI_SIZE_SM, .icon = CUI_ICON_CHECK)) {
+                                    if (hub_promote_to_master(tc->tool_skills_path, entry->skill_name) == 0) {
+                                        snprintf(s->toast_msg, sizeof(s->toast_msg),
+                                                 "已将 [%s] 副本采纳为主版本", tc->tool_name);
+                                        s->toast_frames = 240;
+                                        reload_hub_matrix(s);
                                         load_hub_diff(s, entry->skill_name, t, s->diff_file_rel);
                                     }
+                                }
 
-                                    if (cui_button(ui, "采纳为主版本",
-                                                   .variant = CUI_BUTTON_OUTLINE,
-                                                   .size = CUI_SIZE_SM, .icon = CUI_ICON_CHECK)) {
-                                        if (hub_promote_to_master(tc->tool_skills_path, entry->skill_name) == 0) {
+                                if (entry->in_hub) {
+                                    if (cui_button(ui, "下发覆盖",
+                                                   .variant = CUI_BUTTON_SECONDARY,
+                                                   .size = CUI_SIZE_SM, .icon = CUI_ICON_DOWNLOAD)) {
+                                        if (hub_sync_master_to_tool(tc->tool_skills_path, entry->skill_name, tc->tool_name) == 0) {
                                             snprintf(s->toast_msg, sizeof(s->toast_msg),
-                                                     "已将 [%s] 副本采纳为主版本", tc->tool_name);
+                                                     "已同步主版本到 [%s]（已自动备份）", tc->tool_name);
                                             s->toast_frames = 240;
                                             reload_hub_matrix(s);
                                             load_hub_diff(s, entry->skill_name, t, s->diff_file_rel);
                                         }
                                     }
-
-                                    if (entry->in_hub) {
-                                        if (cui_button(ui, "下发覆盖",
-                                                       .variant = CUI_BUTTON_SECONDARY,
-                                                       .size = CUI_SIZE_SM, .icon = CUI_ICON_DOWNLOAD)) {
-                                            if (hub_sync_master_to_tool(tc->tool_skills_path, entry->skill_name, tc->tool_name) == 0) {
-                                                snprintf(s->toast_msg, sizeof(s->toast_msg),
-                                                         "已同步主版本到 [%s]（已自动备份）", tc->tool_name);
-                                                s->toast_frames = 240;
-                                                reload_hub_matrix(s);
-                                                load_hub_diff(s, entry->skill_name, t, s->diff_file_rel);
-                                            }
-                                        }
-                                    }
                                 }
-                            } else {
-                                /* Not installed */
-                                cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                                    cui_text(ui, "此工具尚无该技能副本", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                            }
+
+                            cui_pop_id(ui);
+                        }
+                    }
+
+                    /* Section 2: Uninstalled Tools */
+                    int uninstalled_count = entry->tool_count - entry->installed_count;
+                    if (uninstalled_count > 0) {
+                        cui_gap(ui, 6);
+                        cui_separator(ui);
+                        char unins_hdr[64];
+                        snprintf(unins_hdr, sizeof(unins_hdr), "未安装此技能的工具 (%d)", uninstalled_count);
+                        cui_text(ui, unins_hdr, .size = 12, .color = CUI_COLOR_TEXT_MUTED);
+
+                        for (int t = 0; t < entry->tool_count; t++) {
+                            tool_copy_status_t *tc = &entry->tool_copies[t];
+                            if (tc->exists) continue;
+
+                            cui_push_id_int(ui, 1000 + t);
+                            cui_card(ui, .width = CUI_FILL, .pad = 8, .gap = 4, .muted = true) {
+                                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                                        cui_icon(ui, CUI_ICON_FOLDER, 14, CUI_COLOR_TEXT_MUTED);
+                                        cui_text(ui, tc->tool_name, .size = 13, .color = CUI_COLOR_TEXT_SECONDARY);
+                                    }
                                     cui_spacer(ui);
                                     if (entry->in_hub) {
                                         if (cui_button(ui, "复制安装",
@@ -657,10 +683,11 @@ static void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
                                                 load_hub_diff(s, entry->skill_name, t, s->diff_file_rel);
                                             }
                                         }
+                                    } else {
+                                        cui_badge(ui, "未安装", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
                                     }
                                 }
                             }
-
                             cui_pop_id(ui);
                         }
                     }
@@ -677,13 +704,41 @@ static void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
             cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_CODE, 16, CUI_COLOR_ACCENT);
-                    cui_text(ui, "比对文件: ", .color = CUI_COLOR_TEXT_SECONDARY);
+                    cui_text(ui, "比对: ", .color = CUI_COLOR_TEXT_SECONDARY);
                     cui_badge(ui, s->diff_file_rel[0] ? s->diff_file_rel : "SKILL.md",
                               .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
 
                     if (cur_tc && cur_tc->exists) {
-                        cui_text(ui, "  基准: 主仓版本 ⟷ 对比: ", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-                        cui_badge(ui, cur_tc->tool_name, .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
+                        cui_text(ui, " 基准: 主仓 ⟷ 工具: ", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
+                        cui_badge(ui, cur_tc->tool_name,
+                                  .tone = (cur_tc->status == HUB_STATUS_IN_SYNC) ? CUI_TONE_SUCCESS :
+                                          ((cur_tc->status == HUB_STATUS_LOCAL_MODIFIED) ? CUI_TONE_WARNING : CUI_TONE_INFO),
+                                  .size = CUI_SIZE_SM);
+
+                        /* Direct sync actions on the diff toolbar */
+                        if (cui_button(ui, " 采纳为此基准", .variant = CUI_BUTTON_OUTLINE,
+                                       .size = CUI_SIZE_SM, .icon = CUI_ICON_CHECK)) {
+                            if (hub_promote_to_master(cur_tc->tool_skills_path, entry->skill_name) == 0) {
+                                snprintf(s->toast_msg, sizeof(s->toast_msg),
+                                         "已将 [%s] 副本采纳为主版本", cur_tc->tool_name);
+                                s->toast_frames = 240;
+                                reload_hub_matrix(s);
+                                load_hub_diff(s, entry->skill_name, s->selected_hub_tool_idx, s->diff_file_rel);
+                            }
+                        }
+
+                        if (entry->in_hub) {
+                            if (cui_button(ui, " 覆盖此工具", .variant = CUI_BUTTON_SECONDARY,
+                                           .size = CUI_SIZE_SM, .icon = CUI_ICON_DOWNLOAD)) {
+                                if (hub_sync_master_to_tool(cur_tc->tool_skills_path, entry->skill_name, cur_tc->tool_name) == 0) {
+                                    snprintf(s->toast_msg, sizeof(s->toast_msg),
+                                             "已同步主版本到 [%s]（已自动备份）", cur_tc->tool_name);
+                                    s->toast_frames = 240;
+                                    reload_hub_matrix(s);
+                                    load_hub_diff(s, entry->skill_name, s->selected_hub_tool_idx, s->diff_file_rel);
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1095,8 +1150,18 @@ static void render_tools_list_page(cui_ctx *ui, app_state_t *s) {
             cui_metric(ui, "发现规则路径", "~/.xxx/skills", .icon = CUI_ICON_FOLDER);
         }
         cui_card(ui, .width = CUI_GROW(1), .pad = 16) {
-            const char *last_t = s->stats.last_scanned_at[0] ? s->stats.last_scanned_at : "刚刚";
-            cui_metric(ui, "最近同步时间", last_t, .icon = CUI_ICON_CLOCK);
+            char time_display[32];
+            if (s->stats.last_scanned_at[0]) {
+                const char *space = strchr(s->stats.last_scanned_at, ' ');
+                if (space) {
+                    snprintf(time_display, sizeof(time_display), "%s", space + 1);
+                } else {
+                    snprintf(time_display, sizeof(time_display), "%s", s->stats.last_scanned_at);
+                }
+            } else {
+                snprintf(time_display, sizeof(time_display), "刚刚");
+            }
+            cui_metric(ui, "最近同步时间", time_display, .icon = CUI_ICON_CLOCK);
         }
     }
 

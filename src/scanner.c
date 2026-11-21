@@ -72,6 +72,7 @@ int scanner_scan(discovered_tool_t **out_tools, int *out_count) {
         /* Tool name 'xxx' is the name minus the leading '.' */
         const char *tool_name = entry->d_name + 1;
         if (tool_name[0] == '\0') continue;
+        if (strcmp(tool_name, "ai-space") == 0) continue; /* Do not treat ai-space itself as a tool */
 
         char skills_path[1024];
         snprintf(skills_path, sizeof(skills_path), "%s/%s/skills", home, entry->d_name);

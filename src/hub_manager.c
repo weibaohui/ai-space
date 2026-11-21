@@ -315,6 +315,9 @@ int hub_scan_matrix(sqlite3 *db, hub_matrix_t *out_matrix) {
             }
             const char *name = (const char *)sqlite3_column_text(stmt, 0);
             const char *path = (const char *)sqlite3_column_text(stmt, 1);
+            if (name && (strcmp(name, "ai-space") == 0 || strcmp(name, ".ai-space") == 0)) {
+                continue; /* Skip Master Hub itself from being treated as a tool */
+            }
             out_matrix->tools[out_matrix->tool_count] = strdup(name ? name : "");
             out_matrix->tool_paths[out_matrix->tool_count] = strdup(path ? path : "");
             out_matrix->tool_count++;
