@@ -2,7 +2,7 @@ CC ?= cc
 CFLAGS = -std=c99 -O2 -Wall -Wextra -Iinclude -ICUI/include
 LDFLAGS = CUI/build/libcui.a -lsqlite3 -framework Cocoa -framework QuartzCore -framework OpenGL
 
-SRCS = src/main.c src/db.c src/scanner.c src/skill_scanner.c
+SRCS = src/main.c src/db.c src/scanner.c src/skill_scanner.c src/hub_manager.c
 OBJS = $(SRCS:.c=.o)
 TARGET = ai_space
 
