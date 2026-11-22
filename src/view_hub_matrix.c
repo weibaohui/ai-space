@@ -56,7 +56,7 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                 cui_icon(ui, CUI_ICON_PACKAGE, 22, CUI_COLOR_ACCENT);
             }
             cui_column(ui, .gap = 2) {
-                cui_heading(ui, "技能列表 (Skills)", 3);
+                cui_heading(ui, "技能列表", 3);
                 cui_text(ui, "本机发现的所有技能全景大盘与工具分布",
                          .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
             }
@@ -66,10 +66,10 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
 
         /* Action Buttons: Only current page's actions */
         cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-            if (cui_button(ui, " 刷新扫描", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_REFRESH_CW)) {
+            if (cui_button(ui, "刷新扫描", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_REFRESH_CW)) {
                 start_hub_scan_thread(s);
             }
-            if (cui_button(ui, " 一键全量收录主库", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_CHECK)) {
+            if (cui_button(ui, "全量收录主库", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_CHECK)) {
                 start_adopt_all_thread(s);
             }
         }
@@ -263,7 +263,7 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                     /* Col 3: Action Buttons */
                     cui_table_cell(ui);
                     cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                        if (cui_button(ui, " 对比", .variant = CUI_BUTTON_OUTLINE,
+                        if (cui_button(ui, "对比", .variant = CUI_BUTTON_OUTLINE,
                                        .size = CUI_SIZE_SM, .icon = CUI_ICON_SEARCH)) {
                             s->prev_page = PAGE_ALL_SKILLS;
                             s->prev_hub_subview = HUB_SUBVIEW_SCAN_MATRIX;
@@ -271,14 +271,14 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                         }
 
                         if (e->in_hub) {
-                            if (cui_button(ui, " 分发...", .variant = CUI_BUTTON_SECONDARY,
+                            if (cui_button(ui, "分发...", .variant = CUI_BUTTON_SECONDARY,
                                            .size = CUI_SIZE_SM, .icon = CUI_ICON_SEND)) {
                                 s->show_distribute_modal = true;
                                 strncpy(s->distribute_skill_name, e->skill_name, sizeof(s->distribute_skill_name) - 1);
                                 s->distribute_skill_name[sizeof(s->distribute_skill_name) - 1] = '\0';
                             }
                         } else {
-                            if (cui_button(ui, " 收录主库", .variant = CUI_BUTTON_PRIMARY,
+                            if (cui_button(ui, "收录主库", .variant = CUI_BUTTON_PRIMARY,
                                            .size = CUI_SIZE_SM, .icon = CUI_ICON_CHECK)) {
                                 for (int t = 0; t < e->tool_count; t++) {
                                     if (e->tool_copies[t].exists) {
@@ -352,7 +352,7 @@ void render_hub_matrix_page(cui_ctx *ui, app_state_t *s) {
                 cui_icon(ui, CUI_ICON_ARCHIVE, 22, CUI_COLOR_ACCENT);
             }
             cui_column(ui, .gap = 2) {
-                cui_heading(ui, "主仓管理 (Master Hub)", 3);
+                cui_heading(ui, "主仓管理", 3);
                 char hub_sub[256];
                 snprintf(hub_sub, sizeof(hub_sub), "基准版本库 · %s",
                          s->setting_hub_dir[0] ? s->setting_hub_dir : "~/.ai-space/skills");

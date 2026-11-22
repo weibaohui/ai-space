@@ -972,7 +972,7 @@ void render_about_modal(cui_ctx *ui, app_state_t *s) {
                 cui_column(ui, .gap = 6) {
                     cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                         cui_icon(ui, CUI_ICON_CHECK, 13, CUI_COLOR_ACCENT);
-                        cui_text(ui, "物理原子复制 (No Symlinks): 杜绝软链接在跨运行时与容器挂载环境中的失效风险。",
+                        cui_text(ui, "物理原子复制: 杜绝软链接在跨运行时与容器挂载环境中的失效风险。",
                                  .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
                     }
                     cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
@@ -1073,7 +1073,7 @@ void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
                     }
                     cui_spacer(ui);
                     /* Quick Action: Distribute to ALL tools */
-                    if (cui_button(ui, " ⚡ 一键分发/安装到全部工具", .variant = CUI_BUTTON_PRIMARY,
+                    if (cui_button(ui, "分发到全部工具", .variant = CUI_BUTTON_PRIMARY,
                                    .icon = CUI_ICON_SEND, .size = CUI_SIZE_SM)) {
                         start_distribute_skill_to_all_thread(s, s->distribute_skill_name);
                     }
@@ -1120,29 +1120,29 @@ void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
 
                                 /* Status Badge */
                                 if (!exists) {
-                                    cui_badge(ui, "⚪ 未安装", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
+                                    cui_badge(ui, "未安装", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
                                 } else if (status == HUB_STATUS_IN_SYNC) {
-                                    cui_badge(ui, "🟢 已安装 (版本一致)", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
+                                    cui_badge(ui, "版本一致", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
                                 } else if (status == HUB_STATUS_LOCAL_MODIFIED) {
-                                    cui_badge(ui, "🟡 已安装 (本地有改动)", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
+                                    cui_badge(ui, "本地有改动", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
                                 } else if (status == HUB_STATUS_OUTDATED) {
-                                    cui_badge(ui, "🔵 已安装 (版本落后)", .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
+                                    cui_badge(ui, "版本落后", .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
                                 }
 
                                 /* Action Buttons */
                                 cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                                     if (!exists) {
-                                        if (cui_button(ui, " ＋ 安装到此工具", .variant = CUI_BUTTON_PRIMARY,
+                                        if (cui_button(ui, "安装", .variant = CUI_BUTTON_PRIMARY,
                                                        .icon = CUI_ICON_PLUS, .size = CUI_SIZE_SM)) {
                                             start_copy_install_thread(s, t_path, s->distribute_skill_name, t_name, t);
                                         }
                                     } else if (status == HUB_STATUS_LOCAL_MODIFIED || status == HUB_STATUS_OUTDATED) {
-                                        if (cui_button(ui, " ↺ 覆盖同步", .variant = CUI_BUTTON_SECONDARY,
+                                        if (cui_button(ui, "覆盖同步", .variant = CUI_BUTTON_SECONDARY,
                                                        .icon = CUI_ICON_REFRESH_CW, .size = CUI_SIZE_SM)) {
                                             start_sync_master_to_tool_thread(s, t_path, s->distribute_skill_name, t_name, t);
                                         }
                                     } else {
-                                        if (cui_button(ui, " ↺ 重新安装", .variant = CUI_BUTTON_GHOST,
+                                        if (cui_button(ui, "重新安装", .variant = CUI_BUTTON_GHOST,
                                                        .icon = CUI_ICON_REFRESH_CW, .size = CUI_SIZE_SM)) {
                                             start_sync_master_to_tool_thread(s, t_path, s->distribute_skill_name, t_name, t);
                                         }

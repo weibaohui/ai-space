@@ -97,7 +97,7 @@ static void git_destroy(sync_backend_t *self) {
 static int git_check_available(sync_backend_t *self, char *err_buf, size_t err_cap) {
     git_priv_t *priv = (git_priv_t *)self->priv_data;
     if (!priv || priv->repo_url[0] == '\0') {
-        if (err_buf) snprintf(err_buf, err_cap, "未配置 Git 远端仓库地址 (Repository URL)");
+        if (err_buf) snprintf(err_buf, err_cap, "未配置 Git 远端仓库地址");
         return -1;
     }
 
@@ -139,7 +139,7 @@ static int git_check_available(sync_backend_t *self, char *err_buf, size_t err_c
     } else {
         if (err_buf) {
             if (strstr(first_line, "Repository not found") || strstr(first_line, "not found")) {
-                snprintf(err_buf, err_cap, "Git 仓库不存在或无读取权限 (Repository not found)");
+                snprintf(err_buf, err_cap, "Git 仓库不存在或无读取权限");
             } else if (strstr(first_line, "Authentication failed") || strstr(first_line, "fatal: Authentication")) {
                 snprintf(err_buf, err_cap, "Git 鉴权失败：Access Token 无效或过期");
             } else if (first_line[0] != '\0') {
@@ -155,7 +155,7 @@ static int git_check_available(sync_backend_t *self, char *err_buf, size_t err_c
 static int git_test_connection(sync_backend_t *self, char *err_buf, size_t err_cap) {
     git_priv_t *priv = (git_priv_t *)self->priv_data;
     if (!priv || priv->repo_url[0] == '\0') {
-        if (err_buf) snprintf(err_buf, err_cap, "未配置 Git 远端仓库地址 (Repository URL)");
+        if (err_buf) snprintf(err_buf, err_cap, "未配置 Git 远端仓库地址");
         return -1;
     }
     self->is_connected = true;
@@ -601,7 +601,7 @@ static int git_push_all(sync_backend_t *self, const char *source_local_hub,
 const sync_driver_ops_t g_git_driver_ops = {
     .type = SYNC_BACKEND_GIT,
     .name = "git",
-    .display_name = "Git 远端版本库 (GitHub / GitLab)",
+    .display_name = "Git 远端版本库",
     .init = git_init,
     .destroy = git_destroy,
     .test_connection = git_test_connection,

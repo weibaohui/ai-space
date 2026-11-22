@@ -84,7 +84,7 @@ static void on_master_file_select(file_node_t *node, void *user_data) {
 void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s) {
     /* Header & Breadcrumb */
     cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        if (cui_button(ui, "  返回主仓技能列表", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_CHEVRON_LEFT)) {
+        if (cui_button(ui, "返回主仓", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_CHEVRON_LEFT)) {
             s->hub_subview = s->prev_hub_subview;
         }
 
@@ -232,10 +232,10 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
         cui_spacer(ui);
 
         cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-            if (cui_button(ui, " 重新比对", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_REFRESH_CW)) {
+            if (cui_button(ui, "重新比对", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_REFRESH_CW)) {
                 start_hub_scan_thread(s);
             }
-            if (cui_button(ui, " 🚀 全量分发到所有工具", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SEND)) {
+            if (cui_button(ui, "全量分发到所有工具", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SEND)) {
                 start_distribute_all_thread(s);
             }
         }
@@ -254,7 +254,7 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                 cui_text(ui, "可前往【技能列表】一键收录本机已发现的技能，或在主仓目录直接创建技能。",
                          .color = CUI_COLOR_TEXT_SECONDARY, .size = 13);
                 cui_gap(ui, 20);
-                if (cui_button(ui, " 前往技能列表一键收录", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_PACKAGE)) {
+                if (cui_button(ui, "前往技能列表一键收录", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_PACKAGE)) {
                     s->current_page = PAGE_ALL_SKILLS;
                 }
             }
@@ -301,13 +301,13 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                             cui_spacer(ui);
 
                             cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                                if (cui_button(ui, " 浏览文件", .variant = CUI_BUTTON_SECONDARY,
+                                if (cui_button(ui, "浏览文件", .variant = CUI_BUTTON_SECONDARY,
                                                .icon = CUI_ICON_FOLDER_OPEN, .size = CUI_SIZE_SM)) {
                                     open_master_skill_explorer(s, entry->skill_name);
                                 }
 
                                 if (entry->installed_count > 0) {
-                                    if (cui_button(ui, " 对比", .variant = CUI_BUTTON_OUTLINE,
+                                    if (cui_button(ui, "对比", .variant = CUI_BUTTON_OUTLINE,
                                                    .icon = CUI_ICON_GIT_BRANCH, .size = CUI_SIZE_SM)) {
                                         s->prev_page = PAGE_HUB_MATRIX;
                                         s->prev_hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
@@ -316,14 +316,14 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                                 }
 
                                 /* Core Distribution Entry Point */
-                                if (cui_button(ui, (entry->installed_count == 0) ? " 🚀 分发到工具..." : " 🚀 分发管理...",
+                                if (cui_button(ui, (entry->installed_count == 0) ? "分发..." : "分发管理...",
                                                .variant = (entry->installed_count == 0) ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                                .icon = CUI_ICON_SEND, .size = CUI_SIZE_SM)) {
                                     s->show_distribute_modal = true;
                                     strncpy(s->distribute_skill_name, entry->skill_name, sizeof(s->distribute_skill_name) - 1);
                                 }
 
-                                if (cui_button(ui, " 移出主仓", .variant = CUI_BUTTON_GHOST,
+                                if (cui_button(ui, "移出主仓", .variant = CUI_BUTTON_GHOST,
                                                .icon = CUI_ICON_TRASH_2, .size = CUI_SIZE_SM)) {
                                     if (hub_delete_master_skill(entry->skill_name) == 0) {
                                         char tmsg[128];
@@ -347,7 +347,7 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                         cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                             cui_textf(ui, "分发覆盖 (%d/%d):", entry->installed_count, s->hub_matrix.tool_count);
                             if (entry->installed_count == 0) {
-                                cui_text(ui, "尚未安装到任何本地工具，点击上方【🚀 分发到工具...】开始安装下发",
+                                cui_text(ui, "尚未安装到任何本地工具，点击上方【分发...】开始安装",
                                          .size = 12, .color = CUI_COLOR_TEXT_MUTED);
                             } else {
                                 for (int t = 0; t < entry->tool_count; t++) {

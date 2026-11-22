@@ -134,7 +134,7 @@ static void on_tool_skill_file_select(file_node_t *node, void *user_data) {
 void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
     /* 1. Navigation Top Bar */
     cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        if (cui_button(ui, " 返回上一页", .variant = CUI_BUTTON_SECONDARY,
+        if (cui_button(ui, "返回", .variant = CUI_BUTTON_SECONDARY,
                        .icon = CUI_ICON_CHEVRON_LEFT)) {
             s->current_page = (s->prev_page == PAGE_HUB_MATRIX) ? PAGE_HUB_MATRIX : PAGE_TOOL_LIST;
         }
@@ -314,7 +314,7 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
             { "技能目录名", CUI_PX(180), CUI_TEXT_LEFT, true },
             { "包含文件数", CUI_PX(100), CUI_TEXT_RIGHT, true },
             { "SKILL.md",   CUI_PX(100), CUI_TEXT_CENTER, true },
-            { "技能描述 (Description)", CUI_FILL, CUI_TEXT_LEFT, false },
+            { "技能描述",   CUI_FILL, CUI_TEXT_LEFT, false },
             { "操作",       CUI_PX(120), CUI_TEXT_CENTER, false },
         };
 

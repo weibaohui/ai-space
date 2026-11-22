@@ -96,7 +96,7 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
 
         /* Action: Broadcast to all tools */
         if (entry->in_hub) {
-            if (cui_button(ui, " 🚀 全量广播主版本到所有工具", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SHARE_2)) {
+            if (cui_button(ui, "全量广播到所有工具", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SHARE_2)) {
                 start_broadcast_thread(s, entry->skill_name, s->selected_hub_tool_idx);
             }
         }
@@ -110,7 +110,7 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
 
             /* 1. Master Hub Section */
             cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                cui_label(ui, "主版本库 (Master Hub)");
+                cui_label(ui, "主版本库");
                 cui_spacer(ui);
                 if (entry->in_hub) {
                     cui_badge(ui, "基准", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
@@ -298,13 +298,13 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
 
                     if (cur_tc && cur_tc->exists) {
                         /* Direct sync actions on the diff toolbar */
-                        if (cui_button(ui, " 采纳为基准", .variant = CUI_BUTTON_OUTLINE,
+                        if (cui_button(ui, "采纳为基准", .variant = CUI_BUTTON_OUTLINE,
                                        .size = CUI_SIZE_SM, .icon = CUI_ICON_CHECK)) {
                             start_promote_to_master_thread(s, cur_tc->tool_skills_path, entry->skill_name, cur_tc->tool_name, s->selected_hub_tool_idx);
                         }
 
                         if (entry->in_hub) {
-                            if (cui_button(ui, " 覆盖此工具", .variant = CUI_BUTTON_SECONDARY,
+                            if (cui_button(ui, "覆盖此工具", .variant = CUI_BUTTON_SECONDARY,
                                            .size = CUI_SIZE_SM, .icon = CUI_ICON_DOWNLOAD)) {
                                 start_sync_master_to_tool_thread(s, cur_tc->tool_skills_path, entry->skill_name, cur_tc->tool_name, s->selected_hub_tool_idx);
                             }
@@ -358,7 +358,7 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
                         cui_icon(ui, CUI_ICON_CIRCLE_CHECK, 14, CUI_COLOR_SUCCESS);
                         cui_text(ui, "两端文件内容完全一致，无文本差异", .size = 11, .color = CUI_COLOR_SUCCESS);
                         cui_spacer(ui);
-                        cui_text(ui, "🛡️ 覆盖前自动生成快照备份",
+                        cui_text(ui, "覆盖前自动生成快照备份",
                                  .size = 11, .color = CUI_COLOR_TEXT_MUTED);
                     }
                 } else {
@@ -463,7 +463,7 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
                     }
 
                     cui_spacer(ui);
-                    cui_text(ui, "🛡️ 覆盖前自动生成快照备份",
+                    cui_text(ui, "覆盖前自动生成快照备份",
                              .size = 11, .color = CUI_COLOR_TEXT_MUTED);
                 }
             }

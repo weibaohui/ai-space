@@ -32,7 +32,7 @@ static void webdav_destroy(sync_backend_t *self) {
 static int webdav_check_available(sync_backend_t *self, char *err_buf, size_t err_cap) {
     webdav_priv_t *priv = (webdav_priv_t *)self->priv_data;
     if (!priv || priv->url[0] == '\0') {
-        if (err_buf) snprintf(err_buf, err_cap, "未配置 WebDAV 服务器地址 (URL)");
+        if (err_buf) snprintf(err_buf, err_cap, "未配置 WebDAV 服务器地址");
         return -1;
     }
     if (strncmp(priv->url, "http://", 7) != 0 && strncmp(priv->url, "https://", 8) != 0) {

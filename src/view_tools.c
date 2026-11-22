@@ -64,7 +64,7 @@ void render_tools_list_page(cui_ctx *ui, app_state_t *s) {
                 cui_icon(ui, CUI_ICON_FOLDER, 22, CUI_COLOR_ACCENT);
             }
             cui_column(ui, .gap = 2) {
-                cui_heading(ui, "本地工具 (Tools)", 3);
+                cui_heading(ui, "本地工具", 3);
                 cui_text(ui, "自动识别本机支持 Skills 的 AI 编程助手与扩展工具",
                          .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
             }
@@ -74,7 +74,7 @@ void render_tools_list_page(cui_ctx *ui, app_state_t *s) {
 
         /* Action Buttons: Only current page's core actions */
         cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-            if (cui_button(ui, " 重新扫描", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_REFRESH_CW)) {
+            if (cui_button(ui, "重新扫描", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_REFRESH_CW)) {
                 do_scan_sync(s);
             }
         }

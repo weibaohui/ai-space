@@ -66,13 +66,13 @@ static void get_dir_stat_info(const char *raw_path, char *out_expanded, size_t e
         if (out_subdirs) *out_subdirs = count;
 
         if (access(out_expanded, W_OK | R_OK) == 0) {
-            snprintf(out_info, info_cap, "🟢 物理目录已就绪 (可读写，含 %d 个子目录项)", count);
+            snprintf(out_info, info_cap, "物理目录已就绪 (可读写，含 %d 个子目录项)", count);
         } else {
-            snprintf(out_info, info_cap, "🟡 物理目录已存在 (读写权限受限)");
+            snprintf(out_info, info_cap, "物理目录已存在 (读写权限受限)");
         }
     } else {
         if (out_exists) *out_exists = false;
-        snprintf(out_info, info_cap, "⚪ 目录尚未在磁盘创建 (保存后系统将自动初始化)");
+        snprintf(out_info, info_cap, "目录尚未在磁盘创建 (保存后系统将自动初始化)");
     }
 }
 
@@ -134,7 +134,7 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
 
             /* Action Buttons */
             cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                if (cui_button(ui, " 💾 保存主仓路径", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
+                if (cui_button(ui, "保存主仓路径", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
                     app_save_settings(s);
                     s->hub_matrix_loaded = false;
                     char toast[256];
@@ -142,7 +142,7 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
                     app_set_toast(s, toast);
                 }
 
-                if (cui_button(ui, " ↺ 恢复默认", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_UNDO_2)) {
+                if (cui_button(ui, "恢复默认", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_UNDO_2)) {
                     strncpy(s->setting_hub_dir, "~/.ai-space/skills", sizeof(s->setting_hub_dir) - 1);
                     s->setting_hub_dir[sizeof(s->setting_hub_dir) - 1] = '\0';
                     app_save_settings(s);
@@ -194,14 +194,14 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
 
             /* Action Buttons */
             cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                if (cui_button(ui, " 💾 保存备份路径", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
+                if (cui_button(ui, "保存备份路径", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
                     app_save_settings(s);
                     char toast[256];
                     snprintf(toast, sizeof(toast), "备份路径已更新为: %s", s->setting_backup_dir);
                     app_set_toast(s, toast);
                 }
 
-                if (cui_button(ui, " ↺ 恢复默认", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_UNDO_2)) {
+                if (cui_button(ui, "恢复默认", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_UNDO_2)) {
                     strncpy(s->setting_backup_dir, "~/.ai-space/backups", sizeof(s->setting_backup_dir) - 1);
                     s->setting_backup_dir[sizeof(s->setting_backup_dir) - 1] = '\0';
                     app_save_settings(s);
@@ -244,7 +244,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                 }
 
                 bool is_cand_webdav = (s->setting_sync_candidate_type == SYNC_BACKEND_WEBDAV);
-                if (cui_button(ui, "WebDAV (坚果云/Nextcloud)",
+                if (cui_button(ui, "WebDAV 网盘",
                                .variant = is_cand_webdav ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                .icon = CUI_ICON_GLOBE)) {
                     s->setting_sync_candidate_type = SYNC_BACKEND_WEBDAV;
@@ -252,7 +252,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                 }
 
                 bool is_cand_nfs = (s->setting_sync_candidate_type == SYNC_BACKEND_NFS);
-                if (cui_button(ui, "NFS / 局域网共享目录",
+                if (cui_button(ui, "局域网共享目录",
                                .variant = is_cand_nfs ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                .icon = CUI_ICON_FOLDER)) {
                     s->setting_sync_candidate_type = SYNC_BACKEND_NFS;
@@ -260,7 +260,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                 }
 
                 bool is_cand_git = (s->setting_sync_candidate_type == SYNC_BACKEND_GIT);
-                if (cui_button(ui, "Git 远端版本库",
+                if (cui_button(ui, "Git 远端仓库",
                                .variant = is_cand_git ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                .icon = CUI_ICON_GIT_BRANCH)) {
                     s->setting_sync_candidate_type = SYNC_BACKEND_GIT;
@@ -292,7 +292,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                 }
 
                 cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
-                    if (cui_button(ui, " 💾 激活单机模式", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
+                    if (cui_button(ui, "激活单机模式", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
                         s->sync_cfg.type = SYNC_BACKEND_NONE;
                         app_save_settings(s);
                         s->sync_drift_loaded = false;
@@ -337,7 +337,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
 
             } else if (s->setting_sync_candidate_type == SYNC_BACKEND_NFS) {
                 cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_heading(ui, "局域网共享挂载目录 (NFS/SMB)", 4);
+                    cui_heading(ui, "局域网共享挂载目录", 4);
                     cui_spacer(ui);
                     cui_badge(ui, is_active ? "已生效" : "未激活",
                               .tone = is_active ? CUI_TONE_SUCCESS : CUI_TONE_WARNING,
@@ -384,12 +384,12 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
 
                 cui_row(ui, .width = CUI_FILL, .gap = 12) {
                     cui_input(ui, "git_branch_input", s->sync_cfg.git_branch, sizeof(s->sync_cfg.git_branch),
-                              .label = "目标分支 (Branch):",
+                              .label = "目标分支:",
                               .placeholder = "main",
                               .width = CUI_PX(180));
 
                     cui_input(ui, "git_token_input", s->sync_cfg.git_auth_token, sizeof(s->sync_cfg.git_auth_token),
-                              .label = "访问令牌 (Personal Access Token):",
+                              .label = "访问令牌:",
                               .placeholder = "ghp_xxxxxxxxxxxx",
                               .password = true,
                               .width = CUI_GROW(1));
@@ -397,12 +397,12 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
 
                 cui_row(ui, .width = CUI_FILL, .gap = 12) {
                     cui_input(ui, "git_user_input", s->sync_cfg.git_user_name, sizeof(s->sync_cfg.git_user_name),
-                              .label = "提交者签名 (User Name):",
+                              .label = "提交者姓名:",
                               .placeholder = "AI-Space User",
                               .width = CUI_GROW(1));
 
                     cui_input(ui, "git_email_input", s->sync_cfg.git_user_email, sizeof(s->sync_cfg.git_user_email),
-                              .label = "提交者邮箱 (User Email):",
+                              .label = "提交者邮箱:",
                               .placeholder = "user@example.com",
                               .width = CUI_GROW(1));
                 }
@@ -414,7 +414,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                     bool is_checking = s->op_progress.active;
 
                     /* Primary action: Check availability in background with progress modal, only activate if check succeeds */
-                    if (cui_button(ui, " 🔍 检测可用性并激活生效",
+                    if (cui_button(ui, "检测并激活",
                                    .variant = CUI_BUTTON_PRIMARY,
                                    .icon = is_checking ? CUI_ICON_LOADER_CIRCLE : CUI_ICON_CHECK_CHECK,
                                    .disabled = is_checking)) {
@@ -422,7 +422,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                     }
 
                     /* Secondary action: Check only, do not alter active backend */
-                    if (cui_button(ui, " ⚡ 仅检测可用性 (不激活)",
+                    if (cui_button(ui, "仅检测可用性",
                                    .variant = CUI_BUTTON_SECONDARY,
                                    .icon = is_checking ? CUI_ICON_LOADER_CIRCLE : CUI_ICON_ACTIVITY,
                                    .disabled = is_checking)) {
@@ -489,7 +489,7 @@ static void render_tab_scan(cui_ctx *ui, app_state_t *s) {
             }
 
             cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                if (cui_button(ui, " 💾 保存同步策略", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
+                if (cui_button(ui, "保存同步策略", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
                     app_save_settings(s);
                     app_set_toast(s, "扫描与同步安全策略已保存生效");
                 }
@@ -516,28 +516,28 @@ static void render_tab_preferences(cui_ctx *ui, app_state_t *s) {
                 cui_text(ui, "默认启动主视图:", .size = 13, .color = CUI_COLOR_FOREGROUND);
                 cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
                     bool is_tools = (s->setting_default_view == 0);
-                    if (cui_button(ui, "  工具列表 (Tool List)",
+                    if (cui_button(ui, "工具列表",
                                    .variant = is_tools ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                    .icon = CUI_ICON_FOLDER)) {
                         s->setting_default_view = 0;
                     }
 
                     bool is_skills = (s->setting_default_view == 1);
-                    if (cui_button(ui, "  技能列表 (Skills List)",
+                    if (cui_button(ui, "技能列表",
                                    .variant = is_skills ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                    .icon = CUI_ICON_PACKAGE)) {
                         s->setting_default_view = 1;
                     }
 
                     bool is_hub = (s->setting_default_view == 2);
-                    if (cui_button(ui, "  主仓管理 (Master Hub)",
+                    if (cui_button(ui, "主仓管理",
                                    .variant = is_hub ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                    .icon = CUI_ICON_ARCHIVE)) {
                         s->setting_default_view = 2;
                     }
 
                     bool is_sync = (s->setting_default_view == 3);
-                    if (cui_button(ui, "  同步管理 (Remote Sync)",
+                    if (cui_button(ui, "同步管理",
                                    .variant = is_sync ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                    .icon = CUI_ICON_GLOBE)) {
                         s->setting_default_view = 3;
@@ -550,14 +550,14 @@ static void render_tab_preferences(cui_ctx *ui, app_state_t *s) {
                 cui_text(ui, "差异对比视图呈现模式:", .size = 13, .color = CUI_COLOR_FOREGROUND);
                 cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
                     bool is_split = (s->diff_mode == CUI_DIFF_SPLIT);
-                    if (cui_button(ui, "  双栏分屏 (Split)",
+                    if (cui_button(ui, "双栏分屏",
                                    .variant = is_split ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                    .icon = CUI_ICON_LAYERS)) {
                         s->diff_mode = CUI_DIFF_SPLIT;
                     }
 
                     bool is_inline = (s->diff_mode == CUI_DIFF_INLINE);
-                    if (cui_button(ui, "  单栏行内 (Inline)",
+                    if (cui_button(ui, "单栏行内",
                                    .variant = is_inline ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                    .icon = CUI_ICON_FILE_TEXT)) {
                         s->diff_mode = CUI_DIFF_INLINE;
@@ -566,7 +566,7 @@ static void render_tab_preferences(cui_ctx *ui, app_state_t *s) {
             }
 
             cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                if (cui_button(ui, " 💾 保存偏好设置", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
+                if (cui_button(ui, "保存偏好设置", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
                     app_save_settings(s);
                     app_set_toast(s, "常规偏好设置已更新");
                 }

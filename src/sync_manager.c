@@ -175,10 +175,10 @@ const char *sync_backend_name(sync_backend_type_t type) {
 const char *sync_backend_display_name(sync_backend_type_t type) {
     switch (type) {
         case SYNC_BACKEND_WEBDAV: return "WebDAV 远端存储";
-        case SYNC_BACKEND_NFS: return "NFS / 局域网共享目录";
+        case SYNC_BACKEND_NFS: return "局域网共享目录";
         case SYNC_BACKEND_GIT: return "Git 远端版本库";
         case SYNC_BACKEND_NONE:
-        default: return "单机本地模式 (未启用远端同步)";
+        default: return "单机本地模式";
     }
 }
 
