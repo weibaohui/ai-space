@@ -782,18 +782,18 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
 void render_op_progress_modal(cui_ctx *ui, app_state_t *s) {
     if (!s || !s->op_progress.active) return;
 
-    /* Overlay modal card */
-    cui_column(ui, .width = CUI_FILL, .height = CUI_FILL,
-               .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
-        cui_card(ui, .width = CUI_PX(480), .pad = 22, .gap = 14) {
+    const char *title = s->op_progress.title[0] ? s->op_progress.title : "操作处理中";
+    cui_dialog(ui, title, &s->op_progress.active,
+               .width = 480, .persistent = true, .no_close_button = true) {
+        cui_column(ui, .width = CUI_FILL, .gap = 14, .pad = 6) {
             cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                cui_spinner(ui, 24, .style = CUI_SPINNER_COMET, .color = CUI_COLOR_ACCENT);
-                cui_heading(ui, s->op_progress.title[0] ? s->op_progress.title : "正在处理中...", 4);
+                cui_spinner(ui, 22, .style = CUI_SPINNER_COMET, .color = CUI_COLOR_ACCENT);
+                cui_text(ui, s->op_progress.message[0] ? s->op_progress.message : "正在执行...",
+                         .size = 13, .color = CUI_COLOR_TEXT_SECONDARY);
             }
 
             cui_progress(ui, s->op_progress.percent,
                          .width = CUI_FILL,
-                         .label = s->op_progress.message,
                          .show_value = true,
                          .tone = CUI_TONE_ACCENT);
 

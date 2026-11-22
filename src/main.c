@@ -26,6 +26,9 @@ static void frame(cui_ctx *ui, void *user) {
             render_tool_skills_page(ui, s);
         }
     }
+
+    /* Global Operation Progress Modal (single source of truth for the app) */
+    render_op_progress_modal(ui, s);
 }
 
 int main(void) {

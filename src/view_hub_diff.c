@@ -581,6 +581,4 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
             }
         }
     }
-
-    render_op_progress_modal(ui, s);
 }

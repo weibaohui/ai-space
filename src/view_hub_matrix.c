@@ -15,7 +15,6 @@ void render_hub_matrix_page(cui_ctx *ui, app_state_t *s) {
     /* 2. Check Subview: 0 = Overview Matrix, 1 = Side-by-Side Diff & Sync */
     if (s->hub_subview == 1) {
         render_hub_diff_subview(ui, s);
-        render_op_progress_modal(ui, s);
         return;
     }
 
@@ -42,7 +41,6 @@ void render_hub_matrix_page(cui_ctx *ui, app_state_t *s) {
             }
         }
 
-        render_op_progress_modal(ui, s);
         return;
     }
 
@@ -295,6 +293,4 @@ void render_hub_matrix_page(cui_ctx *ui, app_state_t *s) {
             }
         }
     }
-
-    render_op_progress_modal(ui, s);
 }
