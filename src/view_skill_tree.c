@@ -1,4 +1,5 @@
 #include "view_skill_tree.h"
+#include "cui_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -167,51 +168,58 @@ static void render_tree_node(cui_ctx *ui, file_node_t *node, int depth,
     if (!node) return;
 
     if (node->is_dir) {
-        cui_push_id(ui, node->rel_path[0] ? node->rel_path : node->name);
+        cui_id id = cui_make_id(ui, node->rel_path[0] ? node->rel_path : node->name) ^ 0xD120u;
+        cui_interact r = cui__interact(ui, id, CUI_IF_FOCUSABLE);
 
-        bool row_clicked = cui_card_begin(ui, &(cui_card_opts){
-            .width = CUI_FILL,
-            .pad = 5,
-            .gap = 0,
-            .hoverable = true,
-        });
+        int row = cui__node_new(ui, id);
+        cui_node *rn = &ui->nodes[row];
+        rn->dir = CUI_ROW;
+        rn->gap = 6;
+        rn->align = CUI_ALIGN_CENTER;
+        rn->w = CUI_FILL;
+        rn->h = CUI_PX(26);
+        rn->pad[0] = 0;
+        rn->pad[2] = 0;
+        rn->pad[1] = 8.0f;
+        rn->pad[3] = 6.0f + 14.0f * (float)depth;
+        rn->radius = CUI_CORNERS(4.0f);
+        rn->bg = r.hovered ? CUI_C(ui, HOVER) : cui__rgba(0, 0, 0, 0);
+        cui__mark_interactive(ui, row, CUI_IF_FOCUSABLE);
+        if (r.hovered) cui__set_cursor(ui, CUI_CURSOR_HAND);
+        cui__open(ui, row);
 
-        cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-            if (depth > 0) {
-                cui_gap(ui, depth * 14);
-            }
+        /* Folder chevron */
+        cui_icon(ui, node->is_open ? CUI_ICON_CHEVRON_DOWN : CUI_ICON_CHEVRON_RIGHT, 12, CUI_COLOR_TEXT_MUTED);
 
-            cui_icon(ui, node->is_open ? CUI_ICON_CHEVRON_DOWN : CUI_ICON_CHEVRON_RIGHT, 12, CUI_COLOR_TEXT_MUTED);
-            cui_gap(ui, 4);
+        /* Folder icon */
+        cui_icon(ui, node->is_open ? CUI_ICON_FOLDER_OPEN : CUI_ICON_FOLDER, 14, CUI_COLOR_ACCENT);
 
-            cui_icon(ui, node->is_open ? CUI_ICON_FOLDER_OPEN : CUI_ICON_FOLDER, 14, CUI_COLOR_ACCENT);
-            cui_gap(ui, 6);
+        /* Folder name */
+        cui_text(ui, node->name, .font = CUI_FONT_MEDIUM, .size = 11, .color = CUI_COLOR_FOREGROUND);
 
-            cui_text(ui, node->name, .font = CUI_FONT_MEDIUM, .size = 11);
+        cui_spacer(ui);
 
-            cui_spacer(ui);
-
-            /* Folder Diff Indicator (aggregate changes inside) */
-            if (opts->show_diff_badges && node->has_diff_info) {
-                if (node->added_lines > 0 || node->removed_lines > 0) {
-                    cui_row(ui, .gap = 3, .align = CUI_ALIGN_CENTER) {
-                        if (node->added_lines > 0) {
-                            char a_buf[24];
-                            snprintf(a_buf, sizeof(a_buf), "+%d", node->added_lines);
-                            cui_badge(ui, a_buf, .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                        }
-                        if (node->removed_lines > 0) {
-                            char r_buf[24];
-                            snprintf(r_buf, sizeof(r_buf), "-%d", node->removed_lines);
-                            cui_badge(ui, r_buf, .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
-                        }
+        /* Trailing Diff Indicator for Folders (crisp text, no capsule/badge) */
+        if (opts->show_diff_badges && node->has_diff_info) {
+            if (node->added_lines > 0 || node->removed_lines > 0) {
+                cui_row(ui, .gap = 4, .align = CUI_ALIGN_CENTER) {
+                    if (node->added_lines > 0) {
+                        char a_buf[24];
+                        snprintf(a_buf, sizeof(a_buf), "+%d", node->added_lines);
+                        cui_text(ui, a_buf, .color = CUI_COLOR_SUCCESS, .size = 10, .font = CUI_FONT_MONO);
+                    }
+                    if (node->removed_lines > 0) {
+                        char r_buf[24];
+                        snprintf(r_buf, sizeof(r_buf), "-%d", node->removed_lines);
+                        cui_text(ui, r_buf, .color = CUI_COLOR_DANGER, .size = 10, .font = CUI_FONT_MONO);
                     }
                 }
             }
         }
-        cui_card_end(ui);
 
-        if (row_clicked) {
+        cui__close(ui);
+
+        if (r.clicked) {
             node->is_open = !node->is_open;
         }
 
@@ -221,11 +229,10 @@ static void render_tree_node(cui_ctx *ui, file_node_t *node, int depth,
             }
         }
 
-        cui_pop_id(ui);
-
     } else {
         /* File Leaf Node */
-        cui_push_id(ui, node->rel_path[0] ? node->rel_path : node->name);
+        cui_id id = cui_make_id(ui, node->rel_path[0] ? node->rel_path : node->name) ^ 0xF17Eu;
+        cui_interact r = cui__interact(ui, id, CUI_IF_FOCUSABLE);
 
         bool is_selected = false;
         if (opts->selected_path && opts->selected_path[0] != '\0') {
@@ -236,78 +243,90 @@ static void render_tree_node(cui_ctx *ui, file_node_t *node, int depth,
             }
         }
 
-        bool row_clicked = cui_card_begin(ui, &(cui_card_opts){
-            .width = CUI_FILL,
-            .pad = 5,
-            .gap = 0,
-            .hoverable = true,
-            .selected = is_selected,
-        });
+        int row = cui__node_new(ui, id);
+        cui_node *rn = &ui->nodes[row];
+        rn->dir = CUI_ROW;
+        rn->gap = 6;
+        rn->align = CUI_ALIGN_CENTER;
+        rn->w = CUI_FILL;
+        rn->h = CUI_PX(26);
+        rn->pad[0] = 0;
+        rn->pad[2] = 0;
+        rn->pad[1] = 8.0f;
+        rn->pad[3] = 6.0f + 14.0f * (float)depth;
+        rn->radius = CUI_CORNERS(4.0f);
+        rn->bg = is_selected ? CUI_C(ui, ACTIVE) : (r.hovered ? CUI_C(ui, HOVER) : cui__rgba(0, 0, 0, 0));
+        cui__mark_interactive(ui, row, CUI_IF_FOCUSABLE);
+        if (r.hovered) cui__set_cursor(ui, CUI_CURSOR_HAND);
+        cui__open(ui, row);
 
-        cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-            if (depth > 0) {
-                cui_gap(ui, depth * 14);
-            }
-            cui_gap(ui, 16); /* Compensate for folder chevron gap */
+        /* Indent compensation for folder chevron */
+        cui_gap(ui, 12);
 
-            const char *icon = get_file_node_icon(node->name);
-            cui_icon(ui, icon, 13, is_selected ? CUI_COLOR_ACCENT : CUI_COLOR_FOREGROUND);
-            cui_gap(ui, 6);
+        /* File icon */
+        const char *icon = get_file_node_icon(node->name);
+        cui_icon(ui, icon, 13, is_selected ? CUI_COLOR_ACCENT : CUI_COLOR_FOREGROUND);
 
-            cui_text(ui, node->name, .size = 11,
-                     .font = is_selected ? CUI_FONT_MEDIUM : CUI_FONT_BODY,
-                     .color = is_selected ? CUI_COLOR_ACCENT : CUI_COLOR_FOREGROUND);
-
-            cui_spacer(ui);
-
-            /* Badges with + and - */
-            if (opts->show_diff_badges && node->has_diff_info) {
-                if (node->diff_status == 1 /* MODIFIED */) {
-                    cui_row(ui, .gap = 3, .align = CUI_ALIGN_CENTER) {
-                        if (node->added_lines > 0) {
-                            char a_buf[24];
-                            snprintf(a_buf, sizeof(a_buf), "+%d", node->added_lines);
-                            cui_badge(ui, a_buf, .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                        }
-                        if (node->removed_lines > 0) {
-                            char r_buf[24];
-                            snprintf(r_buf, sizeof(r_buf), "-%d", node->removed_lines);
-                            cui_badge(ui, r_buf, .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
-                        }
-                        if (node->added_lines == 0 && node->removed_lines == 0) {
-                            cui_badge(ui, "改动", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
-                        }
-                    }
-                } else if (node->diff_status == 2 /* ADDED */) {
-                    char a_buf[24];
-                    if (node->added_lines > 0) {
-                        snprintf(a_buf, sizeof(a_buf), "+%d", node->added_lines);
-                    } else {
-                        snprintf(a_buf, sizeof(a_buf), "+新增");
-                    }
-                    cui_badge(ui, a_buf, .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                } else if (node->diff_status == 3 /* DELETED */) {
-                    char r_buf[24];
-                    if (node->removed_lines > 0) {
-                        snprintf(r_buf, sizeof(r_buf), "-%d", node->removed_lines);
-                    } else {
-                        snprintf(r_buf, sizeof(r_buf), "-缺失");
-                    }
-                    cui_badge(ui, r_buf, .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
-                } else {
-                    cui_badge(ui, "一致", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
-                }
+        /* File name */
+        cui_color name_color = is_selected ? CUI_COLOR_ACCENT : CUI_COLOR_FOREGROUND;
+        if (!is_selected && opts->show_diff_badges && node->has_diff_info) {
+            if (node->diff_status == 2 /* ADDED */) {
+                name_color = CUI_COLOR_SUCCESS;
+            } else if (node->diff_status == 3 /* DELETED */) {
+                name_color = CUI_COLOR_DANGER;
             }
         }
-        cui_card_end(ui);
+        cui_text(ui, node->name, .size = 11,
+                 .font = is_selected ? CUI_FONT_MEDIUM : CUI_FONT_BODY,
+                 .color = name_color);
 
-        if (row_clicked) {
+        cui_spacer(ui);
+
+        /* Trailing Diff Indicator for Files (clean text, no capsule/badge) */
+        if (opts->show_diff_badges && node->has_diff_info) {
+            if (node->diff_status == 1 /* MODIFIED */) {
+                cui_row(ui, .gap = 4, .align = CUI_ALIGN_CENTER) {
+                    if (node->added_lines > 0) {
+                        char a_buf[24];
+                        snprintf(a_buf, sizeof(a_buf), "+%d", node->added_lines);
+                        cui_text(ui, a_buf, .color = CUI_COLOR_SUCCESS, .size = 10, .font = CUI_FONT_MONO);
+                    }
+                    if (node->removed_lines > 0) {
+                        char r_buf[24];
+                        snprintf(r_buf, sizeof(r_buf), "-%d", node->removed_lines);
+                        cui_text(ui, r_buf, .color = CUI_COLOR_DANGER, .size = 10, .font = CUI_FONT_MONO);
+                    }
+                    if (node->added_lines == 0 && node->removed_lines == 0) {
+                        cui_text(ui, "M", .color = CUI_COLOR_WARNING, .size = 10, .font = CUI_FONT_MEDIUM);
+                    }
+                }
+            } else if (node->diff_status == 2 /* ADDED */) {
+                if (node->added_lines > 0) {
+                    char a_buf[24];
+                    snprintf(a_buf, sizeof(a_buf), "+%d", node->added_lines);
+                    cui_text(ui, a_buf, .color = CUI_COLOR_SUCCESS, .size = 10, .font = CUI_FONT_MONO);
+                } else {
+                    cui_text(ui, "A", .color = CUI_COLOR_SUCCESS, .size = 10, .font = CUI_FONT_MEDIUM);
+                }
+            } else if (node->diff_status == 3 /* DELETED */) {
+                if (node->removed_lines > 0) {
+                    char r_buf[24];
+                    snprintf(r_buf, sizeof(r_buf), "-%d", node->removed_lines);
+                    cui_text(ui, r_buf, .color = CUI_COLOR_DANGER, .size = 10, .font = CUI_FONT_MONO);
+                } else {
+                    cui_text(ui, "D", .color = CUI_COLOR_DANGER, .size = 10, .font = CUI_FONT_MEDIUM);
+                }
+            }
+            /* Note: when diff_status == 0 (UNCHANGED), render NOTHING! Clean! */
+        }
+
+        cui__close(ui);
+
+        if (r.clicked) {
             if (on_select) {
                 on_select(node, user_data);
             }
         }
-
-        cui_pop_id(ui);
     }
 }
 
@@ -319,7 +338,7 @@ void render_skill_file_tree_component(cui_ctx *ui,
     if (!opts) return;
     float w = opts->width > 0 ? opts->width : 280.0f;
 
-    cui_card(ui, .width = CUI_PX(w), .height = CUI_FILL, .pad = 10, .gap = 8) {
+    cui_card(ui, .width = CUI_PX(w), .height = CUI_FILL, .pad = 8, .gap = 6) {
         /* 1. Header */
         cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
             cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
@@ -328,49 +347,48 @@ void render_skill_file_tree_component(cui_ctx *ui,
             }
             cui_spacer(ui);
             if (opts->badge_label && opts->badge_label[0] != '\0') {
-                cui_badge(ui, opts->badge_label, .tone = opts->badge_tone, .size = CUI_SIZE_SM);
+                cui_text(ui, opts->badge_label, .color = CUI_COLOR_TEXT_MUTED, .size = 11);
             }
         }
 
-        /* 2. Optional Summary Badges */
+        /* 2. Optional Summary */
         if (opts->show_summary_badges) {
-            cui_row(ui, .gap = 4, .align = CUI_ALIGN_CENTER) {
+            cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                 if (opts->summary_modified > 0) {
                     char m_buf[32];
                     snprintf(m_buf, sizeof(m_buf), "%d 改动", opts->summary_modified);
-                    cui_badge(ui, m_buf, .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
+                    cui_text(ui, m_buf, .color = CUI_COLOR_WARNING, .size = 11, .font = CUI_FONT_MEDIUM);
                 }
                 if (opts->summary_added > 0) {
                     char a_buf[32];
                     snprintf(a_buf, sizeof(a_buf), "%d 新增", opts->summary_added);
-                    cui_badge(ui, a_buf, .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
+                    cui_text(ui, a_buf, .color = CUI_COLOR_SUCCESS, .size = 11, .font = CUI_FONT_MEDIUM);
                 }
                 if (opts->summary_deleted > 0) {
                     char d_buf[32];
                     snprintf(d_buf, sizeof(d_buf), "%d 缺失", opts->summary_deleted);
-                    cui_badge(ui, d_buf, .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
+                    cui_text(ui, d_buf, .color = CUI_COLOR_DANGER, .size = 11, .font = CUI_FONT_MEDIUM);
                 }
                 if (opts->summary_total_added_lines > 0 || opts->summary_total_removed_lines > 0) {
                     char l_buf[48];
                     snprintf(l_buf, sizeof(l_buf), "+%d / -%d 行",
                              opts->summary_total_added_lines, opts->summary_total_removed_lines);
-                    cui_badge(ui, l_buf, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
+                    cui_text(ui, l_buf, .color = CUI_COLOR_ACCENT, .size = 11, .font = CUI_FONT_MEDIUM);
                 }
                 if (opts->summary_modified == 0 &&
                     opts->summary_added == 0 &&
                     opts->summary_deleted == 0 &&
                     opts->summary_total_files > 0) {
-                    cui_badge(ui, "全文件一致", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
+                    cui_text(ui, "全文件一致", .color = CUI_COLOR_SUCCESS, .size = 11, .font = CUI_FONT_MEDIUM);
                 }
             }
+            cui_separator(ui);
         }
-
-        cui_separator(ui);
 
         /* 3. Scrollable Tree Body */
         cui_scroll(ui, .id = "skill_tree_scroll_area", .width = CUI_FILL, .height = CUI_FILL) {
             if (root && root->child_count > 0) {
-                cui_column(ui, .width = CUI_FILL, .gap = 2) {
+                cui_column(ui, .width = CUI_FILL, .gap = 1) {
                     for (int i = 0; i < root->child_count; i++) {
                         render_tree_node(ui, &root->children[i], 0, opts, on_select, user_data);
                     }

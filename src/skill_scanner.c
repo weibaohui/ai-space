@@ -16,6 +16,9 @@ static int compare_skills(const void *a, const void *b) {
 static int compare_file_nodes(const void *a, const void *b) {
     const file_node_t *na = (const file_node_t *)a;
     const file_node_t *nb = (const file_node_t *)b;
+    /* SKILL.md always at the top */
+    if (strcmp(na->name, "SKILL.md") == 0) return -1;
+    if (strcmp(nb->name, "SKILL.md") == 0) return 1;
     if (na->is_dir != nb->is_dir) {
         return na->is_dir ? -1 : 1; /* directories first */
     }

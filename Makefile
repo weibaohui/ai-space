@@ -1,5 +1,5 @@
 CC ?= cc
-CFLAGS = -std=c99 -O2 -Wall -Wextra -Iinclude -ICUI/include
+CFLAGS = -std=c99 -O2 -Wall -Wextra -Iinclude -ICUI/include -ICUI/src
 LDFLAGS = CUI/build/libcui.a -lsqlite3 -framework Cocoa -framework QuartzCore -framework OpenGL
 
 SRCS = src/main.c src/view_common.c src/view_tools.c src/view_tool_skills.c \
