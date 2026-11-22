@@ -162,16 +162,10 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
         }
 
         cui_spacer(ui);
-
-        /* View mode toggle */
-        static const char *view_modes[] = { "树形结构与内容", "全部技能清单" };
-        cui_tabs(ui, "skills_view_mode_tabs", view_modes, 2, &s->skill_view_mode);
     }
 
-    /* 2. Main Content Body */
-    if (s->skill_view_mode == 0) {
-        /* Layout: Left Skills List (250px) | Middle File Tree (280px) | Right Content Viewer (Fill) */
-        cui_row(ui, .width = CUI_FILL, .height = CUI_FILL, .gap = 14) {
+    /* 2. Main Content Body: Left Skills List (250px) | Middle File Tree (280px) | Right Content Viewer (Fill) */
+    cui_row(ui, .width = CUI_FILL, .height = CUI_FILL, .gap = 14) {
 
             /* Left Pane: Skills List */
             cui_card(ui, .width = CUI_PX(250), .height = CUI_FILL, .pad = 12, .gap = 10) {
@@ -308,56 +302,4 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
                 }
             }
         }
-    } else {
-        /* View Mode 1: Table list of all skills */
-        static const cui_table_column skl_cols[] = {
-            { "技能目录名", CUI_PX(180), CUI_TEXT_LEFT, true },
-            { "包含文件数", CUI_PX(100), CUI_TEXT_RIGHT, true },
-            { "SKILL.md",   CUI_PX(100), CUI_TEXT_CENTER, true },
-            { "技能描述",   CUI_FILL, CUI_TEXT_LEFT, false },
-            { "操作",       CUI_PX(120), CUI_TEXT_CENTER, false },
-        };
-
-        cui_card(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 0, .gap = 0) {
-            cui_table(ui, "skills_table_view", skl_cols, 5,
-                      .sort = &s->skill_table_sort, .striped = true, .compact = true,
-                      .selectable = true, .height = CUI_FILL) {
-                for (int i = 0; i < s->skill_count; i++) {
-                    skill_item_t *sk = &s->skill_items[i];
-                    cui_push_id_int(ui, i);
-                    cui_table_row(ui, false);
-
-                    /* Col 0: Skill Name */
-                    cui_table_cell(ui);
-                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, CUI_ICON_BOX, 14, CUI_COLOR_ACCENT);
-                        cui_text(ui, sk->name, .font = CUI_FONT_MEDIUM);
-                    }
-
-                    /* Col 1: File count */
-                    cui_table_cell_textf(ui, "%d 个文件", sk->file_count);
-
-                    /* Col 2: has SKILL.md */
-                    cui_table_cell(ui);
-                    if (sk->has_skill_md) {
-                        cui_badge(ui, "已具备", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                    } else {
-                        cui_badge(ui, "未找到", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
-                    }
-
-                    /* Col 3: Description */
-                    cui_table_cell_text(ui, sk->description[0] ? sk->description : "-");
-
-                    /* Col 4: Action */
-                    cui_table_cell(ui);
-                    if (cui_button(ui, "进入树形", .variant = CUI_BUTTON_OUTLINE, .size = CUI_SIZE_SM)) {
-                        s->skill_view_mode = 0;
-                        select_active_skill(s, sk->name, sk->path);
-                    }
-
-                    cui_pop_id(ui);
-                }
-            }
-        }
     }
-}
