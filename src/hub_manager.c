@@ -292,14 +292,17 @@ static int compare_skill_entries(const void *a, const void *b) {
     return strcmp(ea->skill_name, eb->skill_name);
 }
 
-int hub_scan_matrix(sqlite3 *db, hub_matrix_t *out_matrix) {
+int hub_scan_matrix_ex(sqlite3 *db, hub_matrix_t *out_matrix, hub_progress_cb cb, void *user_data) {
     if (!out_matrix) return -1;
     memset(out_matrix, 0, sizeof(hub_matrix_t));
+
+    if (cb) cb(0.02f, "初始化技能主版本中心...", user_data);
 
     hub_init_dirs(out_matrix->hub_dir, sizeof(out_matrix->hub_dir),
                   out_matrix->backup_dir, sizeof(out_matrix->backup_dir));
 
     /* 1. Query registered tools from DB */
+    if (cb) cb(0.05f, "正在读取已识别的本地工具...", user_data);
     sqlite3_stmt *stmt = NULL;
     const char *sql = "SELECT name, path FROM local_tools ORDER BY name ASC;";
     if (db && sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
@@ -326,6 +329,7 @@ int hub_scan_matrix(sqlite3 *db, hub_matrix_t *out_matrix) {
     }
 
     /* 2. Gather all unique skill names from Hub + all registered Tools */
+    if (cb) cb(0.12f, "正在检索各工具与主仓中的技能目录...", user_data);
     int name_cap = 64;
     int name_count = 0;
     char **unique_names = (char **)malloc(sizeof(char *) * name_cap);
@@ -390,6 +394,13 @@ int hub_scan_matrix(sqlite3 *db, hub_matrix_t *out_matrix) {
     for (int i = 0; i < name_count; i++) {
         hub_skill_entry_t *entry = &out_matrix->skills[i];
         strncpy(entry->skill_name, unique_names[i], sizeof(entry->skill_name) - 1);
+
+        if (cb && (i % 4 == 0 || i == name_count - 1)) {
+            float p = 0.15f + 0.80f * ((float)(i + 1) / (float)(name_count ? name_count : 1));
+            char p_msg[128];
+            snprintf(p_msg, sizeof(p_msg), "正在比对分析 (%d/%d): %s", i + 1, name_count, entry->skill_name);
+            cb(p, p_msg, user_data);
+        }
 
         /* Check Hub */
         snprintf(entry->hub_path, sizeof(entry->hub_path), "%s/%s",
@@ -473,7 +484,12 @@ int hub_scan_matrix(sqlite3 *db, hub_matrix_t *out_matrix) {
     strftime(out_matrix->last_scanned_at, sizeof(out_matrix->last_scanned_at),
              "%Y-%m-%d %H:%M:%S", &tm_info);
 
+    if (cb) cb(1.0f, "比对分析完成", user_data);
     return 0;
+}
+
+int hub_scan_matrix(sqlite3 *db, hub_matrix_t *out_matrix) {
+    return hub_scan_matrix_ex(db, out_matrix, NULL, NULL);
 }
 
 void hub_free_matrix(hub_matrix_t *matrix) {
@@ -577,12 +593,20 @@ int hub_broadcast_skill(const hub_matrix_t *matrix, const char *skill_name, int 
     return 0;
 }
 
-int hub_adopt_all_to_master(const hub_matrix_t *matrix, int *out_adopted_count) {
+int hub_adopt_all_to_master_ex(const hub_matrix_t *matrix, int *out_adopted_count,
+                              hub_progress_cb cb, void *user_data) {
     if (!matrix) return -1;
 
     int adopted = 0;
-    for (int i = 0; i < matrix->skill_count; i++) {
+    int total = matrix->skill_count;
+    for (int i = 0; i < total; i++) {
         hub_skill_entry_t *entry = &matrix->skills[i];
+        if (cb && (i % 3 == 0 || i == total - 1)) {
+            float p = (float)(i + 1) / (float)(total ? total : 1);
+            char p_msg[128];
+            snprintf(p_msg, sizeof(p_msg), "收录纳管技能 (%d/%d): %s", i + 1, total, entry->skill_name);
+            cb(p, p_msg, user_data);
+        }
         if (!entry->in_hub && entry->installed_count > 0) {
             /* Find first existing tool copy to promote */
             for (int t = 0; t < entry->tool_count; t++) {
@@ -597,6 +621,11 @@ int hub_adopt_all_to_master(const hub_matrix_t *matrix, int *out_adopted_count) 
         }
     }
 
+    if (cb) cb(1.0f, "全量纳管收录完成", user_data);
     if (out_adopted_count) *out_adopted_count = adopted;
     return 0;
+}
+
+int hub_adopt_all_to_master(const hub_matrix_t *matrix, int *out_adopted_count) {
+    return hub_adopt_all_to_master_ex(matrix, out_adopted_count, NULL, NULL);
 }

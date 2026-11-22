@@ -58,11 +58,15 @@ typedef struct {
     char last_scanned_at[32];
 } hub_matrix_t;
 
+/* Progress callback for long-running operations */
+typedef void (*hub_progress_cb)(float percent, const char *status_msg, void *user_data);
+
 /* Initialize central hub directories (~/.ai-space/skills, ~/.ai-space/backups) */
 int hub_init_dirs(char *out_hub_dir, size_t hub_cap, char *out_backup_dir, size_t backup_cap);
 
 /* Scan all registered tools and the Master Hub, build the full relation & status matrix */
 int hub_scan_matrix(sqlite3 *db, hub_matrix_t *out_matrix);
+int hub_scan_matrix_ex(sqlite3 *db, hub_matrix_t *out_matrix, hub_progress_cb cb, void *user_data);
 
 /* Free memory in hub_matrix_t */
 void hub_free_matrix(hub_matrix_t *matrix);
@@ -88,6 +92,7 @@ int hub_broadcast_skill(const hub_matrix_t *matrix, const char *skill_name, int 
  * Adopt all unmanaged skills from all tools into the Master Hub (one-click initial sync)
  */
 int hub_adopt_all_to_master(const hub_matrix_t *matrix, int *out_adopted_count);
+int hub_adopt_all_to_master_ex(const hub_matrix_t *matrix, int *out_adopted_count, hub_progress_cb cb, void *user_data);
 
 /* Recursive directory copy */
 int hub_copy_dir_recursive(const char *src_dir, const char *dst_dir);
