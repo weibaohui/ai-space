@@ -463,7 +463,6 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                     char tl_txt[32];
                     snprintf(tl_txt, sizeof(tl_txt), "%d", local_tools_count);
                     cui_text(ui, tl_txt, .font = CUI_FONT_DISPLAY, .size = 20);
-                    cui_text(ui, "(Gemini/Antigravity/Cursor/Claude)", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
                 }
             }
 
