@@ -41,23 +41,40 @@ AI-Space 是一款专为 AI 编码助手（如 Claude、Gemini CLI、Cursor、Co
 ## 🚀 快速上手
 
 ### 环境要求
-- macOS / Linux
+- macOS / Linux / Windows（跨平台）
 - C 语言编译器（`clang` 或 `gcc`，支持 C99 标准）
 - SQLite3 运行库（`-lsqlite3`）
-- OpenGL & Cocoa（macOS 平台）
+- Linux 需要 X11 开发头文件（`libx11-dev`）；Windows 需 MinGW（MSYS2）；macOS 无额外依赖
 
 ### 编译构建
 ```bash
-# 克隆仓库
-git clone https://github.com/weibaohui/ai-space.git
+# 克隆仓库（含 CUI 子模块）
+git clone --recursive https://github.com/weibaohui/ai-space.git
 cd ai-space
 
-# 编译生成可执行文件
+# 方式一：本地 macOS 开发（Makefile）
 make
 
-# 运行应用程序
-./ai_space
+# 方式二：跨平台构建（Linux / macOS / Windows，CMake）
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+./build/ai_space
 ```
+
+### 自动化构建（GitHub Actions）
+推送 / 打 tag 后，[build workflow](.github/workflows/build.yml) 会自动为以下平台矩阵编译并打包
+（归档内含可执行文件与 CJK 字体 `fonts/`）：
+
+| 平台 | 架构 | Runner |
+|---|---|---|
+| Linux | x86_64 / arm64 | ubuntu-22.04 / ubuntu-22.04-arm |
+| macOS | arm64 / x86_64 / Universal2 | macos-14 / macos-13 |
+| Windows | x86_64 / arm64 | MSYS2 MinGW64 / CLANGARM64 |
+
+- 每次推送：产物上传为 workflow artifact（Actions 页面下载）；
+- 推送 `v*` tag：产物自动附加到 GitHub Release。
+
+> ⚠️ 运行时请保持可执行文件与 `fonts/` 目录相对位置不变（CJK 字体从相对路径加载）。
 
 ---
 

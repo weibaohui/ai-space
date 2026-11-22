@@ -1,0 +1,133 @@
+#ifndef AI_PORTABILITY_H
+#define AI_PORTABILITY_H
+
+#include <stdio.h>
+#include <stdlib.h>
+
+/*
+ * Cross-platform shims so ai_space compiles unchanged on macOS/Linux (POSIX)
+ * and Windows (MinGW). Call sites use the AI_* macros and ai_* helpers below
+ * instead of POSIX-only APIs; POSIX platforms keep the original behavior.
+ *
+ * On Windows we deliberately do NOT include <unistd.h>: its POSIX declarations
+ * (usleep etc.) clash with the CRT, so every unistd-only symbol goes through
+ * this header instead.
+ */
+
+#ifdef _WIN32
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <direct.h> /* _mkdir, _rmdir, _getcwd */
+#include <io.h>     /* _access, _unlink */
+#include <process.h> /* _getpid */
+
+/* POSIX 2-arg mkdir -> Win32 1-arg _mkdir */
+#define AI_MKDIR(path) _mkdir((path))
+
+/* mkdir -p: create path and missing parents (accepts / and \ separators) */
+static inline void ai_mkdir_p(const char *path) {
+    if (!path || !path[0]) return;
+    char tmp[1024];
+    snprintf(tmp, sizeof(tmp), "%s", path);
+    for (char *p = tmp + 1; *p; p++) {
+        if (*p == '/' || *p == '\\') {
+            char saved = *p;
+            *p = '\0';
+            _mkdir(tmp);
+            *p = saved;
+        }
+    }
+    _mkdir(tmp);
+}
+
+/* popen/pclose -> _popen/_pclose (executed via cmd.exe; git/curl.exe ship with Windows) */
+#define AI_POPEN(cmd, mode) _popen((cmd), (mode))
+#define AI_PCLOSE(f)        _pclose((f))
+
+/* microseconds -> Sleep(milliseconds) */
+static inline void ai_usleep(long usec) { Sleep((DWORD)(usec / 1000)); }
+#define usleep(usec) ai_usleep((long)(usec))
+
+/* POSIX dirname(3): mutates the buffer, returns pointer inside it */
+static inline char *ai_dirname(char *path) {
+    if (!path || path[0] == '\0') return ".";
+    char *last = NULL;
+    for (char *p = path; *p; p++) {
+        if (*p == '/' || *p == '\\') last = p;
+    }
+    if (!last) { path[0] = '.'; path[1] = '\0'; return path; }
+    if (last == path) { path[1] = '\0'; return path; } /* "/usr" -> "/" */
+    *last = '\0';
+    return path;
+}
+
+/* USERPROFILE is the Windows user home; HOME kept as a manual override */
+static inline const char *ai_home_dir(void) {
+    const char *h = getenv("USERPROFILE");
+    if (h && h[0]) return h;
+    h = getenv("HOME");
+    if (h && h[0]) return h;
+    return "";
+}
+
+/* POSIX setenv(3) -> CRT _putenv */
+static inline int ai_setenv(const char *name, const char *value) {
+    char kv[1024];
+    snprintf(kv, sizeof(kv), "%s=%s", name ? name : "", value ? value : "");
+    return _putenv(kv);
+}
+
+/* null device of the shell (cmd.exe: NUL, POSIX: /dev/null) */
+#define AI_DEVNULL "NUL"
+
+static inline int ai_getpid(void) { return _getpid(); }
+#define getpid() ai_getpid()
+
+#else /* POSIX */
+
+#include <unistd.h>
+#include <pwd.h>
+#include <libgen.h> /* dirname */
+
+#define AI_MKDIR(path)       mkdir((path), 0755)
+
+/* mkdir -p: create path and missing parents (accepts / and \ separators) */
+static inline void ai_mkdir_p(const char *path) {
+    if (!path || !path[0]) return;
+    char tmp[1024];
+    snprintf(tmp, sizeof(tmp), "%s", path);
+    for (char *p = tmp + 1; *p; p++) {
+        if (*p == '/' || *p == '\\') {
+            char saved = *p;
+            *p = '\0';
+            mkdir(tmp, 0755);
+            *p = saved;
+        }
+    }
+    mkdir(tmp, 0755);
+}
+
+#define AI_POPEN(cmd, mode)  popen((cmd), (mode))
+#define AI_PCLOSE(f)         pclose((f))
+#define ai_dirname(path)     dirname((path))
+
+static inline const char *ai_home_dir(void) {
+    const char *h = getenv("HOME");
+    if (h && h[0]) return h;
+    struct passwd *pw = getpwuid(getuid());
+    if (pw && pw->pw_dir && pw->pw_dir[0]) return pw->pw_dir;
+    return "";
+}
+
+static inline int ai_setenv(const char *name, const char *value) {
+    return setenv(name, value ? value : "", 1);
+}
+
+#define AI_DEVNULL "/dev/null"
+
+#endif /* _WIN32 */
+
+#endif /* AI_PORTABILITY_H */

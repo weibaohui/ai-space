@@ -4,8 +4,8 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include <ctype.h>
+#include "portability.h"
 
 static int compare_skills(const void *a, const void *b) {
     const skill_item_t *sa = (const skill_item_t *)a;

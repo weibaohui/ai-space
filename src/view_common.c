@@ -7,10 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <unistd.h>
 #include <dirent.h>
 #include <sys/stat.h>
 #include "db.h"
+#include "portability.h"
 
 bool ci_contains(const char *haystack, const char *needle) {
     if (!haystack || !needle || needle[0] == '\0') return true;
@@ -853,18 +853,28 @@ void start_broadcast_thread(app_state_t *s, const char *skill_name, int tool_idx
 }
 
 void render_app_sidebar(cui_ctx *ui, app_state_t *s) {
-    cui_column(ui, .width = CUI_PX(235), .height = CUI_FILL,
-               .bg = CUI_COLOR_SURFACE_MUTED, .pad = 10, .gap = 4) {
+    cui_column(ui, .width = CUI_PX(220), .height = CUI_FILL,
+               .bg = CUI_COLOR_SURFACE_MUTED, .pad = 12, .gap = 2) {
 
-        /* Navigation items matching reference Dashboard */
+        /* Navigation items */
         cui_scroll(ui, .id = "sidebar_nav", .height = CUI_FILL, .gap = 2) {
+            cui_nav_section(ui, "核心总览");
+
             bool is_dash = (s->current_page == PAGE_DASHBOARD);
-            if (cui_nav_item(ui, "首页 Dashboard", .icon = CUI_ICON_LAYOUT_DASHBOARD, .selected = is_dash, .group = "pages")) {
+            if (cui_nav_item(ui, "首页", .icon = CUI_ICON_LAYOUT_DASHBOARD, .selected = is_dash, .group = "pages")) {
                 s->current_page = PAGE_DASHBOARD;
             }
 
+            cui_gap(ui, 10);
+            cui_nav_section(ui, "工作空间");
+
+            bool is_tools = (s->current_page == PAGE_TOOL_LIST || s->current_page == PAGE_TOOL_SKILLS);
+            if (cui_nav_item(ui, "工具列表", .icon = CUI_ICON_FOLDER, .selected = is_tools, .group = "pages")) {
+                s->current_page = PAGE_TOOL_LIST;
+            }
+
             bool is_skills = (s->current_page == PAGE_ALL_SKILLS);
-            if (cui_nav_item(ui, "技能库 Master Hub", .icon = CUI_ICON_DATABASE, .selected = is_skills, .group = "pages")) {
+            if (cui_nav_item(ui, "技能列表", .icon = CUI_ICON_PACKAGE, .selected = is_skills, .group = "pages")) {
                 s->current_page = PAGE_ALL_SKILLS;
                 if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning) {
                     start_hub_scan_thread(s);
@@ -872,7 +882,7 @@ void render_app_sidebar(cui_ctx *ui, app_state_t *s) {
             }
 
             bool is_hub = (s->current_page == PAGE_HUB_MATRIX);
-            if (cui_nav_item(ui, "分发管理 Distribute", .icon = CUI_ICON_SEND, .selected = is_hub, .group = "pages")) {
+            if (cui_nav_item(ui, "主仓管理", .icon = CUI_ICON_ARCHIVE, .selected = is_hub, .group = "pages")) {
                 s->current_page = PAGE_HUB_MATRIX;
                 s->hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
                 if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning) {
@@ -880,24 +890,25 @@ void render_app_sidebar(cui_ctx *ui, app_state_t *s) {
                 }
             }
 
-            bool is_tools = (s->current_page == PAGE_TOOL_LIST || s->current_page == PAGE_TOOL_SKILLS);
-            if (cui_nav_item(ui, "差异对比 Diff", .icon = CUI_ICON_GIT_BRANCH, .selected = is_tools, .group = "pages")) {
-                s->current_page = PAGE_TOOL_LIST;
+            bool is_sync = (s->current_page == PAGE_SYNC_MANAGER);
+            if (cui_nav_item(ui, "同步管理", .icon = CUI_ICON_GLOBE, .selected = is_sync, .group = "pages")) {
+                s->current_page = PAGE_SYNC_MANAGER;
+                if (!s->sync_drift_loaded && !s->sync_is_busy) {
+                    start_sync_check_thread(s);
+                }
             }
 
-            bool is_sync = (s->current_page == PAGE_SYNC_MANAGER);
-            if (cui_nav_item(ui, "远端同步 Remote Sync", .icon = CUI_ICON_CLOUD, .selected = is_sync, .group = "pages")) {
-                s->current_page = PAGE_SYNC_MANAGER;
+            cui_gap(ui, 12);
+            cui_nav_section(ui, "系统配置");
+
+            bool is_settings = (s->current_page == PAGE_SETTINGS);
+            if (cui_nav_item(ui, "系统设置", .icon = CUI_ICON_SETTINGS, .selected = is_settings, .group = "pages")) {
+                s->current_page = PAGE_SETTINGS;
             }
 
             bool is_about = (s->current_page == PAGE_ABOUT);
-            if (cui_nav_item(ui, "历史快照 Snapshots", .icon = CUI_ICON_CLOCK, .selected = is_about, .group = "pages")) {
+            if (cui_nav_item(ui, "关于系统", .icon = CUI_ICON_INFO, .selected = is_about, .group = "pages")) {
                 s->current_page = PAGE_ABOUT;
-            }
-
-            bool is_settings = (s->current_page == PAGE_SETTINGS);
-            if (cui_nav_item(ui, "设置 Settings", .icon = CUI_ICON_SETTINGS, .selected = is_settings, .group = "pages")) {
-                s->current_page = PAGE_SETTINGS;
             }
         }
     }

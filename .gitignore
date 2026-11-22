@@ -3,7 +3,10 @@ test_sync
 *.o
 tests/*.o
 shot*.png
+smoke.png
 CUI/build/
+build/
+pack/
 data/*.db
 data/*.db-wal
 data/*.db-shm

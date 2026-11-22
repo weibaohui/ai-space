@@ -4,15 +4,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <libgen.h>
+#include "portability.h"
 
 static void ensure_parent_dir(const char *path) {
     char tmp[512];
     strncpy(tmp, path, sizeof(tmp) - 1);
     tmp[sizeof(tmp) - 1] = '\0';
-    char *dir = dirname(tmp);
-    if (dir && strcmp(dir, ".") != 0 && strcmp(dir, "/") != 0) {
-        mkdir(dir, 0755);
+    char *dir = ai_dirname(tmp);
+    if (dir && strcmp(dir, ".") != 0 && strcmp(dir, "/") != 0 && strcmp(dir, "\\") != 0) {
+        AI_MKDIR(dir);
     }
 }
 

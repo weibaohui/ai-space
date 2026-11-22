@@ -4,8 +4,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
-#include <unistd.h>
-#include <pwd.h>
+#include "portability.h"
 
 static int compare_tools(const void *a, const void *b) {
     const discovered_tool_t *ta = (const discovered_tool_t *)a;
@@ -39,11 +38,7 @@ int scanner_scan(discovered_tool_t **out_tools, int *out_count) {
     *out_tools = NULL;
     *out_count = 0;
 
-    const char *home = getenv("HOME");
-    if (!home || home[0] == '\0') {
-        struct passwd *pw = getpwuid(getuid());
-        if (pw) home = pw->pw_dir;
-    }
+    const char *home = ai_home_dir();
     if (!home || home[0] == '\0') {
         fprintf(stderr, "[scanner] Unable to determine user HOME directory.\n");
         return -1;

@@ -7,9 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
-#include <pwd.h>
 #include <dirent.h>
+#include "portability.h"
 
 typedef struct {
     cui_color color;
@@ -30,12 +29,8 @@ static void expand_path_helper(const char *in, char *out, size_t cap) {
         return;
     }
     if (in[0] == '~' && (in[1] == '/' || in[1] == '\0')) {
-        const char *home = getenv("HOME");
-        if (!home || home[0] == '\0') {
-            struct passwd *pw = getpwuid(getuid());
-            if (pw) home = pw->pw_dir;
-        }
-        if (home) {
+        const char *home = ai_home_dir();
+        if (home && home[0]) {
             snprintf(out, cap, "%s%s", home, in + 1);
             return;
         }

@@ -4,9 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include <dirent.h>
-#include <pwd.h>
+#include "portability.h"
 
 typedef struct {
     char expanded_path[512];
@@ -18,12 +17,8 @@ static void expand_path_local(const char *in, char *out, size_t cap) {
         return;
     }
     if (in[0] == '~' && (in[1] == '/' || in[1] == '\0')) {
-        const char *h = getenv("HOME");
-        if (!h || h[0] == '\0') {
-            struct passwd *pw = getpwuid(getuid());
-            if (pw) h = pw->pw_dir;
-        }
-        if (h) {
+        const char *h = ai_home_dir();
+        if (h && h[0]) {
             snprintf(out, cap, "%s%s", h, in + 1);
             return;
         }
@@ -56,7 +51,7 @@ static int nfs_check_available(sync_backend_t *self, char *err_buf, size_t err_c
 
     struct stat st;
     if (stat(priv->expanded_path, &st) != 0) {
-        if (mkdir(priv->expanded_path, 0755) != 0) {
+        if (AI_MKDIR(priv->expanded_path) != 0) {
             if (err_buf) snprintf(err_buf, err_cap, "共享目录不存在且无法自动创建: %s", priv->expanded_path);
             return -1;
         }
@@ -272,7 +267,7 @@ static int nfs_pull_skill(sync_backend_t *self, const char *skill_name, const ch
 
     char exp_local[512];
     expand_path_local(target_local_hub ? target_local_hub : "~/.ai-space/skills", exp_local, sizeof(exp_local));
-    mkdir(exp_local, 0755);
+    AI_MKDIR(exp_local);
 
     char src_dir[1024];
     snprintf(src_dir, sizeof(src_dir), "%s/%s", priv->expanded_path, skill_name);

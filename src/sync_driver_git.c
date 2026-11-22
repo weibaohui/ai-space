@@ -7,8 +7,7 @@
 #include <time.h>
 #include <dirent.h>
 #include <sys/stat.h>
-#include <unistd.h>
-#include <pwd.h>
+#include "portability.h"
 
 typedef struct {
     char repo_url[512];
@@ -25,12 +24,8 @@ static void expand_path_local(const char *in, char *out, size_t cap) {
         return;
     }
     if (in[0] == '~' && (in[1] == '/' || in[1] == '\0')) {
-        const char *h = getenv("HOME");
-        if (!h || h[0] == '\0') {
-            struct passwd *pw = getpwuid(getuid());
-            if (pw) h = pw->pw_dir;
-        }
-        if (h) {
+        const char *h = ai_home_dir();
+        if (h && h[0]) {
             snprintf(out, cap, "%s%s", h, in + 1);
             return;
         }
@@ -112,12 +107,14 @@ static int git_check_available(sync_backend_t *self, char *err_buf, size_t err_c
     git_build_auth_url(priv, auth_url, sizeof(auth_url));
 
     char cmd[1280];
+    /* env vars instead of the POSIX "VAR=val cmd" prefix (not valid under cmd.exe) */
+    ai_setenv("GIT_TERMINAL_PROMPT", "0");
+    ai_setenv("GIT_SSH_COMMAND", "ssh -o BatchMode=yes -o ConnectTimeout=8");
     snprintf(cmd, sizeof(cmd),
-             "GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND=\"ssh -o BatchMode=yes -o ConnectTimeout=8\" "
              "git ls-remote --exit-code \"%s\" HEAD 2>&1",
              auth_url);
 
-    FILE *pipe = popen(cmd, "r");
+    FILE *pipe = AI_POPEN(cmd, "r");
     if (!pipe) {
         if (err_buf) snprintf(err_buf, err_cap, "无法执行 git 检测命令");
         return -1;
@@ -129,7 +126,7 @@ static int git_check_available(sync_backend_t *self, char *err_buf, size_t err_c
         size_t l = strlen(first_line);
         if (l > 0 && first_line[l - 1] == '\n') first_line[l - 1] = '\0';
     }
-    int rc = pclose(pipe);
+    int rc = AI_PCLOSE(pipe);
 
     if (rc == 0) {
         self->is_connected = true;
@@ -177,30 +174,28 @@ static int ensure_git_cache_ready(git_priv_t *priv, char *err_buf, size_t err_ca
 
     if (stat(git_dir, &st) != 0) {
         /* Local clone does not exist: clone from remote */
-        char mkdir_cmd[1024];
-        snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p \"%s\"", priv->git_cache_dir);
-        system(mkdir_cmd);
+        ai_mkdir_p(priv->git_cache_dir);
 
         char clone_cmd[2048];
         snprintf(clone_cmd, sizeof(clone_cmd),
                  "git clone --branch \"%s\" \"%s\" \"%s\" 2>&1",
                  priv->branch, auth_url, priv->git_cache_dir);
 
-        FILE *pipe = popen(clone_cmd, "r");
+        FILE *pipe = AI_POPEN(clone_cmd, "r");
         char out[512] = "";
         if (pipe) {
             char line[256];
             while (fgets(line, sizeof(line), pipe)) {
                 if (out[0] == '\0') strncpy(out, line, sizeof(out) - 1);
             }
-            int rc = pclose(pipe);
+            int rc = AI_PCLOSE(pipe);
             if (rc != 0) {
                 /* Branch might not exist yet, try cloning default branch */
                 snprintf(clone_cmd, sizeof(clone_cmd),
                          "git clone \"%s\" \"%s\" 2>&1",
                          auth_url, priv->git_cache_dir);
-                FILE *p2 = popen(clone_cmd, "r");
-                if (p2) pclose(p2);
+                FILE *p2 = AI_POPEN(clone_cmd, "r");
+                if (p2) AI_PCLOSE(p2);
             }
         }
     } else {
@@ -408,7 +403,7 @@ static int git_pull_skill(sync_backend_t *self, const char *skill_name, const ch
 
     char exp_local[512];
     expand_path_local(target_local_hub ? target_local_hub : "~/.ai-space/skills", exp_local, sizeof(exp_local));
-    mkdir(exp_local, 0755);
+    AI_MKDIR(exp_local);
 
     if (cb) cb(0.2f, "正在从 Git 远端获取最新提交...", user_data);
     char pull_cmd[1024];
@@ -501,7 +496,7 @@ static int git_pull_all(sync_backend_t *self, const char *target_local_hub,
 
     char exp_local[512];
     expand_path_local(target_local_hub ? target_local_hub : "~/.ai-space/skills", exp_local, sizeof(exp_local));
-    mkdir(exp_local, 0755);
+    AI_MKDIR(exp_local);
 
     if (cb) cb(0.2f, "正在获取远端 Git 最新版本库...", user_data);
     char fetch_cmd[1024];

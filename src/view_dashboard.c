@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
+#include "portability.h"
 
 /* Top Global Header Bar (Window Title, App Info, Node status, Clock) */
 void render_app_top_bar(cui_ctx *ui, app_state_t *s) {

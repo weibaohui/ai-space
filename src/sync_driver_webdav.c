@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "portability.h"
 
 typedef struct {
     char url[512];
@@ -43,26 +44,26 @@ static int webdav_check_available(sync_backend_t *self, char *err_buf, size_t er
     char cmd[1024];
     if (priv->user[0] != '\0') {
         snprintf(cmd, sizeof(cmd),
-                 "curl -s -m 5 -o /dev/null -w \"%%{http_code}\" -u \"%s:%s\" -X OPTIONS \"%s\" 2>/dev/null",
-                 priv->user, priv->pass, priv->url);
+                 "curl -s -m 5 -o \"%s\" -w \"%%{http_code}\" -u \"%s:%s\" -X OPTIONS \"%s\" 2>\"%s\"",
+                 AI_DEVNULL, priv->user, priv->pass, priv->url, AI_DEVNULL);
     } else {
         snprintf(cmd, sizeof(cmd),
-                 "curl -s -m 5 -o /dev/null -w \"%%{http_code}\" -X OPTIONS \"%s\" 2>/dev/null",
-                 priv->url);
+                 "curl -s -m 5 -o \"%s\" -w \"%%{http_code}\" -X OPTIONS \"%s\" 2>\"%s\"",
+                 AI_DEVNULL, priv->url, AI_DEVNULL);
     }
 
-    FILE *pipe = popen(cmd, "r");
+    FILE *pipe = AI_POPEN(cmd, "r");
     if (!pipe) {
         if (err_buf) snprintf(err_buf, err_cap, "无法执行 curl 网络检测命令");
         return -1;
     }
     char code_str[16] = {0};
     if (!fgets(code_str, sizeof(code_str), pipe)) {
-        pclose(pipe);
+        AI_PCLOSE(pipe);
         if (err_buf) snprintf(err_buf, err_cap, "WebDAV 服务器连接超时或无响应");
         return -1;
     }
-    pclose(pipe);
+    AI_PCLOSE(pipe);
 
     int status_code = atoi(code_str);
     if (status_code >= 200 && status_code < 400) {

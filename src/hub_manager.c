@@ -4,8 +4,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
-#include <unistd.h>
-#include <pwd.h>
+#include "portability.h"
 #include <time.h>
 
 #define FNV_OFFSET 14695981039346656037ULL
@@ -21,12 +20,7 @@ static uint64_t fnv1a_update(uint64_t hash, const void *data, size_t len) {
 }
 
 static const char *get_user_home(void) {
-    const char *h = getenv("HOME");
-    if (!h || h[0] == '\0') {
-        struct passwd *pw = getpwuid(getuid());
-        if (pw) h = pw->pw_dir;
-    }
-    return h;
+    return ai_home_dir();
 }
 
 static char g_custom_hub_dir[512] = "";
@@ -72,13 +66,13 @@ void hub_get_custom_dirs(char *out_hub_dir, size_t hub_cap, char *out_backup_dir
     }
 }
 
-int hub_init_dirs(char *out_hub_dir, size_t hub_cap, char *out_backup_dir, size_t backup_cap) {
+    int hub_init_dirs(char *out_hub_dir, size_t hub_cap, char *out_backup_dir, size_t backup_cap) {
     const char *home = get_user_home();
     if (!home) return -1;
 
     char base[512];
     snprintf(base, sizeof(base), "%s/.ai-space", home);
-    mkdir(base, 0755);
+    AI_MKDIR(base);
 
     char hub[512];
     if (g_custom_hub_dir[0] != '\0') {
@@ -87,7 +81,7 @@ int hub_init_dirs(char *out_hub_dir, size_t hub_cap, char *out_backup_dir, size_
     } else {
         snprintf(hub, sizeof(hub), "%s/.ai-space/skills", home);
     }
-    mkdir(hub, 0755);
+    AI_MKDIR(hub);
 
     char backup[512];
     if (g_custom_backup_dir[0] != '\0') {
@@ -96,7 +90,7 @@ int hub_init_dirs(char *out_hub_dir, size_t hub_cap, char *out_backup_dir, size_
     } else {
         snprintf(backup, sizeof(backup), "%s/.ai-space/backups", home);
     }
-    mkdir(backup, 0755);
+    AI_MKDIR(backup);
 
     if (out_hub_dir && hub_cap > 0) {
         strncpy(out_hub_dir, hub, hub_cap - 1);
@@ -135,7 +129,7 @@ static int copy_single_file(const char *src, const char *dst) {
 int hub_copy_dir_recursive(const char *src_dir, const char *dst_dir) {
     if (!src_dir || !dst_dir) return -1;
 
-    mkdir(dst_dir, 0755);
+    AI_MKDIR(dst_dir);
     DIR *d = opendir(src_dir);
     if (!d) return -1;
 
