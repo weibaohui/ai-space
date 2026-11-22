@@ -111,7 +111,7 @@ void render_hub_matrix_page(cui_ctx *ui, app_state_t *s) {
             if (cui_button(ui, " 重新比对全景", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_REFRESH_CW)) {
                 start_hub_scan_thread(s);
             }
-            if (cui_button(ui, " 一键全量纳管主仓", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_CHECK)) {
+            if (cui_button(ui, " 一键全量收录主库", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_CHECK)) {
                 start_adopt_all_thread(s);
             }
         }
@@ -317,7 +317,7 @@ void render_hub_matrix_page(cui_ctx *ui, app_state_t *s) {
                                 start_broadcast_thread(s, e->skill_name, 0);
                             }
                         } else {
-                            if (cui_button(ui, " 纳管", .variant = CUI_BUTTON_PRIMARY,
+                            if (cui_button(ui, " 收录主库", .variant = CUI_BUTTON_PRIMARY,
                                            .size = CUI_SIZE_SM, .icon = CUI_ICON_CHECK)) {
                                 for (int t = 0; t < e->tool_count; t++) {
                                     if (e->tool_copies[t].exists) {

@@ -232,7 +232,7 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
             if (cui_button(ui, " 打开全景扫描矩阵", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_GRID_3X3)) {
                 s->hub_subview = HUB_SUBVIEW_SCAN_MATRIX;
             }
-            if (cui_button(ui, " 一键全量纳管本地技能", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_CHECK)) {
+            if (cui_button(ui, " 一键全量收录主库", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_CHECK)) {
                 start_adopt_all_thread(s);
             }
         }
@@ -248,7 +248,7 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                 cui_gap(ui, 16);
                 cui_heading(ui, "当前主仓 (~/.ai-space/skills) 尚未收录基准技能", 3);
                 cui_gap(ui, 6);
-                cui_text(ui, "主仓用于集中沉淀与统一管理跨工具的标准基准技能版本。可切换至【全景扫描】一键全量纳管，或单独比对采纳。",
+                cui_text(ui, "主仓用于集中沉淀与统一管理跨工具的标准基准技能版本。可切换至【全景扫描】一键全量收录主库，或单独比对采纳。",
                          .color = CUI_COLOR_TEXT_SECONDARY, .size = 13);
                 cui_gap(ui, 20);
                 if (cui_button(ui, " 前往技能全景扫描与比对", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_GRID_3X3)) {

@@ -494,7 +494,7 @@ static void *adopt_all_worker_thread(void *arg) {
     s->op_progress.thread_running = false;
 
     char toast[256];
-    snprintf(toast, sizeof(toast), "全量纳管完成！成功将 %d 个技能收录至主版本库", adopted);
+    snprintf(toast, sizeof(toast), "全量收录完成！成功将 %d 个技能收录至主库", adopted);
     app_set_toast(s, toast);
     return NULL;
 }
@@ -504,7 +504,7 @@ void start_adopt_all_thread(app_state_t *s) {
 
     s->op_progress.active = true;
     s->op_progress.percent = 0.05f;
-    strncpy(s->op_progress.title, "正在全量纳管本地技能至主版本库...", sizeof(s->op_progress.title) - 1);
+    strncpy(s->op_progress.title, "正在全量收录本地技能至主库...", sizeof(s->op_progress.title) - 1);
     strncpy(s->op_progress.message, "开始物理复制并建立主版本...", sizeof(s->op_progress.message) - 1);
     s->op_progress.thread_running = true;
 

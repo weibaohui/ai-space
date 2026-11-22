@@ -604,7 +604,7 @@ int hub_adopt_all_to_master_ex(const hub_matrix_t *matrix, int *out_adopted_coun
         if (cb && (i % 3 == 0 || i == total - 1)) {
             float p = (float)(i + 1) / (float)(total ? total : 1);
             char p_msg[128];
-            snprintf(p_msg, sizeof(p_msg), "收录纳管技能 (%d/%d): %s", i + 1, total, entry->skill_name);
+            snprintf(p_msg, sizeof(p_msg), "正在收录主库 (%d/%d): %s", i + 1, total, entry->skill_name);
             cb(p, p_msg, user_data);
         }
         if (!entry->in_hub && entry->installed_count > 0) {
@@ -621,7 +621,7 @@ int hub_adopt_all_to_master_ex(const hub_matrix_t *matrix, int *out_adopted_coun
         }
     }
 
-    if (cb) cb(1.0f, "全量纳管收录完成", user_data);
+    if (cb) cb(1.0f, "全量收录主库完成", user_data);
     if (out_adopted_count) *out_adopted_count = adopted;
     return 0;
 }
