@@ -16,9 +16,13 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
     /* 1. Global Navigation Bar */
     render_global_navbar(ui, s);
 
-    /* 2. Check Subview: Diff View */
+    /* 2. Check Subview: Diff View or Master Explorer View */
     if (s->hub_subview == HUB_SUBVIEW_DIFF) {
         render_hub_diff_subview(ui, s);
+        return;
+    }
+    if (s->hub_subview == HUB_SUBVIEW_EXPLORER) {
+        render_master_hub_explorer_view(ui, s);
         return;
     }
 
@@ -226,8 +230,23 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                         continue;
                     }
 
+                    static int s_last_skill_row = -1;
+                    static double s_last_skill_time = 0.0;
+
                     cui_push_id_int(ui, i);
-                    cui_table_row(ui, false);
+                    bool row_clicked = cui_table_row(ui, s_last_skill_row == i);
+                    if (row_clicked) {
+                        double now = cui_time(ui);
+                        if (s_last_skill_row == i && (now - s_last_skill_time) < 0.40) {
+                            s_last_skill_row = -1;
+                            s_last_skill_time = 0.0;
+                            s->prev_hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
+                            open_master_skill_explorer(s, e->skill_name);
+                        } else {
+                            s_last_skill_row = i;
+                            s_last_skill_time = now;
+                        }
+                    }
 
                     /* Col 0: Checkbox for Multi-Select */
                     cui_table_cell(ui);

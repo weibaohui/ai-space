@@ -33,6 +33,24 @@ void open_master_skill_explorer(app_state_t *s, const char *skill_name) {
     s->active_skill_name[sizeof(s->active_skill_name) - 1] = '\0';
     snprintf(s->active_skill_path, sizeof(s->active_skill_path), "%s/%s", s->hub_matrix.hub_dir, skill_name);
 
+    /* If not present in master hub folder, search for an existing tool copy */
+    struct stat st_dir;
+    if (stat(s->active_skill_path, &st_dir) != 0) {
+        for (int i = 0; i < s->hub_matrix.skill_count; i++) {
+            if (strcmp(s->hub_matrix.skills[i].skill_name, skill_name) == 0) {
+                for (int j = 0; j < s->hub_matrix.skills[i].tool_count; j++) {
+                    if (s->hub_matrix.skills[i].tool_copies[j].exists &&
+                        s->hub_matrix.skills[i].tool_copies[j].skill_path[0] != '\0') {
+                        strncpy(s->active_skill_path, s->hub_matrix.skills[i].tool_copies[j].skill_path,
+                                sizeof(s->active_skill_path) - 1);
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+    }
+
     if (s->master_skill_file_tree) {
         free_skill_file_tree(s->master_skill_file_tree);
         s->master_skill_file_tree = NULL;
@@ -84,7 +102,7 @@ static void on_master_file_select(file_node_t *node, void *user_data) {
 void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s) {
     /* Header & Breadcrumb */
     cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        if (cui_button(ui, "返回主仓", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_CHEVRON_LEFT)) {
+        if (cui_button(ui, "返回", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_CHEVRON_LEFT)) {
             s->hub_subview = s->prev_hub_subview;
         }
 
@@ -286,6 +304,9 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
     } else {
         cui_scroll(ui, .id = "master_skills_scroll_list", .width = CUI_FILL, .height = CUI_FILL) {
             cui_column(ui, .width = CUI_FILL, .gap = 12) {
+                static int s_last_master_card = -1;
+                static double s_last_master_time = 0.0;
+
                 int matched = 0;
                 for (int i = 0; i < s->hub_matrix.skill_count; i++) {
                     hub_skill_entry_t *entry = &s->hub_matrix.skills[i];
@@ -300,7 +321,21 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                     matched++;
 
                     cui_push_id_int(ui, i);
-                    cui_card(ui, .width = CUI_FILL, .pad = 14, .gap = 10) {
+                    bool card_clicked = cui_card_begin(ui, &(cui_card_opts){
+                        .width = CUI_FILL, .pad = 14, .gap = 10, .hoverable = true,
+                        .selected = (s_last_master_card == i)
+                    });
+                    if (card_clicked) {
+                        double now = cui_time(ui);
+                        if (s_last_master_card == i && (now - s_last_master_time) < 0.40) {
+                            s_last_master_card = -1;
+                            s_last_master_time = 0.0;
+                            open_master_skill_explorer(s, entry->skill_name);
+                        } else {
+                            s_last_master_card = i;
+                            s_last_master_time = now;
+                        }
+                    }
                         /* Row 1: Title, Status, Action Buttons */
                         cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                             cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
@@ -397,9 +432,9 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                                 }
                             }
                         }
+                        cui_card_end(ui);
+                        cui_pop_id(ui);
                     }
-                    cui_pop_id(ui);
-                }
 
                 if (matched == 0) {
                     cui_column(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER, .pad = 30) {

@@ -133,13 +133,27 @@ void render_tools_list_page(cui_ctx *ui, app_state_t *s) {
                 }
             }
         } else {
+            static int s_last_tools_row = -1;
+            static double s_last_tools_time = 0.0;
+
             cui_table(ui, "tools_grid", cols, 4,
                       .sort = &s->sort, .striped = true, .compact = true,
                       .selectable = true, .height = CUI_FILL) {
                 for (int i = 0; i < s->record_count; i++) {
                     tool_record_t *r = &s->records[i];
                     cui_push_id_int(ui, r->id);
-                    cui_table_row(ui, false);
+                    bool clicked = cui_table_row(ui, s_last_tools_row == i);
+                    if (clicked) {
+                        double now = cui_time(ui);
+                        if (s_last_tools_row == i && (now - s_last_tools_time) < 0.40) {
+                            s_last_tools_row = -1;
+                            s_last_tools_time = 0.0;
+                            open_tool_skills_page(s, r->name, r->path);
+                        } else {
+                            s_last_tools_row = i;
+                            s_last_tools_time = now;
+                        }
+                    }
 
                     /* Col 0: Tool Name */
                     cui_table_cell(ui);
@@ -160,7 +174,7 @@ void render_tools_list_page(cui_ctx *ui, app_state_t *s) {
 
                     /* Col 3: Action Button */
                     cui_table_cell(ui);
-                    if (cui_button(ui, " 查看技能", .variant = CUI_BUTTON_OUTLINE,
+                    if (cui_button(ui, "查看技能", .variant = CUI_BUTTON_OUTLINE,
                                    .size = CUI_SIZE_SM, .icon = CUI_ICON_FOLDER)) {
                         open_tool_skills_page(s, r->name, r->path);
                     }
