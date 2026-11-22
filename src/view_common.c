@@ -130,6 +130,8 @@ void free_skill_diff_manifest(hub_skill_diff_manifest_t *m) {
     m->added_count = 0;
     m->deleted_count = 0;
     m->in_sync_count = 0;
+    m->total_added_lines = 0;
+    m->total_removed_lines = 0;
 }
 
 void build_skill_diff_manifest(app_state_t *s, const char *skill_name, int tool_idx) {
@@ -218,15 +220,34 @@ void build_skill_diff_manifest(app_state_t *s, const char *skill_name, int tool_
         if (has_m && !has_t) {
             item->status = DIFF_FILE_DELETED;
             s->diff_manifest.deleted_count++;
+            size_t m_sz = 0;
+            int m_ln = 0;
+            bool m_bin = false;
+            char *m_text = read_file_text_content(m_full, 1024 * 1024, &m_sz, &m_ln, &m_bin);
+            item->is_binary = m_bin;
+            item->removed_lines = (m_ln > 0) ? m_ln : 1;
+            item->added_lines = 0;
+            s->diff_manifest.total_removed_lines += item->removed_lines;
+            if (m_text) free(m_text);
         } else if (!has_m && has_t) {
             item->status = DIFF_FILE_ADDED;
             s->diff_manifest.added_count++;
+            size_t t_sz = 0;
+            int t_ln = 0;
+            bool t_bin = false;
+            char *t_text = read_file_text_content(t_full, 1024 * 1024, &t_sz, &t_ln, &t_bin);
+            item->is_binary = t_bin;
+            item->added_lines = (t_ln > 0) ? t_ln : 1;
+            item->removed_lines = 0;
+            s->diff_manifest.total_added_lines += item->added_lines;
+            if (t_text) free(t_text);
         } else if (has_m && has_t) {
             /* Check if identical bytes */
+            bool same = false;
             if (m_st.st_size == t_st.st_size) {
                 FILE *fm = fopen(m_full, "rb");
                 FILE *ft = fopen(t_full, "rb");
-                bool same = true;
+                same = true;
                 if (fm && ft) {
                     char b1[4096], b2[4096];
                     size_t n1, n2;
@@ -242,17 +263,44 @@ void build_skill_diff_manifest(app_state_t *s, const char *skill_name, int tool_
                 }
                 if (fm) fclose(fm);
                 if (ft) fclose(ft);
+            }
 
-                if (same) {
-                    item->status = DIFF_FILE_IN_SYNC;
-                    s->diff_manifest.in_sync_count++;
-                } else {
-                    item->status = DIFF_FILE_MODIFIED;
-                    s->diff_manifest.modified_count++;
-                }
+            if (same) {
+                item->status = DIFF_FILE_IN_SYNC;
+                item->added_lines = 0;
+                item->removed_lines = 0;
+                s->diff_manifest.in_sync_count++;
             } else {
                 item->status = DIFF_FILE_MODIFIED;
                 s->diff_manifest.modified_count++;
+
+                size_t m_sz = 0, t_sz = 0;
+                int m_ln = 0, t_ln = 0;
+                bool m_bin = false, t_bin = false;
+                char *m_text = read_file_text_content(m_full, 1024 * 1024, &m_sz, &m_ln, &m_bin);
+                char *t_text = read_file_text_content(t_full, 1024 * 1024, &t_sz, &t_ln, &t_bin);
+
+                if (m_bin || t_bin) {
+                    item->is_binary = true;
+                    item->added_lines = 0;
+                    item->removed_lines = 0;
+                } else if (m_text && t_text) {
+                    cui_diff_stats stats;
+                    memset(&stats, 0, sizeof(stats));
+                    cui_diff_compute(m_text, m_sz, t_text, t_sz, 0, NULL, 0, &stats);
+                    item->added_lines = stats.added;
+                    item->removed_lines = stats.removed;
+                    s->diff_manifest.total_added_lines += stats.added;
+                    s->diff_manifest.total_removed_lines += stats.removed;
+                } else {
+                    item->added_lines = t_ln;
+                    item->removed_lines = m_ln;
+                    s->diff_manifest.total_added_lines += t_ln;
+                    s->diff_manifest.total_removed_lines += m_ln;
+                }
+
+                if (m_text) free(m_text);
+                if (t_text) free(t_text);
             }
         }
     }

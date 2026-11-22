@@ -221,8 +221,8 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
             }
         }
 
-        /* ---------------- Pane 2: Skill Files Tree & Diff Markers (280px) ---------------- */
-        cui_card(ui, .width = CUI_PX(280), .height = CUI_FILL, .pad = 10, .gap = 8) {
+        /* ---------------- Pane 2: Skill Files Tree & Diff Markers (300px) ---------------- */
+        cui_card(ui, .width = CUI_PX(300), .height = CUI_FILL, .pad = 10, .gap = 8) {
             cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                 cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_FOLDER_OPEN, 15, CUI_COLOR_ACCENT);
@@ -251,6 +251,11 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
                     snprintf(d_buf, sizeof(d_buf), "%d 缺失", s->diff_manifest.deleted_count);
                     cui_badge(ui, d_buf, .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
                 }
+                if (s->diff_manifest.total_added_lines > 0 || s->diff_manifest.total_removed_lines > 0) {
+                    char l_buf[48];
+                    snprintf(l_buf, sizeof(l_buf), "+%d / -%d 行", s->diff_manifest.total_added_lines, s->diff_manifest.total_removed_lines);
+                    cui_badge(ui, l_buf, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
+                }
                 if (s->diff_manifest.modified_count == 0 &&
                     s->diff_manifest.added_count == 0 &&
                     s->diff_manifest.deleted_count == 0 &&
@@ -278,27 +283,76 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
                             .selected = is_cur_file,
                         });
 
-                        cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                            cui_row(ui, .gap = 5, .align = CUI_ALIGN_CENTER) {
-                                const char *ic = CUI_ICON_FILE;
-                                if (strstr(f->rel_path, ".md")) ic = CUI_ICON_FILE_TEXT;
-                                else if (strstr(f->rel_path, ".py") || strstr(f->rel_path, ".sh") ||
-                                         strstr(f->rel_path, ".c") || strstr(f->rel_path, ".json")) ic = CUI_ICON_CODE;
+                        char dir_buf[256] = {0};
+                        const char *last_slash = strrchr(f->rel_path, '/');
+                        if (last_slash) {
+                            size_t dlen = (size_t)(last_slash - f->rel_path);
+                            if (dlen < sizeof(dir_buf)) {
+                                strncpy(dir_buf, f->rel_path, dlen);
+                                dir_buf[dlen] = '\0';
+                            }
+                        }
 
-                                cui_icon(ui, ic, 13, is_cur_file ? CUI_COLOR_ACCENT : CUI_COLOR_FOREGROUND);
-                                cui_text(ui, f->rel_path, .size = 11, .font = is_cur_file ? CUI_FONT_MEDIUM : CUI_FONT_BODY);
+                        cui_column(ui, .width = CUI_FILL, .gap = 2) {
+                            cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                                cui_row(ui, .gap = 5, .align = CUI_ALIGN_CENTER) {
+                                    const char *ic = CUI_ICON_FILE;
+                                    if (strstr(f->rel_path, ".md")) ic = CUI_ICON_FILE_TEXT;
+                                    else if (strstr(f->rel_path, ".py") || strstr(f->rel_path, ".sh") ||
+                                             strstr(f->rel_path, ".c") || strstr(f->rel_path, ".json") ||
+                                             strstr(f->rel_path, ".html")) ic = CUI_ICON_CODE;
+
+                                    cui_icon(ui, ic, 13, is_cur_file ? CUI_COLOR_ACCENT : CUI_COLOR_FOREGROUND);
+                                    cui_text(ui, f->file_name, .size = 11, .font = is_cur_file ? CUI_FONT_MEDIUM : CUI_FONT_BODY);
+                                }
+
+                                cui_spacer(ui);
+
+                                /* Difference indicators with explicit + and - signs and exact counts */
+                                if (f->is_binary) {
+                                    cui_badge(ui, "BIN", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
+                                } else if (f->status == DIFF_FILE_MODIFIED) {
+                                    cui_row(ui, .gap = 3, .align = CUI_ALIGN_CENTER) {
+                                        if (f->added_lines > 0) {
+                                            char a_buf[24];
+                                            snprintf(a_buf, sizeof(a_buf), "+%d", f->added_lines);
+                                            cui_badge(ui, a_buf, .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
+                                        }
+                                        if (f->removed_lines > 0) {
+                                            char r_buf[24];
+                                            snprintf(r_buf, sizeof(r_buf), "-%d", f->removed_lines);
+                                            cui_badge(ui, r_buf, .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
+                                        }
+                                        if (f->added_lines == 0 && f->removed_lines == 0) {
+                                            cui_badge(ui, "改动", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
+                                        }
+                                    }
+                                } else if (f->status == DIFF_FILE_ADDED) {
+                                    char a_buf[24];
+                                    if (f->added_lines > 0) {
+                                        snprintf(a_buf, sizeof(a_buf), "+%d", f->added_lines);
+                                    } else {
+                                        snprintf(a_buf, sizeof(a_buf), "+新增");
+                                    }
+                                    cui_badge(ui, a_buf, .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
+                                } else if (f->status == DIFF_FILE_DELETED) {
+                                    char r_buf[24];
+                                    if (f->removed_lines > 0) {
+                                        snprintf(r_buf, sizeof(r_buf), "-%d", f->removed_lines);
+                                    } else {
+                                        snprintf(r_buf, sizeof(r_buf), "-缺失");
+                                    }
+                                    cui_badge(ui, r_buf, .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
+                                } else {
+                                    cui_badge(ui, "一致", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
+                                }
                             }
 
-                            cui_spacer(ui);
-
-                            if (f->status == DIFF_FILE_MODIFIED) {
-                                cui_badge(ui, "改动", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
-                            } else if (f->status == DIFF_FILE_ADDED) {
-                                cui_badge(ui, "+ 新增", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                            } else if (f->status == DIFF_FILE_DELETED) {
-                                cui_badge(ui, "- 缺失", .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
-                            } else {
-                                cui_badge(ui, "一致", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
+                            if (dir_buf[0] != '\0') {
+                                cui_row(ui, .gap = 4, .align = CUI_ALIGN_CENTER) {
+                                    cui_gap(ui, 18);
+                                    cui_text(ui, dir_buf, .size = 9, .color = CUI_COLOR_TEXT_MUTED);
+                                }
                             }
                         }
 
@@ -340,11 +394,17 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
                         if (cur_file->status == DIFF_FILE_IN_SYNC) {
                             cui_badge(ui, "两端内容完全一致", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
                         } else if (cur_file->status == DIFF_FILE_MODIFIED) {
-                            cui_badge(ui, "存在改动分化", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
+                            char m_info[64];
+                            snprintf(m_info, sizeof(m_info), "+%d / -%d 行改动", cur_file->added_lines, cur_file->removed_lines);
+                            cui_badge(ui, m_info, .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
                         } else if (cur_file->status == DIFF_FILE_ADDED) {
-                            cui_badge(ui, "+ 本地工具新增", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
+                            char a_info[64];
+                            snprintf(a_info, sizeof(a_info), "+%d 行 (本地新增)", cur_file->added_lines);
+                            cui_badge(ui, a_info, .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
                         } else if (cur_file->status == DIFF_FILE_DELETED) {
-                            cui_badge(ui, "- 工具副本缺失", .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
+                            char d_info[64];
+                            snprintf(d_info, sizeof(d_info), "-%d 行 (副本缺失)", cur_file->removed_lines);
+                            cui_badge(ui, d_info, .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
                         }
                     }
 
@@ -366,13 +426,16 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
 
                 cui_spacer(ui);
 
-                /* Diff Mode Toggle only shown when viewing diff */
+                /* Mode Toggles */
                 if (cur_file && cur_file->status == DIFF_FILE_MODIFIED) {
                     static const char *diff_modes[] = { "左右分屏", "单列内联" };
                     int d_mode_int = (int)s->diff_mode;
                     if (cui_tabs(ui, "diff_view_mode_tabs", diff_modes, 2, &d_mode_int)) {
                         s->diff_mode = (cui_diff_mode)d_mode_int;
                     }
+                } else if (cur_file && cur_file->status == DIFF_FILE_IN_SYNC) {
+                    static const char *sync_modes[] = { "文档预览", "双栏比对" };
+                    cui_tabs(ui, "sync_view_mode_tabs", sync_modes, 2, &s->diff_sync_view_mode);
                 }
             }
 
@@ -383,28 +446,57 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
             bool is_md = (strstr(s->diff_file_rel, ".md") != NULL || strstr(s->diff_file_rel, ".markdown") != NULL);
 
             if (cur_file && cur_file->status == DIFF_FILE_IN_SYNC) {
-                /* Case 1: Identical - Show clean success card & full file preview! NO empty split diff! */
-                cui_card(ui, .width = CUI_FILL, .pad = 8, .gap = 4, .muted = true) {
-                    cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, CUI_ICON_CIRCLE_CHECK, 15, CUI_COLOR_SUCCESS);
-                        cui_text(ui, "主版本与当前工具副本内容完全一致，未发生分化",
-                                 .font = CUI_FONT_MEDIUM, .size = 12, .color = CUI_COLOR_SUCCESS);
-                        cui_spacer(ui);
-                        if (cur_tc) {
-                            cui_textf(ui, "%s · %zu B", cur_tc->tool_name, cur_file->tool_size);
-                        }
+                if (s->diff_sync_view_mode == 1) {
+                    /* Optional split comparison grid even for in-sync files */
+                    char old_title_buf[256];
+                    char new_title_buf[256];
+                    snprintf(old_title_buf, sizeof(old_title_buf), "主版本库 (%s/%s)", entry->hub_path, s->diff_file_rel);
+                    if (cur_tc && cur_tc->exists) {
+                        snprintf(new_title_buf, sizeof(new_title_buf), "工具副本【%s】 (%s/%s)", cur_tc->tool_name, cur_tc->skill_path, s->diff_file_rel);
+                    } else {
+                        snprintf(new_title_buf, sizeof(new_title_buf), "工具副本 (未安装)");
                     }
-                }
 
-                if (is_md) {
-                    cui_scroll(ui, .id = "sync_md_scroll", .width = CUI_FILL, .height = CUI_FILL) {
-                        cui_markdown(ui, "sync_md_view", new_txt[0] ? new_txt : old_txt);
+                    cui_diff_view(ui, "hub_diff_control_sync",
+                                  old_txt, new_txt,
+                                  .mode = s->diff_mode,
+                                  .language = detect_syntax_lang(s->diff_file_rel),
+                                  .old_title = old_title_buf,
+                                  .new_title = new_title_buf,
+                                  .current = &s->diff_current_change,
+                                  .height = -1);
+
+                    cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                        cui_icon(ui, CUI_ICON_CIRCLE_CHECK, 14, CUI_COLOR_SUCCESS);
+                        cui_text(ui, "两端文件内容完全一致，无文本差异", .size = 11, .color = CUI_COLOR_SUCCESS);
+                        cui_spacer(ui);
+                        cui_text(ui, "🛡️ 所有同步均为物理文件拷贝，覆盖前自动在 ~/.ai-space/backups/ 生成安全备份快照",
+                                 .size = 11, .color = CUI_COLOR_TEXT_MUTED);
                     }
                 } else {
-                    const char *lang = detect_syntax_lang(s->diff_file_rel);
-                    cui_scroll(ui, .id = "sync_code_scroll", .width = CUI_FILL, .height = CUI_FILL) {
-                        cui_code_block(ui, "sync_code_view", new_txt[0] ? new_txt : old_txt,
-                                       .lang = lang, .line_numbers = true);
+                    /* Case 1: Identical - Show clean success card & full file preview! NO empty split diff! */
+                    cui_card(ui, .width = CUI_FILL, .pad = 8, .gap = 4, .muted = true) {
+                        cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                            cui_icon(ui, CUI_ICON_CIRCLE_CHECK, 15, CUI_COLOR_SUCCESS);
+                            cui_text(ui, "主版本与当前工具副本内容完全一致，未发生分化",
+                                     .font = CUI_FONT_MEDIUM, .size = 12, .color = CUI_COLOR_SUCCESS);
+                            cui_spacer(ui);
+                            if (cur_tc) {
+                                cui_textf(ui, "%s · %zu B", cur_tc->tool_name, cur_file->tool_size);
+                            }
+                        }
+                    }
+
+                    if (is_md) {
+                        cui_scroll(ui, .id = "sync_md_scroll", .width = CUI_FILL, .height = CUI_FILL) {
+                            cui_markdown(ui, "sync_md_view", new_txt[0] ? new_txt : old_txt);
+                        }
+                    } else {
+                        const char *lang = detect_syntax_lang(s->diff_file_rel);
+                        cui_scroll(ui, .id = "sync_code_scroll", .width = CUI_FILL, .height = CUI_FILL) {
+                            cui_code_block(ui, "sync_code_view", new_txt[0] ? new_txt : old_txt,
+                                           .lang = lang, .line_numbers = true);
+                        }
                     }
                 }
 

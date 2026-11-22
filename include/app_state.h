@@ -53,6 +53,8 @@ typedef struct {
     size_t master_size;
     size_t tool_size;
     bool is_binary;
+    int added_lines;            /* Added lines in tool vs master */
+    int removed_lines;          /* Removed lines in tool vs master */
 } hub_diff_file_item_t;
 
 typedef struct {
@@ -64,6 +66,8 @@ typedef struct {
     int added_count;
     int deleted_count;
     int in_sync_count;
+    int total_added_lines;
+    int total_removed_lines;
 } hub_skill_diff_manifest_t;
 
 typedef struct app_state_t {
@@ -108,6 +112,7 @@ typedef struct app_state_t {
     char *diff_new_text;        /* Tool copy text */
     int diff_current_change;    /* Selected change index for cui_diff_view */
     cui_diff_mode diff_mode;    /* CUI_DIFF_SPLIT (0) or CUI_DIFF_INLINE (1) */
+    int diff_sync_view_mode;    /* 0: 文档预览, 1: 双栏比对 */
     hub_skill_diff_manifest_t diff_manifest;
     bool diff_manifest_loaded;
 
