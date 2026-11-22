@@ -42,7 +42,7 @@ void render_app_top_bar(cui_ctx *ui, app_state_t *s) {
             cui_text(ui, "|", .size = 13, .color = CUI_COLOR_BORDER);
 
             /* 2. Version */
-            cui_text(ui, "v1.6.0", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
+            cui_text(ui, g_ai_space_version, .size = 12, .color = CUI_COLOR_TEXT_MUTED);
 
             cui_text(ui, "|", .size = 13, .color = CUI_COLOR_BORDER);
 
@@ -196,7 +196,7 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                             cui_text(ui, "技能总数", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
                             cui_textf(ui, "%d", total_master_skills);
                         }
-                        cui_badge(ui, "v1.6.0", .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
+                        cui_badge(ui, g_ai_space_version, .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
                     }
                 }
 
@@ -500,7 +500,7 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                 }
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_END) {
                     cui_text(ui, "27", .font = CUI_FONT_DISPLAY, .size = 20);
-                    cui_text(ui, "(最近: v1.6.0)", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
+                    cui_textf(ui, "最近: %s", g_ai_space_version);
                 }
             }
 

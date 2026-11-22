@@ -15,6 +15,9 @@
 #include "view_sync.h"
 #include "view_dashboard.h"
 
+/* 全局发布的统一版本变量 */
+const char *const g_ai_space_version = AI_SPACE_VERSION;
+
 /* -------------------- Main Frame Dispatcher -------------------- */
 
 static void frame(cui_ctx *ui, void *user) {

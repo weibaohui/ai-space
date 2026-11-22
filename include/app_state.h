@@ -7,6 +7,7 @@
 #include <pthread.h>
 #include <cui/cui.h>
 #include "models.h"
+#include "version.h"
 #include "skill_scanner.h"
 #include "hub_manager.h"
 #include "sync_backend.h"

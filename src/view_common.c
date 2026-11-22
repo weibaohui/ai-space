@@ -935,7 +935,7 @@ void render_about_page(cui_ctx *ui, app_state_t *s) {
             cui_column(ui, .gap = 3) {
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                     cui_heading(ui, "关于系统", 3);
-                    cui_badge(ui, "v1.0.0", .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
+                    cui_badge(ui, g_ai_space_version, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
                 }
                 cui_text(ui, "本地优先的多智能体技能与主仓集中同步管理工作台",
                          .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
