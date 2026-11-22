@@ -93,6 +93,7 @@ typedef struct {
     char git_auth_token[256];
     char git_user_name[128];
     char git_user_email[128];
+    char git_cache_dir[512];       /* Local clone/cache staging directory (optional, default ~/.ai-space/cache/git_remote) */
 } sync_config_t;
 
 /* Progress callback for remote sync transfers */

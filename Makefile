@@ -10,19 +10,27 @@ SRCS = src/main.c src/view_common.c src/view_tools.c src/view_tool_skills.c \
 OBJS = $(SRCS:.c=.o)
 HEADERS = $(wildcard include/*.h)
 TARGET = ai_space
+TEST_TARGET = test_sync
+TEST_OBJS = tests/test_sync_git.o src/sync_manager.o src/sync_driver_nfs.o src/sync_driver_webdav.o src/sync_driver_git.o src/hub_manager.o
 
-.PHONY: all clean run shot
+.PHONY: all clean run shot test
 
-all: $(TARGET)
+all: $(TARGET) $(TEST_TARGET)
 
 $(TARGET): $(OBJS) CUI/build/libcui.a
 	$(CC) $(OBJS) $(LDFLAGS) -o $@
+
+$(TEST_TARGET): $(TEST_OBJS)
+	$(CC) $(TEST_OBJS) -lsqlite3 -o $@
+
+tests/%.o: tests/%.c $(HEADERS)
+	$(CC) $(CFLAGS) -c $< -o $@
 
 %.o: %.c $(HEADERS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJS) $(TARGET) shot*.png
+	rm -f $(OBJS) $(TEST_OBJS) $(TARGET) $(TEST_TARGET) shot*.png
 
 run: $(TARGET)
 	./$(TARGET)

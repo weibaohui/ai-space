@@ -1,7 +1,8 @@
 ai_space
+test_sync
 *.o
+tests/*.o
 shot*.png
-test_*
 CUI/build/
 data/*.db
 data/*.db-wal
