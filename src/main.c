@@ -23,6 +23,8 @@ static void frame(cui_ctx *ui, void *user) {
                .bg = CUI_COLOR_BACKGROUND) {
         if (s->current_page == PAGE_TOOL_LIST) {
             render_tools_list_page(ui, s);
+        } else if (s->current_page == PAGE_ALL_SKILLS) {
+            render_all_skills_page(ui, s);
         } else if (s->current_page == PAGE_HUB_MATRIX) {
             render_hub_matrix_page(ui, s);
         } else if (s->current_page == PAGE_TOOL_SKILLS) {
@@ -97,12 +99,24 @@ int main(int argc, char **argv) {
 
     /* Apply default view setting */
     if (s.setting_default_view == 1) {
+        s.current_page = PAGE_ALL_SKILLS;
+    } else if (s.setting_default_view == 2) {
         s.current_page = PAGE_HUB_MATRIX;
         s.hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
+    } else if (s.setting_default_view == 3) {
+        s.current_page = PAGE_SYNC_MANAGER;
     }
 
     const char *start_page = getenv("CUI_START_PAGE");
-    if (start_page && strcmp(start_page, "sync") == 0) {
+    if (start_page && strcmp(start_page, "skills") == 0) {
+        s.current_page = PAGE_ALL_SKILLS;
+        if (getenv("CUI_SYNC_SCAN")) {
+            hub_scan_matrix(s.db, &s.hub_matrix);
+            s.hub_matrix_loaded = true;
+        } else {
+            start_hub_scan_thread(&s);
+        }
+    } else if (start_page && strcmp(start_page, "sync") == 0) {
         s.current_page = PAGE_SYNC_MANAGER;
         if (getenv("CUI_SYNC_CHECK")) {
             if (s.sync_backend && s.sync_backend->ops->check_drift) {
@@ -117,11 +131,12 @@ int main(int argc, char **argv) {
             s.settings_active_tab = atoi(start_tab);
         }
     } else if (start_page && strcmp(start_page, "hub") == 0) {
-        s.current_page = PAGE_HUB_MATRIX;
-        s.hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
         const char *subv = getenv("CUI_START_SUBVIEW");
         if (subv && strcmp(subv, "scan") == 0) {
-            s.hub_subview = HUB_SUBVIEW_SCAN_MATRIX;
+            s.current_page = PAGE_ALL_SKILLS;
+        } else {
+            s.current_page = PAGE_HUB_MATRIX;
+            s.hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
         }
 
         const char *start_diff = getenv("CUI_START_DIFF");

@@ -229,8 +229,8 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
             if (cui_button(ui, " 重新比对全景", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_REFRESH_CW)) {
                 start_hub_scan_thread(s);
             }
-            if (cui_button(ui, " 打开全景扫描矩阵", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_GRID_3X3)) {
-                s->hub_subview = HUB_SUBVIEW_SCAN_MATRIX;
+            if (cui_button(ui, " 🧩 查看全量技能列表", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_PACKAGE)) {
+                s->current_page = PAGE_ALL_SKILLS;
             }
             if (cui_button(ui, " 一键全量收录主库", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_CHECK)) {
                 start_adopt_all_thread(s);
@@ -254,11 +254,11 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                          s->setting_hub_dir[0] ? s->setting_hub_dir : "~/.ai-space/skills");
                 cui_heading(ui, empty_title, 3);
                 cui_gap(ui, 6);
-                cui_text(ui, "主仓用于集中沉淀与统一管理跨工具的标准基准技能版本。可切换至【全景扫描】一键全量收录主库，或单独比对采纳。",
+                cui_text(ui, "主仓用于集中沉淀与统一管理跨工具的标准基准技能版本。可切换至【技能列表】一键全量收录主库，或单独比对采纳。",
                          .color = CUI_COLOR_TEXT_SECONDARY, .size = 13);
                 cui_gap(ui, 20);
-                if (cui_button(ui, " 前往技能全景扫描与比对", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_GRID_3X3)) {
-                    s->hub_subview = HUB_SUBVIEW_SCAN_MATRIX;
+                if (cui_button(ui, " 前往技能列表一键收录基准", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_PACKAGE)) {
+                    s->current_page = PAGE_ALL_SKILLS;
                 }
             }
         }
@@ -320,6 +320,7 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                                 if (entry->installed_count > 0) {
                                     if (cui_button(ui, " 全景比对", .variant = CUI_BUTTON_OUTLINE,
                                                    .icon = CUI_ICON_GIT_BRANCH, .size = CUI_SIZE_SM)) {
+                                        s->prev_page = PAGE_HUB_MATRIX;
                                         s->prev_hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
                                         open_hub_diff_view(s, entry->skill_name);
                                     }

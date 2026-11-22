@@ -398,6 +398,7 @@ void load_hub_diff(app_state_t *s, const char *skill_name, int tool_idx, const c
 
 void open_hub_diff_view(app_state_t *s, const char *skill_name) {
     if (!s) return;
+    s->prev_page = s->current_page;
     if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning) {
         start_hub_scan_thread(s);
     }
@@ -875,7 +876,22 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
                 s->current_page = PAGE_TOOL_LIST;
             }
 
-            /* Tab 2: 主仓管理 */
+            /* Tab 2: 技能列表 (全景大盘) */
+            bool is_skills = (s->current_page == PAGE_ALL_SKILLS);
+            if (cui_button(ui, "  技能列表",
+                           .variant = is_skills ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
+                           .size = CUI_SIZE_SM,
+                           .icon = CUI_ICON_PACKAGE)) {
+                if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning) {
+                    start_hub_scan_thread(s);
+                }
+                s->current_page = PAGE_ALL_SKILLS;
+                if (s->hub_subview == HUB_SUBVIEW_DIFF || s->hub_subview == HUB_SUBVIEW_EXPLORER) {
+                    s->hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
+                }
+            }
+
+            /* Tab 3: 主仓管理 */
             bool is_hub = (s->current_page == PAGE_HUB_MATRIX);
             if (cui_button(ui, "  主仓管理",
                            .variant = is_hub ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
@@ -890,7 +906,7 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
                 }
             }
 
-            /* Tab 3: 同步管理 */
+            /* Tab 4: 同步管理 */
             bool is_sync = (s->current_page == PAGE_SYNC_MANAGER);
             if (cui_button(ui, "  同步管理",
                            .variant = is_sync ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
@@ -902,7 +918,7 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
                 }
             }
 
-            /* Tab 4: 设置 */
+            /* Tab 5: 设置 */
             bool is_settings = (s->current_page == PAGE_SETTINGS);
             if (cui_button(ui, "  设置",
                            .variant = is_settings ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,

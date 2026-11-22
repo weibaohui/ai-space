@@ -46,10 +46,15 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
 
     /* Top Navigation Row */
     cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        const char *back_lbl = (s->prev_hub_subview == HUB_SUBVIEW_MASTER_SKILLS) ?
-                               " 返回主仓列表" : " 返回全景列表";
+        const char *back_lbl = (s->prev_page == PAGE_ALL_SKILLS) ? " 返回技能列表" :
+                               (s->prev_page == PAGE_HUB_MATRIX || s->prev_hub_subview == HUB_SUBVIEW_MASTER_SKILLS) ? " 返回主仓管理" : " 返回上一页";
         if (cui_button(ui, back_lbl, .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_CHEVRON_LEFT)) {
-            s->hub_subview = s->prev_hub_subview;
+            if (s->prev_page == PAGE_ALL_SKILLS) {
+                s->current_page = PAGE_ALL_SKILLS;
+            } else if (s->prev_page == PAGE_HUB_MATRIX) {
+                s->current_page = PAGE_HUB_MATRIX;
+            }
+            s->hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
         }
 
         cui_gap(ui, 12);

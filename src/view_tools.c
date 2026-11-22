@@ -79,7 +79,13 @@ void render_tools_list_page(cui_ctx *ui, app_state_t *s) {
             if (cui_button(ui, " 重新扫描同步", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_REFRESH_CW)) {
                 do_scan_sync(s);
             }
-            if (cui_button(ui, " 进入主仓管理", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_ARCHIVE)) {
+            if (cui_button(ui, " 查看技能列表", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_PACKAGE)) {
+                if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning) {
+                    start_hub_scan_thread(s);
+                }
+                s->current_page = PAGE_ALL_SKILLS;
+            }
+            if (cui_button(ui, " 进入主仓管理", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_ARCHIVE)) {
                 if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning) {
                     start_hub_scan_thread(s);
                 }

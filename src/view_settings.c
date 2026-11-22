@@ -522,18 +522,25 @@ static void render_tab_preferences(cui_ctx *ui, app_state_t *s) {
                         s->setting_default_view = 0;
                     }
 
-                    bool is_hub = (s->setting_default_view == 1);
-                    if (cui_button(ui, "  主仓管理 (Master Hub)",
-                                   .variant = is_hub ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
-                                   .icon = CUI_ICON_ARCHIVE)) {
+                    bool is_skills = (s->setting_default_view == 1);
+                    if (cui_button(ui, "  技能列表 (Skills List)",
+                                   .variant = is_skills ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
+                                   .icon = CUI_ICON_PACKAGE)) {
                         s->setting_default_view = 1;
                     }
 
-                    bool is_sync = (s->setting_default_view == 2);
+                    bool is_hub = (s->setting_default_view == 2);
+                    if (cui_button(ui, "  主仓管理 (Master Hub)",
+                                   .variant = is_hub ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
+                                   .icon = CUI_ICON_ARCHIVE)) {
+                        s->setting_default_view = 2;
+                    }
+
+                    bool is_sync = (s->setting_default_view == 3);
                     if (cui_button(ui, "  同步管理 (Remote Sync)",
                                    .variant = is_sync ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                    .icon = CUI_ICON_GLOBE)) {
-                        s->setting_default_view = 2;
+                        s->setting_default_view = 3;
                     }
                 }
             }
