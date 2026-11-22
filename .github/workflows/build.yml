@@ -31,9 +31,11 @@ jobs:
           # glibc 2.35 base so binaries run on most distros from 2022 on
           - { name: linux-x64,       os: ubuntu-22.04 }
           - { name: linux-arm64,     os: ubuntu-22.04-arm }
-          - { name: macos-arm64,     os: macos-14 }
-          - { name: macos-x64,       os: macos-13 }
-          - { name: macos-universal, os: macos-14, universal: true }
+          # macos-14/13 pools proved unreliable (jobs cancelled at scheduling);
+          # macos-15 host cross-builds every macOS slice via CMAKE_OSX_ARCHITECTURES
+          - { name: macos-arm64,     os: macos-15 }
+          - { name: macos-x64,       os: macos-15, osx_arch: x86_64 }
+          - { name: macos-universal, os: macos-15, osx_arch: "arm64;x86_64" }
           - { name: windows-x64,     os: windows-latest, msystem: MINGW64,     cc: gcc }
           - { name: windows-arm64,   os: windows-11-arm, msystem: CLANGARM64,  cc: clang }
 
@@ -70,8 +72,8 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           CFG="-S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release"
-          if [ "${{ matrix.universal }}" = "true" ]; then
-            CFG="$CFG -DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+          if [ -n "${{ matrix.osx_arch }}" ]; then
+            CFG="$CFG -DCMAKE_OSX_ARCHITECTURES=${{ matrix.osx_arch }}"
           fi
           cmake $CFG
 
