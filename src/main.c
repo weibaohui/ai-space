@@ -203,6 +203,15 @@ int main(int argc, char **argv) {
         s.current_page = PAGE_ABOUT;
     }
 
+    if (s.current_page == PAGE_DASHBOARD) {
+        if (getenv("CUI_SYNC_SCAN")) {
+            hub_scan_matrix(s.db, &s.hub_matrix);
+            s.hub_matrix_loaded = true;
+        } else {
+            start_hub_scan_thread(&s);
+        }
+    }
+
     const char *start_tool = getenv("CUI_START_TOOL");
     if (start_tool && start_tool[0] != '\0') {
         for (int i = 0; i < s.record_count; i++) {

@@ -7,7 +7,42 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #include "portability.h"
+
+static void expand_path_local(const char *in, char *out, size_t cap) {
+    if (!in || !out || cap == 0) return;
+    if (in[0] == '~' && (in[1] == '/' || in[1] == '\0')) {
+        const char *home = ai_home_dir();
+        if (home && home[0]) {
+            snprintf(out, cap, "%s%s", home, in + 1);
+            return;
+        }
+    }
+    snprintf(out, cap, "%s", in);
+}
+
+static int count_snapshots(const char *backup_dir_setting) {
+    if (!backup_dir_setting || !backup_dir_setting[0]) return 0;
+    char exp[512] = "";
+    expand_path_local(backup_dir_setting, exp, sizeof(exp));
+    DIR *d = opendir(exp);
+    if (!d) return 0;
+    int count = 0;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] == '.') continue;
+        char sub[1024];
+        snprintf(sub, sizeof(sub), "%s/%s", exp, ent->d_name);
+        struct stat st;
+        if (stat(sub, &st) == 0 && S_ISDIR(st.st_mode)) {
+            count++;
+        }
+    }
+    closedir(d);
+    return count;
+}
 
 /* Top Global Header Bar (Window Title, App Info, Node status, Clock) */
 void render_app_top_bar(cui_ctx *ui, app_state_t *s) {
@@ -79,28 +114,37 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
 
     if (s->toast_frames > 0) s->toast_frames--;
 
-    /* Compute counts */
-    int total_master_skills = s->hub_matrix.hub_managed_skills > 0 ? s->hub_matrix.hub_managed_skills : 128;
-    int local_tools_count = s->record_count > 0 ? s->record_count : (s->hub_matrix.tool_count > 0 ? s->hub_matrix.tool_count : 4);
-
-    int in_sync_count = 0;
-    int drifted_count = s->hub_matrix.drifted_skills_count > 0 ? s->hub_matrix.drifted_skills_count : 5;
-    int unadopted_count = (s->hub_matrix.total_unique_skills - s->hub_matrix.hub_managed_skills);
-    if (unadopted_count <= 0) unadopted_count = 3;
-
-    for (int i = 0; i < s->hub_matrix.skill_count; i++) {
-        if (s->hub_matrix.skills[i].in_hub &&
-            s->hub_matrix.skills[i].modified_count == 0 &&
-            s->hub_matrix.skills[i].outdated_count == 0) {
-            in_sync_count++;
-        }
+    /* Kick off non-blocking hub scan if not yet loaded */
+    if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning) {
+        start_hub_scan_thread(s);
     }
-    if (in_sync_count <= 0) in_sync_count = 86;
 
-    int conflict_count = 1;
-    int pending_total = drifted_count + unadopted_count + conflict_count + 3;
+    /* Compute real metrics */
+    int total_master_skills = 0;
+    int in_sync_count = 0;
+    int drifted_count = 0;
+    int unadopted_count = 0;
+    int conflict_count = s->sync_drift_loaded ? s->sync_drift.conflict_count : 0;
+    int pending_total = 0;
 
-    /* 1. Top Banner / Hero Card (1:1 with Screenshot) */
+    if (s->hub_matrix_loaded) {
+        total_master_skills = s->hub_matrix.hub_managed_skills;
+        for (int i = 0; i < s->hub_matrix.skill_count; i++) {
+            if (!s->hub_matrix.skills[i].in_hub) {
+                unadopted_count++;
+            } else {
+                if (s->hub_matrix.skills[i].modified_count > 0 ||
+                    s->hub_matrix.skills[i].outdated_count > 0) {
+                    drifted_count++;
+                } else {
+                    in_sync_count++;
+                }
+            }
+        }
+        pending_total = drifted_count + unadopted_count + conflict_count;
+    }
+
+    /* 1. Top Banner / Hero Card */
     cui_box(ui, .width = CUI_FILL, .radius = 8, .pad = 16, .gap = 14,
             .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_ACCENT), 0.05f),
             .border = 1, .border_color = cui_alpha(cui_color_of(ui, CUI_COLOR_ACCENT), 0.25f)) {
@@ -118,7 +162,7 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
         }
     }
 
-    /* 2. Middle Area (Split into Left 70% Topology Diagram and Right 30% Tasks & Actions) */
+    /* 2. Middle Area (Split into Left Topology Diagram and Right Tasks & Actions) */
     cui_row(ui, .width = CUI_FILL, .gap = 14, .align = CUI_ALIGN_STRETCH) {
 
         /* ---- LEFT: 系统运行拓扑与流程 ---- */
@@ -139,18 +183,24 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                             cui_heading(ui, "远端同步", 4);
                             cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                                 cui_row(ui, .gap = 4, .align = CUI_ALIGN_CENTER) {
-                                    cui_icon(ui, CUI_ICON_FOLDER, 12, CUI_COLOR_TEXT_MUTED);
-                                    cui_text(ui, "Git 仓库", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                                    cui_icon(ui, CUI_ICON_FOLDER, 12,
+                                             (s->sync_cfg.type == SYNC_BACKEND_GIT) ? CUI_COLOR_ACCENT : CUI_COLOR_TEXT_MUTED);
+                                    cui_text(ui, "Git 仓库", .size = 11,
+                                             .color = (s->sync_cfg.type == SYNC_BACKEND_GIT) ? CUI_COLOR_FOREGROUND : CUI_COLOR_TEXT_MUTED);
                                 }
                                 cui_text(ui, "|", .size = 11, .color = CUI_COLOR_BORDER);
                                 cui_row(ui, .gap = 4, .align = CUI_ALIGN_CENTER) {
-                                    cui_icon(ui, CUI_ICON_GLOBE, 12, CUI_COLOR_TEXT_MUTED);
-                                    cui_text(ui, "WebDAV", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                                    cui_icon(ui, CUI_ICON_GLOBE, 12,
+                                             (s->sync_cfg.type == SYNC_BACKEND_WEBDAV) ? CUI_COLOR_ACCENT : CUI_COLOR_TEXT_MUTED);
+                                    cui_text(ui, "WebDAV", .size = 11,
+                                             .color = (s->sync_cfg.type == SYNC_BACKEND_WEBDAV) ? CUI_COLOR_FOREGROUND : CUI_COLOR_TEXT_MUTED);
                                 }
                                 cui_text(ui, "|", .size = 11, .color = CUI_COLOR_BORDER);
                                 cui_row(ui, .gap = 4, .align = CUI_ALIGN_CENTER) {
-                                    cui_icon(ui, CUI_ICON_DATABASE, 12, CUI_COLOR_TEXT_MUTED);
-                                    cui_text(ui, "私有云 NFS", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                                    cui_icon(ui, CUI_ICON_DATABASE, 12,
+                                             (s->sync_cfg.type == SYNC_BACKEND_NFS) ? CUI_COLOR_ACCENT : CUI_COLOR_TEXT_MUTED);
+                                    cui_text(ui, "私有云 NFS", .size = 11,
+                                             .color = (s->sync_cfg.type == SYNC_BACKEND_NFS) ? CUI_COLOR_FOREGROUND : CUI_COLOR_TEXT_MUTED);
                                 }
                             }
                         }
@@ -159,8 +209,20 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                     cui_spacer(ui);
 
                     cui_column(ui, .align = CUI_ALIGN_END, .gap = 3) {
-                        cui_badge(ui, "已连接", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                        cui_text(ui, "上次同步: 10:22:31", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                        if (s->sync_cfg.type == SYNC_BACKEND_NONE) {
+                            cui_badge(ui, "未配置", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
+                            cui_text(ui, "单机本地模式", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                        } else if (s->sync_drift_loaded) {
+                            cui_badge(ui, "已连接", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
+                            if (s->sync_drift.last_checked_at[0]) {
+                                cui_textf(ui, "上次: %s", s->sync_drift.last_checked_at);
+                            } else {
+                                cui_text(ui, "-", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                            }
+                        } else {
+                            cui_badge(ui, "已配置", .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
+                            cui_text(ui, "待检测同步", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                        }
                     }
                 }
             }
@@ -194,7 +256,11 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                         cui_icon(ui, CUI_ICON_LAYERS, 16, CUI_COLOR_TEXT_MUTED);
                         cui_column(ui, .align = CUI_ALIGN_END) {
                             cui_text(ui, "技能总数", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
-                            cui_textf(ui, "%d", total_master_skills);
+                            if (s->hub_matrix_loaded) {
+                                cui_textf(ui, "%d", total_master_skills);
+                            } else {
+                                cui_text(ui, "-", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                            }
                         }
                         cui_badge(ui, g_ai_space_version, .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
                     }
@@ -246,74 +312,36 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                     cui_text(ui, "本地工具层", .font = CUI_FONT_MEDIUM, .size = 12);
                 }
 
-                /* Tool Cards Row (Gemini, Antigravity, Cursor, Claude, etc.) */
+                /* Tool Cards Row: dynamically show real tools */
                 cui_row(ui, .width = CUI_FILL, .gap = 8, .align = CUI_ALIGN_STRETCH) {
-                    /* Gemini Card */
-                    cui_box(ui, .width = CUI_GROW(1), .radius = 5, .pad = 8, .gap = 4,
-                            .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
-                            .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-                        cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                            cui_icon(ui, CUI_ICON_ZAP, 13, CUI_COLOR_ACCENT);
-                            cui_text(ui, "Gemini", .font = CUI_FONT_MEDIUM, .size = 12);
-                            cui_spacer(ui);
-                            cui_icon(ui, CUI_ICON_CIRCLE_CHECK, 12, CUI_COLOR_SUCCESS);
+                    int show_cnt = s->record_count > 4 ? 4 : s->record_count;
+                    if (show_cnt == 0) {
+                        cui_text(ui, "暂未识别到本地工具目录，可在系统设置中添加配置", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                    } else {
+                        for (int i = 0; i < show_cnt; i++) {
+                            tool_record_t *rec = &s->records[i];
+                            cui_box(ui, .width = CUI_GROW(1), .radius = 5, .pad = 8, .gap = 4,
+                                    .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
+                                    .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
+                                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                                    cui_icon(ui, CUI_ICON_TERMINAL, 13, CUI_COLOR_ACCENT);
+                                    cui_text(ui, rec->name, .font = CUI_FONT_MEDIUM, .size = 12);
+                                    cui_spacer(ui);
+                                    cui_icon(ui, (rec->skill_count > 0) ? CUI_ICON_CIRCLE_CHECK : CUI_ICON_CIRCLE,
+                                             12, (rec->skill_count > 0) ? CUI_COLOR_SUCCESS : CUI_COLOR_TEXT_MUTED);
+                                }
+                                cui_text(ui, "skills/", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
+                                cui_textf(ui, "└─ %d 项技能", rec->skill_count);
+                            }
                         }
-                        cui_text(ui, "skills/", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
-                        cui_text(ui, "├─ skill-A", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
-                        cui_text(ui, "└─ skill-B", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
-                    }
-
-                    /* Antigravity Card */
-                    cui_box(ui, .width = CUI_GROW(1), .radius = 5, .pad = 8, .gap = 4,
-                            .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
-                            .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-                        cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                            cui_icon(ui, CUI_ICON_COMPASS, 13, CUI_COLOR_ACCENT);
-                            cui_text(ui, "Antigravity", .font = CUI_FONT_MEDIUM, .size = 12);
-                            cui_spacer(ui);
-                            cui_icon(ui, CUI_ICON_CIRCLE_CHECK, 12, CUI_COLOR_SUCCESS);
+                        if (s->record_count > 4) {
+                            cui_box(ui, .width = CUI_PX(48), .radius = 5, .pad = 8,
+                                    .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_SURFACE_MUTED), 0.5f),
+                                    .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER),
+                                    .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
+                                cui_textf(ui, "+%d", s->record_count - 4);
+                            }
                         }
-                        cui_text(ui, "skills/", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
-                        cui_text(ui, "├─ skill-A", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
-                        cui_text(ui, "└─ skill-C", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
-                    }
-
-                    /* Cursor Card */
-                    cui_box(ui, .width = CUI_GROW(1), .radius = 5, .pad = 8, .gap = 4,
-                            .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
-                            .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-                        cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                            cui_icon(ui, CUI_ICON_TERMINAL, 13, CUI_COLOR_WARNING);
-                            cui_text(ui, "Cursor", .font = CUI_FONT_MEDIUM, .size = 12);
-                            cui_spacer(ui);
-                            cui_icon(ui, CUI_ICON_CIRCLE_ALERT, 12, CUI_COLOR_WARNING);
-                        }
-                        cui_text(ui, "skills/", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
-                        cui_text(ui, "├─ skill-B", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
-                        cui_text(ui, "└─ skill-C", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
-                    }
-
-                    /* Claude Card */
-                    cui_box(ui, .width = CUI_GROW(1), .radius = 5, .pad = 8, .gap = 4,
-                            .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
-                            .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-                        cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                            cui_icon(ui, CUI_ICON_SUN, 13, CUI_COLOR_ACCENT);
-                            cui_text(ui, "Claude", .font = CUI_FONT_MEDIUM, .size = 12);
-                            cui_spacer(ui);
-                            cui_icon(ui, CUI_ICON_CIRCLE_CHECK, 12, CUI_COLOR_SUCCESS);
-                        }
-                        cui_text(ui, "skills/", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
-                        cui_text(ui, "├─ skill-A", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
-                        cui_text(ui, "└─ skill-D", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
-                    }
-
-                    /* Placeholder More Card */
-                    cui_box(ui, .width = CUI_PX(40), .radius = 5, .pad = 8,
-                            .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_SURFACE_MUTED), 0.5f),
-                            .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER),
-                            .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
-                        cui_text(ui, "...", .size = 14, .color = CUI_COLOR_TEXT_MUTED);
                     }
                 }
             }
@@ -322,12 +350,16 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
         /* ---- RIGHT: 待处理任务 + 常用操作 ---- */
         cui_column(ui, .width = CUI_GROW(3), .gap = 14) {
 
-            /* Card 1: 待处理任务 (12) */
+            /* Card 1: 待处理任务 (X) */
             cui_card(ui, .width = CUI_FILL, .pad = 14, .gap = 10) {
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_CLIPBOARD, 16, CUI_COLOR_ACCENT);
                     char t_hdr[64];
-                    snprintf(t_hdr, sizeof(t_hdr), "待处理任务 (%d)", pending_total);
+                    if (s->hub_matrix_loaded) {
+                        snprintf(t_hdr, sizeof(t_hdr), "待处理任务 (%d)", pending_total);
+                    } else {
+                        snprintf(t_hdr, sizeof(t_hdr), "待处理任务 (0)");
+                    }
                     cui_heading(ui, t_hdr, 4);
                 }
 
@@ -342,7 +374,11 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                         }
                         cui_spacer(ui);
                         char b_buf[16];
-                        snprintf(b_buf, sizeof(b_buf), "%d >", in_sync_count);
+                        if (s->hub_matrix_loaded) {
+                            snprintf(b_buf, sizeof(b_buf), "%d >", in_sync_count);
+                        } else {
+                            snprintf(b_buf, sizeof(b_buf), "0 >");
+                        }
                         cui_badge(ui, b_buf, .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
                     }
                 }
@@ -358,8 +394,12 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                         }
                         cui_spacer(ui);
                         char b_buf[16];
-                        snprintf(b_buf, sizeof(b_buf), "%d >", drifted_count);
-                        cui_badge(ui, b_buf, .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
+                        if (s->hub_matrix_loaded) {
+                            snprintf(b_buf, sizeof(b_buf), "%d >", drifted_count);
+                        } else {
+                            snprintf(b_buf, sizeof(b_buf), "0 >");
+                        }
+                        cui_badge(ui, b_buf, .tone = (drifted_count > 0) ? CUI_TONE_WARNING : CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
                     }
                 }
 
@@ -374,8 +414,12 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                         }
                         cui_spacer(ui);
                         char b_buf[16];
-                        snprintf(b_buf, sizeof(b_buf), "%d >", unadopted_count);
-                        cui_badge(ui, b_buf, .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
+                        if (s->hub_matrix_loaded) {
+                            snprintf(b_buf, sizeof(b_buf), "%d >", unadopted_count);
+                        } else {
+                            snprintf(b_buf, sizeof(b_buf), "0 >");
+                        }
+                        cui_badge(ui, b_buf, .tone = (unadopted_count > 0) ? CUI_TONE_INFO : CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
                     }
                 }
 
@@ -391,7 +435,7 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                         cui_spacer(ui);
                         char b_buf[16];
                         snprintf(b_buf, sizeof(b_buf), "%d >", conflict_count);
-                        cui_badge(ui, b_buf, .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
+                        cui_badge(ui, b_buf, .tone = (conflict_count > 0) ? CUI_TONE_DANGER : CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
                     }
                 }
             }
@@ -431,7 +475,7 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
         }
     }
 
-    /* 3. Bottom Row: 运行概览 (KPI Cards Row - 1:1 with Screenshot) */
+    /* 3. Bottom Row: 运行概览 */
     cui_column(ui, .width = CUI_FILL, .gap = 8) {
         cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
             cui_icon(ui, CUI_ICON_ACTIVITY, 16, CUI_COLOR_ACCENT);
@@ -446,10 +490,13 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                     cui_text(ui, "主仓技能", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
                 }
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_END) {
-                    char sk_txt[32];
-                    snprintf(sk_txt, sizeof(sk_txt), "%d", total_master_skills);
-                    cui_text(ui, sk_txt, .font = CUI_FONT_DISPLAY, .size = 20);
-                    cui_text(ui, "↑ +3", .size = 11, .color = CUI_COLOR_SUCCESS);
+                    if (s->hub_matrix_loaded) {
+                        char sk_txt[32];
+                        snprintf(sk_txt, sizeof(sk_txt), "%d", total_master_skills);
+                        cui_text(ui, sk_txt, .font = CUI_FONT_DISPLAY, .size = 20);
+                    } else {
+                        cui_text(ui, "-", .font = CUI_FONT_DISPLAY, .size = 20, .color = CUI_COLOR_TEXT_MUTED);
+                    }
                 }
             }
 
@@ -460,9 +507,13 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                     cui_text(ui, "本地工具", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
                 }
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_END) {
-                    char tl_txt[32];
-                    snprintf(tl_txt, sizeof(tl_txt), "%d", local_tools_count);
-                    cui_text(ui, tl_txt, .font = CUI_FONT_DISPLAY, .size = 20);
+                    if (s->record_count > 0) {
+                        char tl_txt[32];
+                        snprintf(tl_txt, sizeof(tl_txt), "%d", s->record_count);
+                        cui_text(ui, tl_txt, .font = CUI_FONT_DISPLAY, .size = 20);
+                    } else {
+                        cui_text(ui, "-", .font = CUI_FONT_DISPLAY, .size = 20, .color = CUI_COLOR_TEXT_MUTED);
+                    }
                 }
             }
 
@@ -473,9 +524,28 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                     cui_text(ui, "同步状态", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
                 }
                 cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                    cui_badge(ui, "已同步", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
+                    if (s->sync_cfg.type == SYNC_BACKEND_NONE) {
+                        cui_badge(ui, "未配置", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
+                    } else if (s->sync_drift_loaded) {
+                        if (s->sync_drift.conflict_count > 0) {
+                            cui_badge(ui, "有冲突", .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
+                        } else if (s->sync_drift.remote_ahead_count > 0 ||
+                                   s->sync_drift.local_ahead_count > 0 ||
+                                   s->sync_drift.remote_only_count > 0 ||
+                                   s->sync_drift.local_only_count > 0) {
+                            cui_badge(ui, "有差异", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
+                        } else {
+                            cui_badge(ui, "已同步", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
+                        }
+                    } else {
+                        cui_badge(ui, "待检测", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
+                    }
                 }
-                cui_text(ui, "上次: 10:22:31", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
+                if (s->sync_drift_loaded && s->sync_drift.last_checked_at[0]) {
+                    cui_textf(ui, "上次: %s", s->sync_drift.last_checked_at);
+                } else {
+                    cui_text(ui, "-", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
+                }
             }
 
             /* 4. 待处理项 */
@@ -485,22 +555,35 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                     cui_text(ui, "待处理项", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
                 }
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_END) {
-                    char pnd_txt[32];
-                    snprintf(pnd_txt, sizeof(pnd_txt), "%d", pending_total);
-                    cui_text(ui, pnd_txt, .font = CUI_FONT_DISPLAY, .size = 20);
-                    cui_text(ui, "含 1 冲突", .size = 10, .color = CUI_COLOR_WARNING);
+                    if (s->hub_matrix_loaded) {
+                        char pnd_txt[32];
+                        snprintf(pnd_txt, sizeof(pnd_txt), "%d", pending_total);
+                        cui_text(ui, pnd_txt, .font = CUI_FONT_DISPLAY, .size = 20);
+                        if (conflict_count > 0) {
+                            cui_textf(ui, "含 %d 冲突", conflict_count);
+                        } else if (drifted_count > 0) {
+                            cui_textf(ui, "含 %d 差异", drifted_count);
+                        }
+                    } else {
+                        cui_text(ui, "-", .font = CUI_FONT_DISPLAY, .size = 20, .color = CUI_COLOR_TEXT_MUTED);
+                    }
                 }
             }
 
             /* 5. 历史快照 */
+            int snap_count = count_snapshots(s->setting_backup_dir);
             cui_card(ui, .width = CUI_GROW(1), .pad = 12, .gap = 4) {
                 cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_CLOCK, 14, CUI_COLOR_ACCENT);
                     cui_text(ui, "历史快照", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
                 }
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_END) {
-                    cui_text(ui, "27", .font = CUI_FONT_DISPLAY, .size = 20);
-                    cui_textf(ui, "最近: %s", g_ai_space_version);
+                    char snap_txt[32];
+                    snprintf(snap_txt, sizeof(snap_txt), "%d", snap_count);
+                    cui_text(ui, snap_txt, .font = CUI_FONT_DISPLAY, .size = 20);
+                    if (snap_count > 0) {
+                        cui_textf(ui, "基准: %s", g_ai_space_version);
+                    }
                 }
             }
 
@@ -511,7 +594,17 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                     cui_text(ui, "远端仓库", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
                 }
                 cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                    cui_badge(ui, "Git (已连接)", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
+                    if (s->sync_cfg.type == SYNC_BACKEND_NONE) {
+                        cui_badge(ui, "未配置", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
+                    } else {
+                        const char *b_short = "Git";
+                        if (s->sync_cfg.type == SYNC_BACKEND_WEBDAV) b_short = "WebDAV";
+                        else if (s->sync_cfg.type == SYNC_BACKEND_NFS) b_short = "NFS";
+                        char repo_badge[64];
+                        bool is_connected = (s->sync_backend != NULL);
+                        snprintf(repo_badge, sizeof(repo_badge), "%s (%s)", b_short, is_connected ? "已连接" : "已配置");
+                        cui_badge(ui, repo_badge, .tone = is_connected ? CUI_TONE_SUCCESS : CUI_TONE_INFO, .size = CUI_SIZE_SM);
+                    }
                 }
             }
         }
