@@ -869,16 +869,16 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
 
             /* Tab 1: 工具列表 */
             bool is_tools = (s->current_page == PAGE_TOOL_LIST);
-            if (cui_button(ui, "  工具列表",
+            if (cui_button(ui, "工具列表",
                            .variant = is_tools ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                            .size = CUI_SIZE_SM,
                            .icon = CUI_ICON_FOLDER)) {
                 s->current_page = PAGE_TOOL_LIST;
             }
 
-            /* Tab 2: 技能列表 (全景大盘) */
+            /* Tab 2: 技能列表 */
             bool is_skills = (s->current_page == PAGE_ALL_SKILLS);
-            if (cui_button(ui, "  技能列表",
+            if (cui_button(ui, "技能列表",
                            .variant = is_skills ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                            .size = CUI_SIZE_SM,
                            .icon = CUI_ICON_PACKAGE)) {
@@ -893,7 +893,7 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
 
             /* Tab 3: 主仓管理 */
             bool is_hub = (s->current_page == PAGE_HUB_MATRIX);
-            if (cui_button(ui, "  主仓管理",
+            if (cui_button(ui, "主仓管理",
                            .variant = is_hub ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                            .size = CUI_SIZE_SM,
                            .icon = CUI_ICON_ARCHIVE)) {
@@ -908,7 +908,7 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
 
             /* Tab 4: 同步管理 */
             bool is_sync = (s->current_page == PAGE_SYNC_MANAGER);
-            if (cui_button(ui, "  同步管理",
+            if (cui_button(ui, "同步管理",
                            .variant = is_sync ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                            .size = CUI_SIZE_SM,
                            .icon = CUI_ICON_GLOBE)) {
@@ -920,7 +920,7 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
 
             /* Tab 5: 设置 */
             bool is_settings = (s->current_page == PAGE_SETTINGS);
-            if (cui_button(ui, "  设置",
+            if (cui_button(ui, "设置",
                            .variant = is_settings ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                            .size = CUI_SIZE_SM,
                            .icon = CUI_ICON_SETTINGS)) {
@@ -931,15 +931,8 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
         cui_spacer(ui);
 
         /* Global About Button (Extracted from Settings) */
-        if (cui_button(ui, "  关于", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM, .icon = CUI_ICON_INFO)) {
+        if (cui_button(ui, "关于", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM, .icon = CUI_ICON_INFO)) {
             s->show_about_dialog = true;
-        }
-
-        if (s->toast_frames > 0 && s->toast_msg[0] != '\0') {
-            cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                cui_icon(ui, CUI_ICON_INFO, 14, CUI_COLOR_ACCENT);
-                cui_text(ui, s->toast_msg, .size = 13, .color = CUI_COLOR_ACCENT);
-            }
         }
     }
 }
@@ -1072,16 +1065,37 @@ void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
                         cui_textf(ui, "主仓指纹: %s", entry->hub_hash);
                     }
                     cui_spacer(ui);
-                    /* Quick Action: Distribute to ALL tools */
-                    if (cui_button(ui, "分发到全部工具", .variant = CUI_BUTTON_PRIMARY,
-                                   .icon = CUI_ICON_SEND, .size = CUI_SIZE_SM)) {
-                        start_distribute_skill_to_all_thread(s, s->distribute_skill_name);
-                    }
                 }
             }
 
             /* 2. Tools Distribution List */
-            cui_text(ui, "各本地工具分发状态与操作:", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
+            static bool s_dist_tool_sel[64] = {false};
+            int sel_tools = 0;
+            for (int i = 0; i < s->hub_matrix.tool_count && i < 64; i++) {
+                if (s_dist_tool_sel[i]) sel_tools++;
+            }
+
+            cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                cui_text(ui, "各本地工具分发状态与操作:", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
+                cui_spacer(ui);
+                if (sel_tools > 0) {
+                    char sel_txt[32];
+                    snprintf(sel_txt, sizeof(sel_txt), "已选 %d 个", sel_tools);
+                    cui_badge(ui, sel_txt, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
+
+                    if (cui_button(ui, "批量安装", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_CHECK, .size = CUI_SIZE_SM)) {
+                        for (int i = 0; i < s->hub_matrix.tool_count && i < 64; i++) {
+                            if (s_dist_tool_sel[i]) {
+                                start_copy_install_thread(s, s->hub_matrix.tool_paths[i], s->distribute_skill_name, s->hub_matrix.tools[i], i);
+                                s_dist_tool_sel[i] = false;
+                            }
+                        }
+                    }
+                    if (cui_button(ui, "清空", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM)) {
+                        memset(s_dist_tool_sel, 0, sizeof(s_dist_tool_sel));
+                    }
+                }
+            }
 
             cui_scroll(ui, .id = "distribute_tools_scroll", .width = CUI_FILL, .height = CUI_PX(300)) {
                 cui_column(ui, .width = CUI_FILL, .gap = 8) {
@@ -1108,6 +1122,10 @@ void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
                                 .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_SURFACE), 0.7f),
                                 .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
                             cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                                if (t < 64) {
+                                    cui_checkbox(ui, "", &s_dist_tool_sel[t]);
+                                }
+
                                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                                     cui_icon(ui, CUI_ICON_BOX, 16, CUI_COLOR_ACCENT);
                                     cui_column(ui, .gap = 2) {
@@ -1124,7 +1142,7 @@ void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
                                 } else if (status == HUB_STATUS_IN_SYNC) {
                                     cui_badge(ui, "版本一致", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
                                 } else if (status == HUB_STATUS_LOCAL_MODIFIED) {
-                                    cui_badge(ui, "本地有改动", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
+                                    cui_badge(ui, "本地改动", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
                                 } else if (status == HUB_STATUS_OUTDATED) {
                                     cui_badge(ui, "版本落后", .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
                                 }
@@ -1137,12 +1155,12 @@ void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
                                             start_copy_install_thread(s, t_path, s->distribute_skill_name, t_name, t);
                                         }
                                     } else if (status == HUB_STATUS_LOCAL_MODIFIED || status == HUB_STATUS_OUTDATED) {
-                                        if (cui_button(ui, "覆盖同步", .variant = CUI_BUTTON_SECONDARY,
+                                        if (cui_button(ui, "覆盖", .variant = CUI_BUTTON_SECONDARY,
                                                        .icon = CUI_ICON_REFRESH_CW, .size = CUI_SIZE_SM)) {
                                             start_sync_master_to_tool_thread(s, t_path, s->distribute_skill_name, t_name, t);
                                         }
                                     } else {
-                                        if (cui_button(ui, "重新安装", .variant = CUI_BUTTON_GHOST,
+                                        if (cui_button(ui, "重装", .variant = CUI_BUTTON_GHOST,
                                                        .icon = CUI_ICON_REFRESH_CW, .size = CUI_SIZE_SM)) {
                                             start_sync_master_to_tool_thread(s, t_path, s->distribute_skill_name, t_name, t);
                                         }
@@ -1291,15 +1309,8 @@ static void *sync_check_worker_thread(void *arg) {
         sync_free_drift_summary(&s->sync_drift);
         s->sync_drift = new_diff;
         s->sync_drift_loaded = true;
-        char toast[256];
-        snprintf(toast, sizeof(toast), "远端变动检查完成: %d 个一致, %d 个待拉取, %d 个待推送",
-                 new_diff.in_sync_count,
-                 new_diff.remote_ahead_count + new_diff.remote_only_count,
-                 new_diff.local_ahead_count + new_diff.local_only_count);
-        app_set_toast(s, toast);
     } else {
         sync_free_drift_summary(&new_diff);
-        app_set_toast(s, err_buf[0] ? err_buf : "检查远端变动失败");
     }
 
     s->op_progress.percent = 1.0f;
@@ -1475,10 +1486,6 @@ static void *sync_op_worker_thread(void *arg) {
 
     s->op_progress.active = false;
     s->op_progress.thread_running = false;
-
-    char toast[256];
-    snprintf(toast, sizeof(toast), "%s操作已成功完成", op->is_push ? "推送到远端共享" : "从远端共享拉取");
-    app_set_toast(s, toast);
 
     free(op);
     return NULL;

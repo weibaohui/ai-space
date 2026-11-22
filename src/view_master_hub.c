@@ -231,12 +231,36 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
 
         cui_spacer(ui);
 
+        /* Multi-selection info & Action Buttons */
+        int sel_master = 0;
+        for (int i = 0; i < s->hub_matrix.skill_count; i++) {
+            hub_skill_entry_t *e = &s->hub_matrix.skills[i];
+            if (e->in_hub && e->selected) sel_master++;
+        }
+
         cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
+            if (sel_master > 0) {
+                char sel_lbl[32];
+                snprintf(sel_lbl, sizeof(sel_lbl), "已选 %d 项", sel_master);
+                cui_badge(ui, sel_lbl, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
+
+                if (cui_button(ui, "批量移出", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_TRASH_2)) {
+                    for (int i = 0; i < s->hub_matrix.skill_count; i++) {
+                        hub_skill_entry_t *e = &s->hub_matrix.skills[i];
+                        if (e->in_hub && e->selected) {
+                            hub_delete_master_skill(e->skill_name);
+                            e->selected = false;
+                        }
+                    }
+                    start_hub_scan_thread(s);
+                }
+                if (cui_button(ui, "清空", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM)) {
+                    for (int i = 0; i < s->hub_matrix.skill_count; i++) s->hub_matrix.skills[i].selected = false;
+                }
+            }
+
             if (cui_button(ui, "重新比对", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_REFRESH_CW)) {
                 start_hub_scan_thread(s);
-            }
-            if (cui_button(ui, "全量分发到所有工具", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SEND)) {
-                start_distribute_all_thread(s);
             }
         }
     }
@@ -251,10 +275,10 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                 cui_gap(ui, 16);
                 cui_heading(ui, "主仓尚未收录基准技能", 3);
                 cui_gap(ui, 6);
-                cui_text(ui, "可前往【技能列表】一键收录本机已发现的技能，或在主仓目录直接创建技能。",
+                cui_text(ui, "可前往【技能列表】收录本机已发现的技能，或在主仓目录直接创建技能。",
                          .color = CUI_COLOR_TEXT_SECONDARY, .size = 13);
                 cui_gap(ui, 20);
-                if (cui_button(ui, "前往技能列表一键收录", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_PACKAGE)) {
+                if (cui_button(ui, "前往收录", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_PACKAGE)) {
                     s->current_page = PAGE_ALL_SKILLS;
                 }
             }
@@ -280,6 +304,7 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                         /* Row 1: Title, Status, Action Buttons */
                         cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                             cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                                cui_checkbox(ui, "", &entry->selected);
                                 cui_icon(ui, CUI_ICON_ARCHIVE, 18, CUI_COLOR_ACCENT);
                                 cui_heading(ui, entry->skill_name, 4);
 
@@ -316,7 +341,7 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                                 }
 
                                 /* Core Distribution Entry Point */
-                                if (cui_button(ui, (entry->installed_count == 0) ? "分发..." : "分发管理...",
+                                if (cui_button(ui, "分发",
                                                .variant = (entry->installed_count == 0) ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                                .icon = CUI_ICON_SEND, .size = CUI_SIZE_SM)) {
                                     s->show_distribute_modal = true;

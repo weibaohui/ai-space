@@ -38,6 +38,7 @@ typedef struct {
 
     tool_copy_status_t *tool_copies;
     int tool_count;
+    bool selected;
 } hub_skill_entry_t;
 
 /* Aggregate matrix of all unique skills and all tools */

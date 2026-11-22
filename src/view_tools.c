@@ -28,14 +28,7 @@ void reload_db_data(app_state_t *s) {
 void do_scan_sync(app_state_t *s) {
     if (!s || !s->db) return;
     int inserted = 0, updated = 0, deleted = 0;
-    if (db_scan_and_sync(s->db, &inserted, &updated, &deleted) == 0) {
-        char msg[256];
-        snprintf(msg, sizeof(msg), "扫描同步完成: 新增 %d 个, 更新 %d 个, 移除 %d 个",
-                 inserted, updated, deleted);
-        app_set_toast(s, msg);
-    } else {
-        app_set_toast(s, "扫描同步失败，请检查文件权限");
-    }
+    db_scan_and_sync(s->db, &inserted, &updated, &deleted);
     reload_db_data(s);
 }
 
@@ -181,11 +174,6 @@ void render_tools_list_page(cui_ctx *ui, app_state_t *s) {
     /* 6. Bottom Status Bar */
     cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
         cui_textf(ui, "数据库: %s", s->db_path);
-
-        if (s->toast_frames > 0 && s->toast_msg[0] != '\0') {
-            cui_text(ui, " · ", .color = CUI_COLOR_TEXT_MUTED);
-            cui_text(ui, s->toast_msg, .color = CUI_COLOR_ACCENT);
-        }
 
         cui_spacer(ui);
 

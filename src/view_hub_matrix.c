@@ -64,13 +64,45 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
 
         cui_spacer(ui);
 
-        /* Action Buttons: Only current page's actions */
+        /* Multi-selection info & Action Buttons */
+        int sel_skills = 0, sel_unadopted = 0;
+        for (int i = 0; i < s->hub_matrix.skill_count; i++) {
+            if (s->hub_matrix.skills[i].selected) {
+                sel_skills++;
+                if (!s->hub_matrix.skills[i].in_hub) sel_unadopted++;
+            }
+        }
+
         cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
+            if (sel_skills > 0) {
+                char sel_lbl[32];
+                snprintf(sel_lbl, sizeof(sel_lbl), "已选 %d 项", sel_skills);
+                cui_badge(ui, sel_lbl, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
+
+                if (sel_unadopted > 0) {
+                    if (cui_button(ui, "批量收录", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_CHECK)) {
+                        for (int i = 0; i < s->hub_matrix.skill_count; i++) {
+                            hub_skill_entry_t *e = &s->hub_matrix.skills[i];
+                            if (e->selected && !e->in_hub) {
+                                for (int t = 0; t < e->tool_count; t++) {
+                                    if (e->tool_copies[t].exists) {
+                                        hub_promote_to_master(e->tool_copies[t].tool_skills_path, e->skill_name);
+                                        break;
+                                    }
+                                }
+                                e->selected = false;
+                            }
+                        }
+                        start_hub_scan_thread(s);
+                    }
+                }
+                if (cui_button(ui, "清空", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM)) {
+                    for (int i = 0; i < s->hub_matrix.skill_count; i++) s->hub_matrix.skills[i].selected = false;
+                }
+            }
+
             if (cui_button(ui, "刷新扫描", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_REFRESH_CW)) {
                 start_hub_scan_thread(s);
-            }
-            if (cui_button(ui, "全量收录主库", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_CHECK)) {
-                start_adopt_all_thread(s);
             }
         }
     }
@@ -108,30 +140,22 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                    .placeholder = "按技能名或描述搜索...", .width = CUI_PX(280));
 
         cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-            char all_lbl[64];
-            snprintf(all_lbl, sizeof(all_lbl), "全部 (%d)", s->hub_matrix.total_unique_skills);
-            if (cui_button(ui, all_lbl,
+            if (cui_button(ui, "全部",
                            .variant = (s->hub_filter_mode == 0) ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                            .size = CUI_SIZE_SM)) {
                 s->hub_filter_mode = 0;
             }
-            char drift_lbl[64];
-            snprintf(drift_lbl, sizeof(drift_lbl), "存在分化 (%d)", s->hub_matrix.drifted_skills_count);
-            if (cui_button(ui, drift_lbl,
+            if (cui_button(ui, "有改动",
                            .variant = (s->hub_filter_mode == 1) ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                            .size = CUI_SIZE_SM)) {
                 s->hub_filter_mode = 1;
             }
-            int unman_cnt = s->hub_matrix.total_unique_skills - s->hub_matrix.hub_managed_skills;
-            if (unman_cnt < 0) unman_cnt = 0;
-            char unman_lbl[64];
-            snprintf(unman_lbl, sizeof(unman_lbl), "未收录 (%d)", unman_cnt);
-            if (cui_button(ui, unman_lbl,
+            if (cui_button(ui, "未收录",
                            .variant = (s->hub_filter_mode == 2) ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                            .size = CUI_SIZE_SM)) {
                 s->hub_filter_mode = 2;
             }
-            if (cui_button(ui, "完全一致",
+            if (cui_button(ui, "已一致",
                            .variant = (s->hub_filter_mode == 3) ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                            .size = CUI_SIZE_SM)) {
                 s->hub_filter_mode = 3;
@@ -139,12 +163,13 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
         }
     }
 
-    /* 7. Main Matrix Table (4 Consolidated Columns) */
+    /* 7. Main Matrix Table (5 Consolidated Columns) */
     static const cui_table_column hub_cols[] = {
+        { "",               CUI_PX(36),  CUI_TEXT_CENTER, false },
         { "技能名称与描述", CUI_PX(280), CUI_TEXT_LEFT,   true  },
         { "主仓状态",       CUI_PX(130), CUI_TEXT_LEFT,   true  },
-        { "工具分布与状态", CUI_FILL,   CUI_TEXT_LEFT,   false },
-        { "操作",           CUI_PX(180), CUI_TEXT_CENTER, false },
+        { "工具分布与状态", CUI_FILL,    CUI_TEXT_LEFT,   false },
+        { "操作",           CUI_PX(150), CUI_TEXT_CENTER, false },
     };
 
     /* Count filtered items */
@@ -180,7 +205,7 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                 }
             }
         } else {
-            cui_table(ui, "hub_matrix_table", hub_cols, 4,
+            cui_table(ui, "hub_matrix_table", hub_cols, 5,
                       .striped = true, .compact = true, .selectable = true, .height = CUI_FILL) {
                 for (int i = 0; i < s->hub_matrix.skill_count; i++) {
                     hub_skill_entry_t *e = &s->hub_matrix.skills[i];
@@ -204,7 +229,11 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                     cui_push_id_int(ui, i);
                     cui_table_row(ui, false);
 
-                    /* Col 0: Skill Name & Description */
+                    /* Col 0: Checkbox for Multi-Select */
+                    cui_table_cell(ui);
+                    cui_checkbox(ui, "", &e->selected);
+
+                    /* Col 1: Skill Name & Description */
                     cui_table_cell(ui);
                     cui_column(ui, .gap = 2) {
                         cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
@@ -216,7 +245,7 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                         }
                     }
 
-                    /* Col 1: Master Hub Status */
+                    /* Col 2: Master Hub Status */
                     cui_table_cell(ui);
                     if (!e->in_hub) {
                         cui_badge(ui, "未收录", .tone = CUI_TONE_VIOLET, .size = CUI_SIZE_SM);
@@ -232,7 +261,7 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                         cui_badge(ui, "已收录", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
                     }
 
-                    /* Col 2: Tool copies presence & drift relations (Merged with count) */
+                    /* Col 3: Tool copies presence & drift relations (Merged with count) */
                     cui_table_cell(ui);
                     cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                         int shown = 0;
@@ -260,7 +289,7 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                         }
                     }
 
-                    /* Col 3: Action Buttons */
+                    /* Col 4: Action Buttons */
                     cui_table_cell(ui);
                     cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                         if (cui_button(ui, "对比", .variant = CUI_BUTTON_OUTLINE,
@@ -271,14 +300,14 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                         }
 
                         if (e->in_hub) {
-                            if (cui_button(ui, "分发...", .variant = CUI_BUTTON_SECONDARY,
+                            if (cui_button(ui, "分发", .variant = CUI_BUTTON_SECONDARY,
                                            .size = CUI_SIZE_SM, .icon = CUI_ICON_SEND)) {
                                 s->show_distribute_modal = true;
                                 strncpy(s->distribute_skill_name, e->skill_name, sizeof(s->distribute_skill_name) - 1);
                                 s->distribute_skill_name[sizeof(s->distribute_skill_name) - 1] = '\0';
                             }
                         } else {
-                            if (cui_button(ui, "收录主库", .variant = CUI_BUTTON_PRIMARY,
+                            if (cui_button(ui, "收录", .variant = CUI_BUTTON_PRIMARY,
                                            .size = CUI_SIZE_SM, .icon = CUI_ICON_CHECK)) {
                                 for (int t = 0; t < e->tool_count; t++) {
                                     if (e->tool_copies[t].exists) {

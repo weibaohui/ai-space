@@ -46,9 +46,7 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
 
     /* Top Navigation Row */
     cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        const char *back_lbl = (s->prev_page == PAGE_ALL_SKILLS) ? " 返回技能列表" :
-                               (s->prev_page == PAGE_HUB_MATRIX || s->prev_hub_subview == HUB_SUBVIEW_MASTER_SKILLS) ? " 返回主仓管理" : " 返回上一页";
-        if (cui_button(ui, back_lbl, .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_CHEVRON_LEFT)) {
+        if (cui_button(ui, "返回", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_CHEVRON_LEFT)) {
             if (s->prev_page == PAGE_ALL_SKILLS) {
                 s->current_page = PAGE_ALL_SKILLS;
             } else if (s->prev_page == PAGE_HUB_MATRIX) {
@@ -89,15 +87,6 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
                     strcpy(short_desc + 77, "...");
                 }
                 cui_text(ui, short_desc, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-            }
-        }
-
-        cui_spacer(ui);
-
-        /* Action: Broadcast to all tools */
-        if (entry->in_hub) {
-            if (cui_button(ui, "全量广播到所有工具", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SHARE_2)) {
-                start_broadcast_thread(s, entry->skill_name, s->selected_hub_tool_idx);
             }
         }
     }
@@ -298,13 +287,13 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
 
                     if (cur_tc && cur_tc->exists) {
                         /* Direct sync actions on the diff toolbar */
-                        if (cui_button(ui, "采纳为基准", .variant = CUI_BUTTON_OUTLINE,
+                        if (cui_button(ui, "设为基准", .variant = CUI_BUTTON_OUTLINE,
                                        .size = CUI_SIZE_SM, .icon = CUI_ICON_CHECK)) {
                             start_promote_to_master_thread(s, cur_tc->tool_skills_path, entry->skill_name, cur_tc->tool_name, s->selected_hub_tool_idx);
                         }
 
                         if (entry->in_hub) {
-                            if (cui_button(ui, "覆盖此工具", .variant = CUI_BUTTON_SECONDARY,
+                            if (cui_button(ui, "覆盖工具", .variant = CUI_BUTTON_SECONDARY,
                                            .size = CUI_SIZE_SM, .icon = CUI_ICON_DOWNLOAD)) {
                                 start_sync_master_to_tool_thread(s, cur_tc->tool_skills_path, entry->skill_name, cur_tc->tool_name, s->selected_hub_tool_idx);
                             }

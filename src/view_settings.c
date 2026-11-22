@@ -134,7 +134,7 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
 
             /* Action Buttons */
             cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                if (cui_button(ui, "保存主仓路径", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
+                if (cui_button(ui, "保存路径", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
                     app_save_settings(s);
                     s->hub_matrix_loaded = false;
                     char toast[256];
@@ -194,7 +194,7 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
 
             /* Action Buttons */
             cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                if (cui_button(ui, "保存备份路径", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
+                if (cui_button(ui, "保存路径", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
                     app_save_settings(s);
                     char toast[256];
                     snprintf(toast, sizeof(toast), "备份路径已更新为: %s", s->setting_backup_dir);
@@ -236,7 +236,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
             /* Radio-style Backend Selection (Strictly 1 Active Backend) */
             cui_row(ui, .width = CUI_FILL, .gap = 10, .align = CUI_ALIGN_CENTER) {
                 bool is_cand_none = (s->setting_sync_candidate_type == SYNC_BACKEND_NONE);
-                if (cui_button(ui, "单机本地模式",
+                if (cui_button(ui, "单机模式",
                                .variant = is_cand_none ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                .icon = CUI_ICON_BOX)) {
                     s->setting_sync_candidate_type = SYNC_BACKEND_NONE;
@@ -244,7 +244,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                 }
 
                 bool is_cand_webdav = (s->setting_sync_candidate_type == SYNC_BACKEND_WEBDAV);
-                if (cui_button(ui, "WebDAV 网盘",
+                if (cui_button(ui, "网盘同步",
                                .variant = is_cand_webdav ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                .icon = CUI_ICON_GLOBE)) {
                     s->setting_sync_candidate_type = SYNC_BACKEND_WEBDAV;
@@ -252,7 +252,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                 }
 
                 bool is_cand_nfs = (s->setting_sync_candidate_type == SYNC_BACKEND_NFS);
-                if (cui_button(ui, "局域网共享目录",
+                if (cui_button(ui, "局域共享",
                                .variant = is_cand_nfs ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                .icon = CUI_ICON_FOLDER)) {
                     s->setting_sync_candidate_type = SYNC_BACKEND_NFS;
@@ -260,7 +260,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                 }
 
                 bool is_cand_git = (s->setting_sync_candidate_type == SYNC_BACKEND_GIT);
-                if (cui_button(ui, "Git 远端仓库",
+                if (cui_button(ui, "Git库",
                                .variant = is_cand_git ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                .icon = CUI_ICON_GIT_BRANCH)) {
                     s->setting_sync_candidate_type = SYNC_BACKEND_GIT;
@@ -292,7 +292,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                 }
 
                 cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
-                    if (cui_button(ui, "激活单机模式", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
+                    if (cui_button(ui, "激活模式", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
                         s->sync_cfg.type = SYNC_BACKEND_NONE;
                         app_save_settings(s);
                         s->sync_drift_loaded = false;
@@ -414,7 +414,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                     bool is_checking = s->op_progress.active;
 
                     /* Primary action: Check availability in background with progress modal, only activate if check succeeds */
-                    if (cui_button(ui, "检测并激活",
+                    if (cui_button(ui, "检测激活",
                                    .variant = CUI_BUTTON_PRIMARY,
                                    .icon = is_checking ? CUI_ICON_LOADER_CIRCLE : CUI_ICON_CHECK_CHECK,
                                    .disabled = is_checking)) {
@@ -422,7 +422,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                     }
 
                     /* Secondary action: Check only, do not alter active backend */
-                    if (cui_button(ui, "仅检测可用性",
+                    if (cui_button(ui, "仅做检测",
                                    .variant = CUI_BUTTON_SECONDARY,
                                    .icon = is_checking ? CUI_ICON_LOADER_CIRCLE : CUI_ICON_ACTIVITY,
                                    .disabled = is_checking)) {
@@ -489,7 +489,7 @@ static void render_tab_scan(cui_ctx *ui, app_state_t *s) {
             }
 
             cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                if (cui_button(ui, "保存同步策略", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
+                if (cui_button(ui, "保存策略", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
                     app_save_settings(s);
                     app_set_toast(s, "扫描与同步安全策略已保存生效");
                 }
@@ -566,7 +566,7 @@ static void render_tab_preferences(cui_ctx *ui, app_state_t *s) {
             }
 
             cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                if (cui_button(ui, "保存偏好设置", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
+                if (cui_button(ui, "保存设置", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
                     app_save_settings(s);
                     app_set_toast(s, "常规偏好设置已更新");
                 }
@@ -602,9 +602,9 @@ void render_settings_page(cui_ctx *ui, app_state_t *s) {
                 .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
             cui_text(ui, "配置分类", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
 
-            /* Tab 0: 仓储与主库 */
+            /* Tab 0: 主库存储 */
             bool tab0_active = (s->settings_active_tab == 0);
-            if (cui_button(ui, "  仓储与主库",
+            if (cui_button(ui, "主库存储",
                            .variant = tab0_active ? CUI_BUTTON_PRIMARY : CUI_BUTTON_GHOST,
                            .width = CUI_FILL,
                            .size = CUI_SIZE_MD,
@@ -614,7 +614,7 @@ void render_settings_page(cui_ctx *ui, app_state_t *s) {
 
             /* Tab 1: 远端同步 */
             bool tab1_active = (s->settings_active_tab == 1);
-            if (cui_button(ui, "  远端同步",
+            if (cui_button(ui, "远端同步",
                            .variant = tab1_active ? CUI_BUTTON_PRIMARY : CUI_BUTTON_GHOST,
                            .width = CUI_FILL,
                            .size = CUI_SIZE_MD,
@@ -622,9 +622,9 @@ void render_settings_page(cui_ctx *ui, app_state_t *s) {
                 s->settings_active_tab = 1;
             }
 
-            /* Tab 2: 扫描与策略 */
+            /* Tab 2: 扫描策略 */
             bool tab2_active = (s->settings_active_tab == 2);
-            if (cui_button(ui, "  扫描与策略",
+            if (cui_button(ui, "扫描策略",
                            .variant = tab2_active ? CUI_BUTTON_PRIMARY : CUI_BUTTON_GHOST,
                            .width = CUI_FILL,
                            .size = CUI_SIZE_MD,
@@ -634,7 +634,7 @@ void render_settings_page(cui_ctx *ui, app_state_t *s) {
 
             /* Tab 3: 常规偏好 */
             bool tab3_active = (s->settings_active_tab == 3);
-            if (cui_button(ui, "  常规偏好",
+            if (cui_button(ui, "常规偏好",
                            .variant = tab3_active ? CUI_BUTTON_PRIMARY : CUI_BUTTON_GHOST,
                            .width = CUI_FILL,
                            .size = CUI_SIZE_MD,
