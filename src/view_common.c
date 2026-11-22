@@ -778,7 +778,19 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
                 }
             }
 
-            /* Tab 3: 设置 */
+            /* Tab 3: 同步管理 */
+            bool is_sync = (s->current_page == PAGE_SYNC_MANAGER);
+            if (cui_button(ui, "  同步管理",
+                           .variant = is_sync ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
+                           .size = CUI_SIZE_SM,
+                           .icon = CUI_ICON_GLOBE)) {
+                s->current_page = PAGE_SYNC_MANAGER;
+                if (!s->sync_drift_loaded && !s->sync_is_busy) {
+                    start_sync_check_thread(s);
+                }
+            }
+
+            /* Tab 4: 设置 */
             bool is_settings = (s->current_page == PAGE_SETTINGS);
             if (cui_button(ui, "  设置",
                            .variant = is_settings ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
@@ -790,10 +802,70 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
 
         cui_spacer(ui);
 
+        /* Global About Button (Extracted from Settings) */
+        if (cui_button(ui, "  关于", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM, .icon = CUI_ICON_INFO)) {
+            s->show_about_dialog = true;
+        }
+
         if (s->toast_frames > 0 && s->toast_msg[0] != '\0') {
             cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                 cui_icon(ui, CUI_ICON_INFO, 14, CUI_COLOR_ACCENT);
                 cui_text(ui, s->toast_msg, .size = 13, .color = CUI_COLOR_ACCENT);
+            }
+        }
+    }
+}
+
+void render_about_modal(cui_ctx *ui, app_state_t *s) {
+    if (!s || !s->show_about_dialog) return;
+
+    cui_dialog(ui, "关于 AI-Space", &s->show_about_dialog, .width = 540) {
+        cui_column(ui, .width = CUI_FILL, .gap = 14, .pad = 6) {
+            cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
+                cui_box(ui, .width = CUI_PX(40), .height = CUI_PX(40), .radius = 10,
+                        .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_ACCENT), 0.18f),
+                        .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
+                    cui_icon(ui, CUI_ICON_LAYERS, 20, CUI_COLOR_ACCENT);
+                }
+                cui_column(ui, .gap = 2) {
+                    cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                        cui_heading(ui, "AI-Space", 3);
+                        cui_badge(ui, "v1.0.0 Release", .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
+                    }
+                    cui_text(ui, "本地优先的多智能体技能与主仓集中同步管理工作台",
+                             .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                }
+            }
+
+            cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 12, .gap = 8,
+                    .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
+                    .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
+                cui_text(ui, "核心架构规范与设计原则:", .size = 12, .color = CUI_COLOR_FOREGROUND);
+                cui_column(ui, .gap = 6) {
+                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                        cui_icon(ui, CUI_ICON_CHECK, 13, CUI_COLOR_ACCENT);
+                        cui_text(ui, "物理原子复制 (No Symlinks): 杜绝软链接在跨运行时与容器挂载环境中的失效风险。",
+                                 .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                    }
+                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                        cui_icon(ui, CUI_ICON_CHECK, 13, CUI_COLOR_ACCENT);
+                        cui_text(ui, "强一致性与快照回退: 每次覆盖自动在 ~/.ai-space/backups 归档时间戳快照。",
+                                 .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                    }
+                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                        cui_icon(ui, CUI_ICON_CHECK, 13, CUI_COLOR_ACCENT);
+                        cui_text(ui, "主机无关多端同步: 支持 WebDAV、NFS 共享挂载、Git 远端版本库，跨主机无缝协同。",
+                                 .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                    }
+                }
+            }
+
+            cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                cui_text(ui, "C99 原生引擎 · SQLite3 持久化 · CUI 响应式图形界面", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                cui_spacer(ui);
+                if (cui_button(ui, "确定", .variant = CUI_BUTTON_PRIMARY, .size = CUI_SIZE_SM)) {
+                    s->show_about_dialog = false;
+                }
             }
         }
     }
@@ -826,6 +898,19 @@ void render_op_progress_modal(cui_ctx *ui, app_state_t *s) {
     }
 }
 
+void app_init_sync_backend(app_state_t *s) {
+    if (!s) return;
+    if (s->sync_backend) {
+        sync_backend_destroy(s->sync_backend);
+        s->sync_backend = NULL;
+    }
+    sync_backend_create(&s->sync_cfg, &s->sync_backend);
+    if (s->sync_backend && s->sync_backend->ops->test_connection) {
+        char err[256] = "";
+        s->sync_backend->ops->test_connection(s->sync_backend, err, sizeof(err));
+    }
+}
+
 void app_init_settings(app_state_t *s) {
     if (!s || !s->db) return;
 
@@ -848,6 +933,26 @@ void app_init_settings(app_state_t *s) {
 
     /* Apply custom dirs to hub manager */
     hub_set_custom_dirs(s->setting_hub_dir, s->setting_backup_dir);
+
+    /* Sync Backend Settings */
+    char s_type[16];
+    db_get_setting(s->db, "sync_backend_type", s_type, sizeof(s_type), "2"); /* default NFS / Local Share */
+    s->sync_cfg.type = (sync_backend_type_t)atoi(s_type);
+
+    db_get_setting(s->db, "sync_webdav_url", s->sync_cfg.webdav_url, sizeof(s->sync_cfg.webdav_url), "https://dav.jianguoyun.com/dav/ai-space/");
+    db_get_setting(s->db, "sync_webdav_user", s->sync_cfg.webdav_user, sizeof(s->sync_cfg.webdav_user), "");
+    db_get_setting(s->db, "sync_webdav_pass", s->sync_cfg.webdav_pass, sizeof(s->sync_cfg.webdav_pass), "");
+    db_get_setting(s->db, "sync_webdav_path", s->sync_cfg.webdav_remote_path, sizeof(s->sync_cfg.webdav_remote_path), "/ai-space/skills");
+
+    db_get_setting(s->db, "sync_nfs_path", s->sync_cfg.nfs_mount_path, sizeof(s->sync_cfg.nfs_mount_path), "~/.ai-space/remote-share");
+
+    db_get_setting(s->db, "sync_git_url", s->sync_cfg.git_repo_url, sizeof(s->sync_cfg.git_repo_url), "https://github.com/myteam/ai-skills.git");
+    db_get_setting(s->db, "sync_git_branch", s->sync_cfg.git_branch, sizeof(s->sync_cfg.git_branch), "main");
+    db_get_setting(s->db, "sync_git_token", s->sync_cfg.git_auth_token, sizeof(s->sync_cfg.git_auth_token), "");
+    db_get_setting(s->db, "sync_git_user", s->sync_cfg.git_user_name, sizeof(s->sync_cfg.git_user_name), "AI-Space User");
+    db_get_setting(s->db, "sync_git_email", s->sync_cfg.git_user_email, sizeof(s->sync_cfg.git_user_email), "user@example.com");
+
+    app_init_sync_backend(s);
 }
 
 void app_save_settings(app_state_t *s) {
@@ -867,4 +972,222 @@ void app_save_settings(app_state_t *s) {
 
     /* Apply custom dirs to hub manager */
     hub_set_custom_dirs(s->setting_hub_dir, s->setting_backup_dir);
+
+    /* Sync Backend Settings */
+    char s_type[16];
+    snprintf(s_type, sizeof(s_type), "%d", (int)s->sync_cfg.type);
+    db_set_setting(s->db, "sync_backend_type", s_type);
+
+    db_set_setting(s->db, "sync_webdav_url", s->sync_cfg.webdav_url);
+    db_set_setting(s->db, "sync_webdav_user", s->sync_cfg.webdav_user);
+    db_set_setting(s->db, "sync_webdav_pass", s->sync_cfg.webdav_pass);
+    db_set_setting(s->db, "sync_webdav_path", s->sync_cfg.webdav_remote_path);
+
+    db_set_setting(s->db, "sync_nfs_path", s->sync_cfg.nfs_mount_path);
+
+    db_set_setting(s->db, "sync_git_url", s->sync_cfg.git_repo_url);
+    db_set_setting(s->db, "sync_git_branch", s->sync_cfg.git_branch);
+    db_set_setting(s->db, "sync_git_token", s->sync_cfg.git_auth_token);
+    db_set_setting(s->db, "sync_git_user", s->sync_cfg.git_user_name);
+    db_set_setting(s->db, "sync_git_email", s->sync_cfg.git_user_email);
+
+    app_init_sync_backend(s);
 }
+
+/* -------------------- Sync Background Workers -------------------- */
+
+static void *sync_check_worker_thread(void *arg) {
+    app_state_t *s = (app_state_t *)arg;
+    if (!s) return NULL;
+    if (!s->sync_backend) app_init_sync_backend(s);
+    if (!s->sync_backend || !s->sync_backend->ops->check_drift) {
+        s->sync_is_busy = false;
+        return NULL;
+    }
+
+    s->sync_is_busy = true;
+    char err_buf[256] = "";
+    sync_drift_summary_t new_diff = {0};
+
+    int rc = s->sync_backend->ops->check_drift(s->sync_backend, s->setting_hub_dir, &new_diff, err_buf, sizeof(err_buf));
+    if (rc == 0) {
+        sync_free_drift_summary(&s->sync_drift);
+        s->sync_drift = new_diff;
+        s->sync_drift_loaded = true;
+        char toast[256];
+        snprintf(toast, sizeof(toast), "远端变动检查完成: %d 个一致, %d 个待拉取, %d 个待推送",
+                 new_diff.in_sync_count,
+                 new_diff.remote_ahead_count + new_diff.remote_only_count,
+                 new_diff.local_ahead_count + new_diff.local_only_count);
+        app_set_toast(s, toast);
+    } else {
+        sync_free_drift_summary(&new_diff);
+        app_set_toast(s, err_buf[0] ? err_buf : "检查远端变动失败");
+    }
+
+    s->sync_is_busy = false;
+    return NULL;
+}
+
+void start_sync_check_thread(app_state_t *s) {
+    if (!s || s->sync_is_busy) return;
+    s->sync_is_busy = true;
+    pthread_t th;
+    pthread_create(&th, NULL, sync_check_worker_thread, s);
+    pthread_detach(th);
+}
+
+typedef struct {
+    app_state_t *s;
+    char skill_name[128];
+    bool is_push;
+    bool is_all;
+} sync_op_arg_t;
+
+static void sync_transfer_progress_cb(float percent, const char *msg, void *user_data) {
+    app_state_t *s = (app_state_t *)user_data;
+    if (!s) return;
+    s->op_progress.percent = percent;
+    if (msg) {
+        strncpy(s->op_progress.message, msg, sizeof(s->op_progress.message) - 1);
+        s->op_progress.message[sizeof(s->op_progress.message) - 1] = '\0';
+    }
+}
+
+static void *sync_op_worker_thread(void *arg) {
+    sync_op_arg_t *op = (sync_op_arg_t *)arg;
+    app_state_t *s = op->s;
+
+    if (!s->sync_backend) app_init_sync_backend(s);
+
+    if (s->sync_backend) {
+        if (op->is_all) {
+            if (op->is_push) {
+                if (s->sync_backend->ops->push_all) {
+                    s->sync_backend->ops->push_all(s->sync_backend, s->setting_hub_dir, sync_transfer_progress_cb, s);
+                }
+            } else {
+                if (s->sync_backend->ops->pull_all) {
+                    s->sync_backend->ops->pull_all(s->sync_backend, s->setting_hub_dir, sync_transfer_progress_cb, s);
+                }
+            }
+        } else {
+            if (op->is_push) {
+                if (s->sync_backend->ops->push_skill) {
+                    s->sync_backend->ops->push_skill(s->sync_backend, op->skill_name, s->setting_hub_dir, sync_transfer_progress_cb, s);
+                }
+            } else {
+                if (s->sync_backend->ops->pull_skill) {
+                    s->sync_backend->ops->pull_skill(s->sync_backend, op->skill_name, s->setting_hub_dir, sync_transfer_progress_cb, s);
+                }
+            }
+        }
+
+        /* Refresh drift status */
+        sync_drift_summary_t new_diff = {0};
+        if (s->sync_backend->ops->check_drift) {
+            s->sync_backend->ops->check_drift(s->sync_backend, s->setting_hub_dir, &new_diff, NULL, 0);
+            sync_free_drift_summary(&s->sync_drift);
+            s->sync_drift = new_diff;
+            s->sync_drift_loaded = true;
+        }
+
+        /* Rescan local master hub matrix */
+        hub_matrix_t new_matrix;
+        hub_scan_matrix(s->db, &new_matrix);
+        hub_free_matrix(&s->hub_matrix);
+        s->hub_matrix = new_matrix;
+        s->hub_matrix_loaded = true;
+    }
+
+    s->op_progress.percent = 1.0f;
+    snprintf(s->op_progress.message, sizeof(s->op_progress.message), "%s完成！", op->is_push ? "推送" : "拉取");
+    usleep(150000);
+
+    s->op_progress.active = false;
+    s->op_progress.thread_running = false;
+
+    char toast[256];
+    snprintf(toast, sizeof(toast), "%s操作已成功完成", op->is_push ? "推送到远端共享" : "从远端共享拉取");
+    app_set_toast(s, toast);
+
+    free(op);
+    return NULL;
+}
+
+void start_sync_pull_skill_thread(app_state_t *s, const char *skill_name) {
+    if (!s || s->op_progress.active || !skill_name) return;
+    sync_op_arg_t *arg = (sync_op_arg_t *)malloc(sizeof(sync_op_arg_t));
+    if (!arg) return;
+    arg->s = s;
+    strncpy(arg->skill_name, skill_name, sizeof(arg->skill_name) - 1);
+    arg->is_push = false;
+    arg->is_all = false;
+
+    s->op_progress.active = true;
+    s->op_progress.percent = 0.1f;
+    snprintf(s->op_progress.title, sizeof(s->op_progress.title), "正在从远端拉取 [%s]...", skill_name);
+    strncpy(s->op_progress.message, "正在执行文件同步到本地主仓...", sizeof(s->op_progress.message) - 1);
+    s->op_progress.thread_running = true;
+
+    pthread_create(&s->op_progress.thread, NULL, sync_op_worker_thread, arg);
+    pthread_detach(s->op_progress.thread);
+}
+
+void start_sync_push_skill_thread(app_state_t *s, const char *skill_name) {
+    if (!s || s->op_progress.active || !skill_name) return;
+    sync_op_arg_t *arg = (sync_op_arg_t *)malloc(sizeof(sync_op_arg_t));
+    if (!arg) return;
+    arg->s = s;
+    strncpy(arg->skill_name, skill_name, sizeof(arg->skill_name) - 1);
+    arg->is_push = true;
+    arg->is_all = false;
+
+    s->op_progress.active = true;
+    s->op_progress.percent = 0.1f;
+    snprintf(s->op_progress.title, sizeof(s->op_progress.title), "正在推送 [%s] 到远端共享...", skill_name);
+    strncpy(s->op_progress.message, "正在同步本地主仓文件至远端...", sizeof(s->op_progress.message) - 1);
+    s->op_progress.thread_running = true;
+
+    pthread_create(&s->op_progress.thread, NULL, sync_op_worker_thread, arg);
+    pthread_detach(s->op_progress.thread);
+}
+
+void start_sync_pull_all_thread(app_state_t *s) {
+    if (!s || s->op_progress.active) return;
+    sync_op_arg_t *arg = (sync_op_arg_t *)malloc(sizeof(sync_op_arg_t));
+    if (!arg) return;
+    arg->s = s;
+    arg->skill_name[0] = '\0';
+    arg->is_push = false;
+    arg->is_all = true;
+
+    s->op_progress.active = true;
+    s->op_progress.percent = 0.05f;
+    strncpy(s->op_progress.title, "正在从远端全量拉取更新...", sizeof(s->op_progress.title) - 1);
+    strncpy(s->op_progress.message, "准备拉取所有落后的技能版本...", sizeof(s->op_progress.message) - 1);
+    s->op_progress.thread_running = true;
+
+    pthread_create(&s->op_progress.thread, NULL, sync_op_worker_thread, arg);
+    pthread_detach(s->op_progress.thread);
+}
+
+void start_sync_push_all_thread(app_state_t *s) {
+    if (!s || s->op_progress.active) return;
+    sync_op_arg_t *arg = (sync_op_arg_t *)malloc(sizeof(sync_op_arg_t));
+    if (!arg) return;
+    arg->s = s;
+    arg->skill_name[0] = '\0';
+    arg->is_push = true;
+    arg->is_all = true;
+
+    s->op_progress.active = true;
+    s->op_progress.percent = 0.05f;
+    strncpy(s->op_progress.title, "正在全量推送本地技能至远端...", sizeof(s->op_progress.title) - 1);
+    strncpy(s->op_progress.message, "准备发布本地新增及改动技能...", sizeof(s->op_progress.message) - 1);
+    s->op_progress.thread_running = true;
+
+    pthread_create(&s->op_progress.thread, NULL, sync_op_worker_thread, arg);
+    pthread_detach(s->op_progress.thread);
+}
+

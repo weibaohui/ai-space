@@ -12,6 +12,7 @@
 #include "view_hub_diff.h"
 #include "view_master_hub.h"
 #include "view_settings.h"
+#include "view_sync.h"
 
 /* -------------------- Main Frame Dispatcher -------------------- */
 
@@ -28,11 +29,16 @@ static void frame(cui_ctx *ui, void *user) {
             render_tool_skills_page(ui, s);
         } else if (s->current_page == PAGE_SETTINGS) {
             render_settings_page(ui, s);
+        } else if (s->current_page == PAGE_SYNC_MANAGER) {
+            render_sync_manager_page(ui, s);
         }
     }
 
     /* Global Operation Progress Modal (single source of truth for the app) */
     render_op_progress_modal(ui, s);
+
+    /* Global About AI-Space Modal */
+    render_about_modal(ui, s);
 }
 
 int main(void) {
@@ -61,7 +67,15 @@ int main(void) {
     }
 
     const char *start_page = getenv("CUI_START_PAGE");
-    if (start_page && strcmp(start_page, "settings") == 0) {
+    if (start_page && strcmp(start_page, "sync") == 0) {
+        s.current_page = PAGE_SYNC_MANAGER;
+        if (getenv("CUI_SYNC_CHECK")) {
+            if (s.sync_backend && s.sync_backend->ops->check_drift) {
+                s.sync_backend->ops->check_drift(s.sync_backend, s.setting_hub_dir, &s.sync_drift, NULL, 0);
+                s.sync_drift_loaded = true;
+            }
+        }
+    } else if (start_page && strcmp(start_page, "settings") == 0) {
         s.current_page = PAGE_SETTINGS;
         const char *start_tab = getenv("CUI_START_TAB");
         if (start_tab) {
@@ -96,6 +110,10 @@ int main(void) {
         } else {
             start_hub_scan_thread(&s);
         }
+    }
+
+    if (getenv("CUI_START_ABOUT")) {
+        s.show_about_dialog = true;
     }
 
     const char *start_tool = getenv("CUI_START_TOOL");

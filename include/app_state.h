@@ -9,12 +9,14 @@
 #include "models.h"
 #include "skill_scanner.h"
 #include "hub_manager.h"
+#include "sync_backend.h"
 
 typedef enum {
     PAGE_TOOL_LIST = 0,
     PAGE_HUB_MATRIX = 1,
     PAGE_TOOL_SKILLS = 2,
     PAGE_SETTINGS = 3,
+    PAGE_SYNC_MANAGER = 4,
 } page_view_t;
 
 typedef enum {
@@ -152,13 +154,26 @@ typedef struct app_state_t {
     int doc_render_mode;        /* 0: 预览/高亮, 1: 源码/代码 */
 
     /* Settings Page state */
-    int settings_active_tab;    /* 0: 仓储与路径, 1: 扫描与同步, 2: 常规与偏好, 3: 关于与维护 */
+    int settings_active_tab;    /* 0: 仓储与路径, 1: 远端同步, 2: 扫描与策略, 3: 常规偏好 */
     char setting_hub_dir[512];
     char setting_backup_dir[512];
     bool setting_auto_backup;
     bool setting_auto_scan;
     int setting_default_view;
     int setting_scan_depth;
+
+    /* Remote Synchronization State */
+    sync_config_t sync_cfg;
+    sync_backend_t *sync_backend;
+    sync_drift_summary_t sync_drift;
+    bool sync_drift_loaded;
+    bool sync_is_busy;
+    char sync_status_msg[256];
+    char sync_test_result[256];
+    bool sync_test_ok;
+
+    /* Global About Dialog (extracted from settings) */
+    bool show_about_dialog;
 } app_state_t;
 
 /* Common helper functions */
@@ -178,5 +193,12 @@ void start_adopt_all_thread(app_state_t *s);
 
 void app_init_settings(app_state_t *s);
 void app_save_settings(app_state_t *s);
+void app_init_sync_backend(app_state_t *s);
+
+void start_sync_check_thread(app_state_t *s);
+void start_sync_pull_skill_thread(app_state_t *s, const char *skill_name);
+void start_sync_push_skill_thread(app_state_t *s, const char *skill_name);
+void start_sync_pull_all_thread(app_state_t *s);
+void start_sync_push_all_thread(app_state_t *s);
 
 #endif /* APP_STATE_H */

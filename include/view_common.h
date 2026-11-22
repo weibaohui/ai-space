@@ -11,6 +11,9 @@ void render_global_navbar(cui_ctx *ui, app_state_t *s);
 /* Render modal/overlay progress dialog during background operations */
 void render_op_progress_modal(cui_ctx *ui, app_state_t *s);
 
+/* Render global About AI-Space modal dialog */
+void render_about_modal(cui_ctx *ui, app_state_t *s);
+
 /* Shared diff helpers */
 void clear_diff_texts(app_state_t *s);
 void free_skill_diff_manifest(hub_skill_diff_manifest_t *m);
