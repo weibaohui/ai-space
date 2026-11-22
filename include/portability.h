@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <time.h>
 
 /*
  * Cross-platform shims so ai_space compiles unchanged on macOS/Linux (POSIX)
