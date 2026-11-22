@@ -13,6 +13,7 @@
 #include "view_master_hub.h"
 #include "view_settings.h"
 #include "view_sync.h"
+#include "view_dashboard.h"
 
 /* -------------------- Main Frame Dispatcher -------------------- */
 
@@ -28,25 +29,37 @@ static void frame(cui_ctx *ui, void *user) {
         }
     }
 
-    cui_row(ui, .width = CUI_FILL, .height = CUI_FILL, .align = CUI_ALIGN_STRETCH, .bg = CUI_COLOR_BACKGROUND) {
-        render_app_sidebar(ui, s);
+    cui_column(ui, .width = CUI_FILL, .height = CUI_FILL, .gap = 0, .bg = CUI_COLOR_BACKGROUND) {
+        /* Global Top Status Bar */
+        render_app_top_bar(ui, s);
         cui_separator(ui);
 
-        cui_column(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 20, .gap = 14) {
-            if (s->current_page == PAGE_TOOL_LIST) {
-                render_tools_list_page(ui, s);
-            } else if (s->current_page == PAGE_ALL_SKILLS) {
-                render_all_skills_page(ui, s);
-            } else if (s->current_page == PAGE_HUB_MATRIX) {
-                render_hub_matrix_page(ui, s);
-            } else if (s->current_page == PAGE_TOOL_SKILLS) {
-                render_tool_skills_page(ui, s);
-            } else if (s->current_page == PAGE_SETTINGS) {
-                render_settings_page(ui, s);
-            } else if (s->current_page == PAGE_SYNC_MANAGER) {
-                render_sync_manager_page(ui, s);
-            } else if (s->current_page == PAGE_ABOUT) {
-                render_about_page(ui, s);
+        /* Main Workspace Row */
+        cui_row(ui, .width = CUI_FILL, .height = CUI_FILL, .align = CUI_ALIGN_STRETCH) {
+            render_app_sidebar(ui, s);
+            cui_separator(ui);
+
+            cui_scroll(ui, .id = "main_content_scroll", .width = CUI_FILL, .height = CUI_FILL) {
+                cui_column(ui, .width = CUI_FILL, .pad = (s->current_page == PAGE_DASHBOARD) ? 14 : 20,
+                           .gap = (s->current_page == PAGE_DASHBOARD) ? 12 : 14) {
+                    if (s->current_page == PAGE_DASHBOARD) {
+                        render_dashboard_page(ui, s);
+                    } else if (s->current_page == PAGE_TOOL_LIST) {
+                        render_tools_list_page(ui, s);
+                    } else if (s->current_page == PAGE_ALL_SKILLS) {
+                        render_all_skills_page(ui, s);
+                    } else if (s->current_page == PAGE_HUB_MATRIX) {
+                        render_hub_matrix_page(ui, s);
+                    } else if (s->current_page == PAGE_TOOL_SKILLS) {
+                        render_tool_skills_page(ui, s);
+                    } else if (s->current_page == PAGE_SETTINGS) {
+                        render_settings_page(ui, s);
+                    } else if (s->current_page == PAGE_SYNC_MANAGER) {
+                        render_sync_manager_page(ui, s);
+                    } else if (s->current_page == PAGE_ABOUT) {
+                        render_about_page(ui, s);
+                    }
+                }
             }
         }
     }

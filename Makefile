@@ -2,7 +2,7 @@ CC ?= cc
 CFLAGS = -std=c99 -O2 -Wall -Wextra -Iinclude -ICUI/include -ICUI/src
 LDFLAGS = CUI/build/libcui.a -lsqlite3 -framework Cocoa -framework QuartzCore -framework OpenGL
 
-SRCS = src/main.c src/view_common.c src/view_tools.c src/view_tool_skills.c \
+SRCS = src/main.c src/view_dashboard.c src/view_common.c src/view_tools.c src/view_tool_skills.c \
        src/view_hub_matrix.c src/view_hub_diff.c src/view_master_hub.c src/view_skill_tree.c \
        src/view_settings.c src/view_sync.c src/sync_manager.c src/sync_driver_nfs.c \
        src/sync_driver_webdav.c src/sync_driver_git.c \

@@ -12,13 +12,14 @@
 #include "sync_backend.h"
 
 typedef enum {
-    PAGE_TOOL_LIST = 0,        /* 工具列表 (按工具维) */
-    PAGE_ALL_SKILLS = 1,       /* 技能列表 (全网全景大盘) */
-    PAGE_HUB_MATRIX = 2,       /* 主仓管理 (基准库管理与分发) */
-    PAGE_TOOL_SKILLS = 3,      /* 单个工具内的技能详情 */
-    PAGE_SYNC_MANAGER = 4,     /* 远端同步管理 */
-    PAGE_SETTINGS = 5,         /* 设置 */
-    PAGE_ABOUT = 6,            /* 关于系统页面 */
+    PAGE_DASHBOARD = 0,        /* 首页 Dashboard (全景大屏与系统运行拓扑) */
+    PAGE_TOOL_LIST = 1,        /* 工具列表 (按工具维) */
+    PAGE_ALL_SKILLS = 2,       /* 技能列表 (全网全景大盘) */
+    PAGE_HUB_MATRIX = 3,       /* 主仓管理 (基准库管理与分发) */
+    PAGE_TOOL_SKILLS = 4,      /* 单个工具内的技能详情 */
+    PAGE_SYNC_MANAGER = 5,     /* 远端同步管理 */
+    PAGE_SETTINGS = 6,         /* 设置 */
+    PAGE_ABOUT = 7,            /* 关于系统页面 */
 } page_view_t;
 
 typedef enum {
