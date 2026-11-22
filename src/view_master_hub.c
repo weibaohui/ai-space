@@ -100,6 +100,15 @@ static void on_master_file_select(file_node_t *node, void *user_data) {
 }
 
 void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s) {
+    /* Check whether this active skill is actually adopted in master hub */
+    bool is_in_hub = false;
+    for (int i = 0; i < s->hub_matrix.skill_count; i++) {
+        if (strcmp(s->hub_matrix.skills[i].skill_name, s->active_skill_name) == 0) {
+            is_in_hub = s->hub_matrix.skills[i].in_hub;
+            break;
+        }
+    }
+
     /* Header & Breadcrumb */
     cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
         if (cui_button(ui, "返回", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_CHEVRON_LEFT)) {
@@ -109,7 +118,30 @@ void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s) {
         cui_gap(ui, 12);
         cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
             cui_heading(ui, s->active_skill_name, 3);
-            cui_badge(ui, "主仓基准版本", .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
+            if (is_in_hub) {
+                cui_badge(ui, "主仓基准版本", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
+            } else {
+                cui_badge(ui, "未收录主仓", .tone = CUI_TONE_VIOLET, .size = CUI_SIZE_SM);
+            }
+        }
+
+        if (!is_in_hub) {
+            cui_gap(ui, 8);
+            if (cui_button(ui, "收录", .variant = CUI_BUTTON_PRIMARY,
+                           .icon = CUI_ICON_CHECK, .size = CUI_SIZE_SM)) {
+                for (int i = 0; i < s->hub_matrix.skill_count; i++) {
+                    if (strcmp(s->hub_matrix.skills[i].skill_name, s->active_skill_name) == 0) {
+                        for (int t = 0; t < s->hub_matrix.skills[i].tool_count; t++) {
+                            if (s->hub_matrix.skills[i].tool_copies[t].exists) {
+                                start_promote_to_master_thread(s, s->hub_matrix.skills[i].tool_copies[t].tool_skills_path,
+                                                               s->active_skill_name, s->hub_matrix.skills[i].tool_copies[t].tool_name, t);
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
         }
 
         cui_spacer(ui);
@@ -119,9 +151,9 @@ void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s) {
     /* 2 Columns: File Tree + Content Viewer */
     cui_row(ui, .width = CUI_FILL, .height = CUI_FILL, .gap = 12) {
         skill_tree_view_opts_t tree_opts = {
-            .title = "主仓目录结构",
+            .title = is_in_hub ? "主仓目录结构" : "技能目录结构",
             .badge_label = s->active_skill_name,
-            .badge_tone = CUI_TONE_ACCENT,
+            .badge_tone = is_in_hub ? CUI_TONE_ACCENT : CUI_TONE_VIOLET,
             .selected_path = s->selected_file_path,
             .match_by_rel_path = false,
             .show_diff_badges = false,

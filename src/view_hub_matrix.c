@@ -244,7 +244,7 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                         if (s_last_skill_row == i && (now - s_last_skill_time) < 0.40) {
                             s_last_skill_row = -1;
                             s_last_skill_time = 0.0;
-                            s->prev_hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
+                            s->prev_hub_subview = HUB_SUBVIEW_SCAN_MATRIX;
                             open_master_skill_explorer(s, e->skill_name);
                         } else {
                             s_last_skill_row = i;
