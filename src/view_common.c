@@ -849,92 +849,131 @@ void start_broadcast_thread(app_state_t *s, const char *skill_name, int tool_idx
     pthread_detach(s->op_progress.thread);
 }
 
-void render_global_navbar(cui_ctx *ui, app_state_t *s) {
-    render_global_nav_bar(ui, s);
+typedef struct {
+    cui_color color;
+    bool selected;
+} swatch_data_t;
+
+static void paint_swatch(cui_ctx *ui, cui_rect r, void *user) {
+    swatch_data_t *d = (swatch_data_t *)user;
+    cui_vec2 c = { r.x + r.w / 2.0f, r.y + r.h / 2.0f };
+    if (d->selected) cui_draw_circle(ui, c, r.w / 2.0f, cui_color_of(ui, CUI_COLOR_FOREGROUND));
+    cui_draw_circle(ui, c, r.w / 2.0f - (d->selected ? 2.0f : 0.0f), cui_color_of(ui, CUI_COLOR_SURFACE_MUTED));
+    cui_draw_circle(ui, c, r.w / 2.0f - 4.0f, d->color);
 }
 
-void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
-    cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-            cui_box(ui, .width = CUI_PX(30), .height = CUI_PX(30), .radius = 8,
-                    .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_ACCENT), 0.18f),
-                    .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
-                cui_icon(ui, CUI_ICON_LAYERS, 16, CUI_COLOR_ACCENT);
-            }
-            cui_text(ui, "AI-Space", .font = CUI_FONT_DISPLAY, .size = 17, .color = CUI_COLOR_ACCENT);
-            if (s->setting_hub_dir[0] != '\0' && strstr(s->setting_hub_dir, ".ai-space/skills") == NULL) {
-                cui_badge(ui, "节点 B (仿真测试)", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
-            }
-            cui_text(ui, " · ", .color = CUI_COLOR_TEXT_MUTED);
+void render_app_sidebar(cui_ctx *ui, app_state_t *s) {
+    cui_column(ui, .width = CUI_PX(230), .height = CUI_FILL,
+               .bg = CUI_COLOR_SURFACE_MUTED, .pad = 12, .gap = 2) {
 
-            /* Tab 1: 工具列表 */
-            bool is_tools = (s->current_page == PAGE_TOOL_LIST);
-            if (cui_button(ui, "工具列表",
-                           .variant = is_tools ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
-                           .size = CUI_SIZE_SM,
-                           .icon = CUI_ICON_FOLDER)) {
+        /* App Brand & Header */
+        cui_row(ui, .gap = 10, .pad_x = 8, .pad_top = 6, .pad_bottom = 18, .align = CUI_ALIGN_CENTER) {
+            cui_box(ui, .width = CUI_PX(28), .height = CUI_PX(28), .radius = 8,
+                    .bg = cui_color_of(ui, CUI_COLOR_FOREGROUND),
+                    .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
+                cui_text(ui, "A", .font = CUI_FONT_DISPLAY, .size = 16,
+                         .color = cui_color_of(ui, CUI_COLOR_BACKGROUND), .line_height = 1.0f);
+            }
+            cui_text(ui, "AI-Space", .font = CUI_FONT_MEDIUM, .size = 15, .nowrap = true);
+            cui_spacer(ui);
+            if (s->setting_hub_dir[0] != '\0' && strstr(s->setting_hub_dir, ".ai-space/skills") == NULL) {
+                cui_badge(ui, "节点 B", .size = CUI_SIZE_SM, .tone = CUI_TONE_WARNING);
+            } else {
+                cui_badge(ui, "v1.0", .size = CUI_SIZE_SM);
+            }
+        }
+
+        /* Navigation items */
+        cui_scroll(ui, .id = "sidebar_nav", .height = CUI_FILL, .gap = 2) {
+            cui_nav_section(ui, "工作空间");
+
+            bool is_tools = (s->current_page == PAGE_TOOL_LIST || s->current_page == PAGE_TOOL_SKILLS);
+            if (cui_nav_item(ui, "工具列表", .icon = CUI_ICON_FOLDER, .selected = is_tools, .group = "pages")) {
                 s->current_page = PAGE_TOOL_LIST;
             }
 
-            /* Tab 2: 技能列表 */
             bool is_skills = (s->current_page == PAGE_ALL_SKILLS);
-            if (cui_button(ui, "技能列表",
-                           .variant = is_skills ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
-                           .size = CUI_SIZE_SM,
-                           .icon = CUI_ICON_PACKAGE)) {
-                if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning) {
-                    start_hub_scan_thread(s);
-                }
+            if (cui_nav_item(ui, "技能列表", .icon = CUI_ICON_PACKAGE, .selected = is_skills, .group = "pages")) {
                 s->current_page = PAGE_ALL_SKILLS;
-                if (s->hub_subview == HUB_SUBVIEW_DIFF || s->hub_subview == HUB_SUBVIEW_EXPLORER) {
-                    s->hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
-                }
-            }
-
-            /* Tab 3: 主仓管理 */
-            bool is_hub = (s->current_page == PAGE_HUB_MATRIX);
-            if (cui_button(ui, "主仓管理",
-                           .variant = is_hub ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
-                           .size = CUI_SIZE_SM,
-                           .icon = CUI_ICON_ARCHIVE)) {
                 if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning) {
                     start_hub_scan_thread(s);
                 }
+            }
+
+            bool is_hub = (s->current_page == PAGE_HUB_MATRIX);
+            if (cui_nav_item(ui, "主仓管理", .icon = CUI_ICON_ARCHIVE, .selected = is_hub, .group = "pages")) {
                 s->current_page = PAGE_HUB_MATRIX;
-                if (s->hub_subview == HUB_SUBVIEW_DIFF || s->hub_subview == HUB_SUBVIEW_EXPLORER) {
-                    s->hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
+                s->hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
+                if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning) {
+                    start_hub_scan_thread(s);
                 }
             }
 
-            /* Tab 4: 同步管理 */
             bool is_sync = (s->current_page == PAGE_SYNC_MANAGER);
-            if (cui_button(ui, "同步管理",
-                           .variant = is_sync ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
-                           .size = CUI_SIZE_SM,
-                           .icon = CUI_ICON_GLOBE)) {
+            if (cui_nav_item(ui, "同步管理", .icon = CUI_ICON_GLOBE, .selected = is_sync, .group = "pages")) {
                 s->current_page = PAGE_SYNC_MANAGER;
                 if (!s->sync_drift_loaded && !s->sync_is_busy) {
                     start_sync_check_thread(s);
                 }
             }
 
-            /* Tab 5: 设置 */
+            cui_gap(ui, 12);
+            cui_nav_section(ui, "系统配置");
+
             bool is_settings = (s->current_page == PAGE_SETTINGS);
-            if (cui_button(ui, "设置",
-                           .variant = is_settings ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
-                           .size = CUI_SIZE_SM,
-                           .icon = CUI_ICON_SETTINGS)) {
+            if (cui_nav_item(ui, "系统设置", .icon = CUI_ICON_SETTINGS, .selected = is_settings, .group = "pages")) {
                 s->current_page = PAGE_SETTINGS;
+            }
+
+            if (cui_nav_item(ui, "关于系统", .icon = CUI_ICON_INFO, .selected = s->show_about_dialog, .group = "pages")) {
+                s->show_about_dialog = true;
             }
         }
 
-        cui_spacer(ui);
+        /* Bottom Controls: Theme Mode (Light / Dark) & Accent Swatches */
+        cui_column(ui, .gap = 12, .pad = 8) {
+            const char *modes[2] = { "浅色", "深色" };
+            const char *mode_icons[2] = { CUI_ICON_SUN, CUI_ICON_MOON };
+            int mode = s->dark_theme ? 1 : 0;
+            if (cui_segmented(ui, "theme_mode", modes, 2, &mode, .full_width = true, .icons = mode_icons, .size = CUI_SIZE_SM)) {
+                s->dark_theme = (mode == 1);
+                cui_set_theme(ui, s->dark_theme ? CUI_THEME_DARK : CUI_THEME_LIGHT);
+                app_save_settings(s);
+            }
 
-        /* Global About Button (Extracted from Settings) */
-        if (cui_button(ui, "关于", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM, .icon = CUI_ICON_INFO)) {
-            s->show_about_dialog = true;
+            static const char *accent_names_zh[CUI_ACCENT_COUNT] = {
+                "中性灰", "经典紫", "科技蓝", "翡翠绿", "琥珀黄", "活力橙", "珊瑚红", "玫瑰粉"
+            };
+            cui_row(ui, .justify = CUI_JUSTIFY_BETWEEN) {
+                for (int a = 0; a < CUI_ACCENT_COUNT; a++) {
+                    static const unsigned hex[CUI_ACCENT_COUNT] = {
+                        0x555555, 0x7747ff, 0x0562ef, 0x00864b,
+                        0xf3ad20, 0xc25300, 0xd1403a, 0xd23286
+                    };
+                    swatch_data_t d = { CUI_RGB(hex[a]), s->accent_color == a };
+                    char id[32];
+                    snprintf(id, sizeof id, "accent-sb-%d", a);
+                    cui_canvas_result r = cui_canvas(ui, id, CUI_PX(20), CUI_PX(20), paint_swatch, &d, sizeof d);
+                    cui_tooltip(ui, accent_names_zh[a]);
+                    if (r.clicked) {
+                        s->accent_color = a;
+                        cui_set_accent(ui, (cui_accent)a);
+                        app_save_settings(s);
+                    }
+                }
+            }
         }
     }
+}
+
+void render_global_navbar(cui_ctx *ui, app_state_t *s) {
+    (void)ui;
+    (void)s;
+}
+
+void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
+    (void)ui;
+    (void)s;
 }
 
 void render_about_modal(cui_ctx *ui, app_state_t *s) {
@@ -1222,6 +1261,15 @@ void app_init_settings(app_state_t *s) {
     s->setting_scan_depth = atoi(val);
     if (s->setting_scan_depth <= 0) s->setting_scan_depth = 5;
 
+    db_get_setting(s->db, "dark_theme", val, sizeof(val), "1");
+    s->dark_theme = (strcmp(val, "0") != 0);
+
+    db_get_setting(s->db, "accent_color", val, sizeof(val), "2");
+    s->accent_color = atoi(val);
+    if (s->accent_color < 0 || s->accent_color >= CUI_ACCENT_COUNT) {
+        s->accent_color = CUI_ACCENT_BLUE;
+    }
+
     /* Apply custom dirs to hub manager */
     hub_set_custom_dirs(s->setting_hub_dir, s->setting_backup_dir);
 
@@ -1282,6 +1330,10 @@ void app_save_settings(app_state_t *s) {
     db_set_setting(s->db, "sync_git_token", s->sync_cfg.git_auth_token);
     db_set_setting(s->db, "sync_git_user", s->sync_cfg.git_user_name);
     db_set_setting(s->db, "sync_git_email", s->sync_cfg.git_user_email);
+
+    db_set_setting(s->db, "dark_theme", s->dark_theme ? "1" : "0");
+    snprintf(val, sizeof(val), "%d", s->accent_color);
+    db_set_setting(s->db, "accent_color", val);
 
     app_init_sync_backend(s);
 }

@@ -163,6 +163,8 @@ typedef struct app_state_t {
     bool setting_auto_scan;
     int setting_default_view;
     int setting_scan_depth;
+    bool dark_theme;            /* true: CUI_THEME_DARK, false: CUI_THEME_LIGHT */
+    int accent_color;           /* cui_accent enum value (0..CUI_ACCENT_COUNT-1) */
 
     /* Remote Synchronization State */
     sync_config_t sync_cfg;

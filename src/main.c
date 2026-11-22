@@ -19,20 +19,33 @@
 static void frame(cui_ctx *ui, void *user) {
     app_state_t *s = (app_state_t *)user;
 
-    cui_column(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 20, .gap = 14,
-               .bg = CUI_COLOR_BACKGROUND) {
-        if (s->current_page == PAGE_TOOL_LIST) {
-            render_tools_list_page(ui, s);
-        } else if (s->current_page == PAGE_ALL_SKILLS) {
-            render_all_skills_page(ui, s);
-        } else if (s->current_page == PAGE_HUB_MATRIX) {
-            render_hub_matrix_page(ui, s);
-        } else if (s->current_page == PAGE_TOOL_SKILLS) {
-            render_tool_skills_page(ui, s);
-        } else if (s->current_page == PAGE_SETTINGS) {
-            render_settings_page(ui, s);
-        } else if (s->current_page == PAGE_SYNC_MANAGER) {
-            render_sync_manager_page(ui, s);
+    /* Global keyboard shortcut: Ctrl+J (or Cmd+J) toggles Dark / Light theme */
+    if (!cui_wants_keyboard(ui)) {
+        if (cui_shortcut(ui, CUI_MOD_PRIMARY, CUI_KEY_J)) {
+            s->dark_theme = !s->dark_theme;
+            cui_set_theme(ui, s->dark_theme ? CUI_THEME_DARK : CUI_THEME_LIGHT);
+            app_save_settings(s);
+        }
+    }
+
+    cui_row(ui, .width = CUI_FILL, .height = CUI_FILL, .align = CUI_ALIGN_STRETCH, .bg = CUI_COLOR_BACKGROUND) {
+        render_app_sidebar(ui, s);
+        cui_separator(ui);
+
+        cui_column(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 20, .gap = 14) {
+            if (s->current_page == PAGE_TOOL_LIST) {
+                render_tools_list_page(ui, s);
+            } else if (s->current_page == PAGE_ALL_SKILLS) {
+                render_all_skills_page(ui, s);
+            } else if (s->current_page == PAGE_HUB_MATRIX) {
+                render_hub_matrix_page(ui, s);
+            } else if (s->current_page == PAGE_TOOL_SKILLS) {
+                render_tool_skills_page(ui, s);
+            } else if (s->current_page == PAGE_SETTINGS) {
+                render_settings_page(ui, s);
+            } else if (s->current_page == PAGE_SYNC_MANAGER) {
+                render_sync_manager_page(ui, s);
+            }
         }
     }
 
@@ -190,7 +203,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    cui_accent accent = CUI_ACCENT_BLUE;
+    cui_accent accent = (cui_accent)s.accent_color;
     if (custom_title && (strstr(custom_title, "B") || strstr(custom_title, "node2") || strstr(custom_title, "节点 B"))) {
         accent = CUI_ACCENT_ORANGE;
     }
@@ -201,6 +214,7 @@ int main(int argc, char **argv) {
         .height = 780,
         .min_width = 960,
         .min_height = 620,
+        .theme = s.dark_theme ? CUI_THEME_DARK : CUI_THEME_LIGHT,
         .accent = accent,
     });
 

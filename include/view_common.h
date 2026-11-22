@@ -4,7 +4,10 @@
 #include <cui/cui.h>
 #include "app_state.h"
 
-/* Render top navigation bar with tab switching */
+/* Render sidebar navigation, theme switch and accent palette */
+void render_app_sidebar(cui_ctx *ui, app_state_t *s);
+
+/* Legacy top navigation bar (kept as empty compatibility stubs) */
 void render_global_nav_bar(cui_ctx *ui, app_state_t *s);
 void render_global_navbar(cui_ctx *ui, app_state_t *s);
 

@@ -565,6 +565,37 @@ static void render_tab_preferences(cui_ctx *ui, app_state_t *s) {
                 }
             }
 
+            /* Setting 3: Theme Mode */
+            cui_column(ui, .width = CUI_FILL, .gap = 8) {
+                cui_text(ui, "界面主题模式:", .size = 13, .color = CUI_COLOR_FOREGROUND);
+                const char *modes[2] = { "浅色", "深色" };
+                const char *mode_icons[2] = { CUI_ICON_SUN, CUI_ICON_MOON };
+                int mode = s->dark_theme ? 1 : 0;
+                if (cui_segmented(ui, "pref_theme_mode", modes, 2, &mode, .icons = mode_icons, .size = CUI_SIZE_SM)) {
+                    s->dark_theme = (mode == 1);
+                    cui_set_theme(ui, s->dark_theme ? CUI_THEME_DARK : CUI_THEME_LIGHT);
+                }
+            }
+
+            /* Setting 4: Accent Color */
+            cui_column(ui, .width = CUI_FILL, .gap = 8) {
+                cui_text(ui, "主题强调色:", .size = 13, .color = CUI_COLOR_FOREGROUND);
+                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                    static const char *accent_labels[CUI_ACCENT_COUNT] = {
+                        "中性", "紫色", "蓝色", "绿色", "黄色", "橙色", "红色", "粉色"
+                    };
+                    for (int a = 0; a < CUI_ACCENT_COUNT; a++) {
+                        bool is_sel = (s->accent_color == a);
+                        if (cui_button(ui, accent_labels[a],
+                                       .variant = is_sel ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
+                                       .size = CUI_SIZE_SM)) {
+                            s->accent_color = a;
+                            cui_set_accent(ui, (cui_accent)a);
+                        }
+                    }
+                }
+            }
+
             cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
                 if (cui_button(ui, "保存设置", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
                     app_save_settings(s);
