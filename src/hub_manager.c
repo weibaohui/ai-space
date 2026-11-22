@@ -162,7 +162,7 @@ static int backup_tool_skill(const char *tool_name, const char *skill_name, cons
 
     time_t now = time(NULL);
     struct tm tm_info;
-    localtime_r(&now, &tm_info);
+    ai_localtime(&now, &tm_info);
 
     char time_str[32];
     strftime(time_str, sizeof(time_str), "%Y%m%d_%H%M%S", &tm_info);
@@ -527,7 +527,7 @@ int hub_scan_matrix_ex(sqlite3 *db, hub_matrix_t *out_matrix, hub_progress_cb cb
 
     time_t now = time(NULL);
     struct tm tm_info;
-    localtime_r(&now, &tm_info);
+    ai_localtime(&now, &tm_info);
     strftime(out_matrix->last_scanned_at, sizeof(out_matrix->last_scanned_at),
              "%Y-%m-%d %H:%M:%S", &tm_info);
 

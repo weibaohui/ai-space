@@ -313,7 +313,7 @@ static int git_check_drift(sync_backend_t *self, const char *local_hub_dir,
 
     time_t now = time(NULL);
     struct tm tm_info;
-    localtime_r(&now, &tm_info);
+    ai_localtime(&now, &tm_info);
     strftime(out_diff->last_checked_at, sizeof(out_diff->last_checked_at), "%Y-%m-%d %H:%M:%S", &tm_info);
 
     /* 1. Compare remote items with local */

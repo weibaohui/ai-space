@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 /*
  * Cross-platform shims so ai_space compiles unchanged on macOS/Linux (POSIX)
@@ -97,6 +98,13 @@ static inline int ai_gethostname(char *name, size_t len) {
 }
 #define gethostname(name, l) ai_gethostname((name), (l))
 
+/* localtime_r into a caller buffer; the app is single-threaded (CUI event loop),
+ * so the CRT's static struct tm is safe here */
+static inline struct tm *ai_localtime(const time_t *t, struct tm *out) {
+    (void)out;
+    return localtime(t);
+}
+
 #else /* POSIX */
 
 #include <unistd.h>
@@ -136,6 +144,10 @@ static inline const char *ai_home_dir(void) {
 
 static inline int ai_setenv(const char *name, const char *value) {
     return setenv(name, value ? value : "", 1);
+}
+
+static inline struct tm *ai_localtime(const time_t *t, struct tm *out) {
+    return localtime_r(t, out);
 }
 
 #define AI_DEVNULL "/dev/null"

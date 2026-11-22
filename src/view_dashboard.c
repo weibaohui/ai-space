@@ -48,7 +48,7 @@ void render_app_top_bar(cui_ctx *ui, app_state_t *s) {
 
             /* 3. Hostname */
             char host[64] = "devbox";
-            ai_gethostname(host, sizeof(host));
+            gethostname(host, sizeof(host));
             char *dot = strchr(host, '.');
             if (dot) *dot = '\0';
 
