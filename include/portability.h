@@ -86,11 +86,23 @@ static inline int ai_setenv(const char *name, const char *value) {
 static inline int ai_getpid(void) { return _getpid(); }
 #define getpid() ai_getpid()
 
+/* POSIX gethostname(2) via kernel32, no winsock init required */
+static inline int ai_gethostname(char *name, size_t len) {
+    char comp[MAX_COMPUTERNAME_LENGTH + 1] = "";
+    DWORD n = (DWORD)(sizeof(comp));
+    if (!GetComputerNameA(comp, &n)) return -1;
+    strncpy(name, comp, len - 1);
+    name[len - 1] = '\0';
+    return 0;
+}
+#define gethostname(name, l) ai_gethostname((name), (l))
+
 #else /* POSIX */
 
 #include <unistd.h>
 #include <pwd.h>
 #include <libgen.h> /* dirname */
+#include <sys/stat.h>
 
 #define AI_MKDIR(path)       mkdir((path), 0755)
 

@@ -43,7 +43,7 @@ set(AI_SPACE_SRCS
 
 add_executable(ai_space ${AI_SPACE_SRCS})
 
-target_include_directories(ai_space PRIVATE include)
+target_include_directories(ai_space PRIVATE include CUI/include CUI/src)
 
 target_link_libraries(ai_space PRIVATE cui::cui SQLite::SQLite3)
 

@@ -48,7 +48,7 @@ void render_app_top_bar(cui_ctx *ui, app_state_t *s) {
 
             /* 3. Hostname */
             char host[64] = "devbox";
-            gethostname(host, sizeof(host));
+            ai_gethostname(host, sizeof(host));
             char *dot = strchr(host, '.');
             if (dot) *dot = '\0';
 
@@ -112,7 +112,7 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
             }
             cui_column(ui, .gap = 4, .width = CUI_FILL) {
                 cui_heading(ui, "AI-Space — 您本地多工具 AI 技能的中央枢纽与基准调度中心", 4);
-                cui_text(ui, "统一管理 Gemini、Antigravity、Cursor、Claude 等工具的技能（Skill），构建“基准库 + 分发拓扑 + 跨设备同步”的协同体系，让技能集中沉淀、统一分发、版本可控、多端一致。",
+                cui_text(ui, "统一管理 Gemini、Antigravity、Cursor、Claude 等工具的技能，构建“基准库 + 分发拓扑 + 跨设备同步”的协同体系，让技能集中沉淀、统一分发、版本可控、多端一致。",
                          .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
             }
         }
@@ -128,7 +128,7 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                 cui_heading(ui, "系统运行拓扑与流程", 4);
             }
 
-            /* Box 1: 远端同步 (Remote Sync) */
+            /* Box 1: 远端同步 */
             cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 12, .gap = 8,
                     .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_ACCENT), 0.05f),
                     .border = 1, .border_color = cui_alpha(cui_color_of(ui, CUI_COLOR_ACCENT), 0.25f)) {
@@ -136,7 +136,7 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                     cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                         cui_icon(ui, CUI_ICON_CLOUD, 20, CUI_COLOR_ACCENT);
                         cui_column(ui, .gap = 3) {
-                            cui_heading(ui, "远端同步 (Remote Sync)", 4);
+                            cui_heading(ui, "远端同步", 4);
                             cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                                 cui_row(ui, .gap = 4, .align = CUI_ALIGN_CENTER) {
                                     cui_icon(ui, CUI_ICON_FOLDER, 12, CUI_COLOR_TEXT_MUTED);
@@ -168,12 +168,12 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
             /* Connector Arrow 1: 拉取 / 推送 */
             cui_row(ui, .width = CUI_FILL, .justify = CUI_JUSTIFY_CENTER, .align = CUI_ALIGN_CENTER, .gap = 8) {
                 cui_icon(ui, CUI_ICON_ARROW_DOWN, 13, CUI_COLOR_ACCENT);
-                cui_text(ui, "拉取 (Pull: 获取远端更新)  /  推送 (Push: 同步本地变更)",
+                cui_text(ui, "拉取：获取远端更新  /  推送：同步本地变更",
                          .size = 11, .color = CUI_COLOR_TEXT_SECONDARY);
                 cui_icon(ui, CUI_ICON_ARROW_UP, 13, CUI_COLOR_ACCENT);
             }
 
-            /* Box 2: 主仓基准库 (Master Hub) */
+            /* Box 2: 主仓基准库 */
             cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 14, .gap = 12,
                     .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
                     .border = 1.5f, .border_color = cui_color_of(ui, CUI_COLOR_ACCENT)) {
@@ -182,8 +182,8 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                     cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
                         cui_icon(ui, CUI_ICON_DATABASE, 24, CUI_COLOR_ACCENT);
                         cui_column(ui, .gap = 2) {
-                            cui_heading(ui, "主仓基准库 (Master Hub)", 4);
-                            cui_text(ui, "~/.ai-space/skills/ (唯一基准真理源)",
+                            cui_heading(ui, "主仓基准库", 4);
+                            cui_text(ui, "~/.ai-space/skills/ · 唯一基准真理源",
                                      .size = 11, .color = CUI_COLOR_TEXT_MUTED);
                         }
                     }
@@ -223,27 +223,27 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                 cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_ARROW_UP, 14, CUI_COLOR_SUCCESS);
                     cui_column(ui, .gap = 1) {
-                        cui_text(ui, "收录 / 合入 (Adopt)", .size = 11, .font = CUI_FONT_MEDIUM, .color = CUI_COLOR_SUCCESS);
-                        cui_text(ui, "(将本地优质技能纳入基准库)", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
+                        cui_text(ui, "收录 / 合入", .size = 11, .font = CUI_FONT_MEDIUM, .color = CUI_COLOR_SUCCESS);
+                        cui_text(ui, "将本地优质技能纳入基准库", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
                     }
                 }
 
                 cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_ARROW_DOWN, 14, CUI_COLOR_ACCENT);
                     cui_column(ui, .gap = 1) {
-                        cui_text(ui, "分发 / 覆盖 / 安装 (Promote / Distribute)", .size = 11, .font = CUI_FONT_MEDIUM, .color = CUI_COLOR_ACCENT);
-                        cui_text(ui, "(将基准技能分发到各本地工具)", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
+                        cui_text(ui, "分发 / 覆盖 / 安装", .size = 11, .font = CUI_FONT_MEDIUM, .color = CUI_COLOR_ACCENT);
+                        cui_text(ui, "将基准技能分发到各本地工具", .size = 10, .color = CUI_COLOR_TEXT_MUTED);
                     }
                 }
             }
 
-            /* Box 3: 本地工具层 (Local Tools) */
+            /* Box 3: 本地工具层 */
             cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 12, .gap = 10,
                     .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_SURFACE), 0.7f),
                     .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
                 cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_MONITOR, 14, CUI_COLOR_TEXT_SECONDARY);
-                    cui_text(ui, "本地工具层 (Local Tools)", .font = CUI_FONT_MEDIUM, .size = 12);
+                    cui_text(ui, "本地工具层", .font = CUI_FONT_MEDIUM, .size = 12);
                 }
 
                 /* Tool Cards Row (Gemini, Antigravity, Cursor, Claude, etc.) */
