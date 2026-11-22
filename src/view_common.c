@@ -938,7 +938,7 @@ void app_init_settings(app_state_t *s) {
 
     /* Sync Backend Settings */
     char s_type[16];
-    db_get_setting(s->db, "sync_backend_type", s_type, sizeof(s_type), "3"); /* default Git Remote Repo */
+    db_get_setting(s->db, "sync_backend_type", s_type, sizeof(s_type), "0"); /* default Single Machine (None) */
     s->sync_cfg.type = (sync_backend_type_t)atoi(s_type);
 
     db_get_setting(s->db, "sync_webdav_url", s->sync_cfg.webdav_url, sizeof(s->sync_cfg.webdav_url), "https://dav.jianguoyun.com/dav/ai-space/");
@@ -948,11 +948,11 @@ void app_init_settings(app_state_t *s) {
 
     db_get_setting(s->db, "sync_nfs_path", s->sync_cfg.nfs_mount_path, sizeof(s->sync_cfg.nfs_mount_path), "~/.ai-space/remote-share");
 
-    db_get_setting(s->db, "sync_git_url", s->sync_cfg.git_repo_url, sizeof(s->sync_cfg.git_repo_url), "git@github.com:weibaohui/ai-space-sync-test.git");
+    db_get_setting(s->db, "sync_git_url", s->sync_cfg.git_repo_url, sizeof(s->sync_cfg.git_repo_url), "");
     db_get_setting(s->db, "sync_git_branch", s->sync_cfg.git_branch, sizeof(s->sync_cfg.git_branch), "main");
     db_get_setting(s->db, "sync_git_token", s->sync_cfg.git_auth_token, sizeof(s->sync_cfg.git_auth_token), "");
-    db_get_setting(s->db, "sync_git_user", s->sync_cfg.git_user_name, sizeof(s->sync_cfg.git_user_name), "weibaohui");
-    db_get_setting(s->db, "sync_git_email", s->sync_cfg.git_user_email, sizeof(s->sync_cfg.git_user_email), "ai@opencode.com");
+    db_get_setting(s->db, "sync_git_user", s->sync_cfg.git_user_name, sizeof(s->sync_cfg.git_user_name), "");
+    db_get_setting(s->db, "sync_git_email", s->sync_cfg.git_user_email, sizeof(s->sync_cfg.git_user_email), "");
 
     s->setting_sync_candidate_type = s->sync_cfg.type;
     app_init_sync_backend(s);
