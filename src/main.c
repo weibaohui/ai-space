@@ -45,15 +45,14 @@ static void frame(cui_ctx *ui, void *user) {
                 render_settings_page(ui, s);
             } else if (s->current_page == PAGE_SYNC_MANAGER) {
                 render_sync_manager_page(ui, s);
+            } else if (s->current_page == PAGE_ABOUT) {
+                render_about_page(ui, s);
             }
         }
     }
 
     /* Global Operation Progress Modal (single source of truth for the app) */
     render_op_progress_modal(ui, s);
-
-    /* Global About AI-Space Modal */
-    render_about_modal(ui, s);
 
     /* Global Skill Distribution Modal (分发技能到本地各工具) */
     render_distribute_skill_modal(ui, s);
@@ -181,7 +180,7 @@ int main(int argc, char **argv) {
     }
 
     if (getenv("CUI_START_ABOUT")) {
-        s.show_about_dialog = true;
+        s.current_page = PAGE_ABOUT;
     }
 
     const char *start_tool = getenv("CUI_START_TOOL");

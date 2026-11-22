@@ -18,6 +18,7 @@ typedef enum {
     PAGE_TOOL_SKILLS = 3,      /* 单个工具内的技能详情 */
     PAGE_SYNC_MANAGER = 4,     /* 远端同步管理 */
     PAGE_SETTINGS = 5,         /* 设置 */
+    PAGE_ABOUT = 6,            /* 关于系统页面 */
 } page_view_t;
 
 typedef enum {

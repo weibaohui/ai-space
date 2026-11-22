@@ -14,7 +14,8 @@ void render_global_navbar(cui_ctx *ui, app_state_t *s);
 /* Render modal/overlay progress dialog during background operations */
 void render_op_progress_modal(cui_ctx *ui, app_state_t *s);
 
-/* Render global About AI-Space modal dialog */
+/* Render global About AI-Space page */
+void render_about_page(cui_ctx *ui, app_state_t *s);
 void render_about_modal(cui_ctx *ui, app_state_t *s);
 
 /* Shared diff helpers */

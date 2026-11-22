@@ -11,6 +11,19 @@
 #include <pwd.h>
 #include <dirent.h>
 
+typedef struct {
+    cui_color color;
+    bool selected;
+} swatch_data_t;
+
+static void paint_swatch(cui_ctx *ui, cui_rect r, void *user) {
+    swatch_data_t *d = (swatch_data_t *)user;
+    cui_vec2 c = { r.x + r.w / 2.0f, r.y + r.h / 2.0f };
+    if (d->selected) cui_draw_circle(ui, c, r.w / 2.0f, cui_color_of(ui, CUI_COLOR_FOREGROUND));
+    cui_draw_circle(ui, c, r.w / 2.0f - (d->selected ? 2.0f : 0.0f), cui_color_of(ui, CUI_COLOR_SURFACE_MUTED));
+    cui_draw_circle(ui, c, r.w / 2.0f - 4.0f, d->color);
+}
+
 static void expand_path_helper(const char *in, char *out, size_t cap) {
     if (!in || in[0] == '\0') {
         if (out && cap > 0) out[0] = '\0';
@@ -571,28 +584,38 @@ static void render_tab_preferences(cui_ctx *ui, app_state_t *s) {
                 const char *modes[2] = { "浅色", "深色" };
                 const char *mode_icons[2] = { CUI_ICON_SUN, CUI_ICON_MOON };
                 int mode = s->dark_theme ? 1 : 0;
-                if (cui_segmented(ui, "pref_theme_mode", modes, 2, &mode, .icons = mode_icons, .size = CUI_SIZE_SM)) {
+                if (cui_segmented(ui, "pref_theme_mode", modes, 2, &mode, .icons = mode_icons, .size = CUI_SIZE_MD)) {
                     s->dark_theme = (mode == 1);
                     cui_set_theme(ui, s->dark_theme ? CUI_THEME_DARK : CUI_THEME_LIGHT);
+                    app_save_settings(s);
                 }
             }
 
             /* Setting 4: Accent Color */
             cui_column(ui, .width = CUI_FILL, .gap = 8) {
                 cui_text(ui, "主题强调色:", .size = 13, .color = CUI_COLOR_FOREGROUND);
-                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                    static const char *accent_labels[CUI_ACCENT_COUNT] = {
-                        "中性", "紫色", "蓝色", "绿色", "黄色", "橙色", "红色", "粉色"
-                    };
+                static const char *accent_names_zh[CUI_ACCENT_COUNT] = {
+                    "中性灰", "经典紫", "科技蓝", "翡翠绿", "琥珀黄", "活力橙", "珊瑚红", "玫瑰粉"
+                };
+                cui_row(ui, .gap = 14, .align = CUI_ALIGN_CENTER) {
                     for (int a = 0; a < CUI_ACCENT_COUNT; a++) {
-                        bool is_sel = (s->accent_color == a);
-                        if (cui_button(ui, accent_labels[a],
-                                       .variant = is_sel ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
-                                       .size = CUI_SIZE_SM)) {
+                        static const unsigned hex[CUI_ACCENT_COUNT] = {
+                            0x555555, 0x7747ff, 0x0562ef, 0x00864b,
+                            0xf3ad20, 0xc25300, 0xd1403a, 0xd23286
+                        };
+                        swatch_data_t d = { CUI_RGB(hex[a]), s->accent_color == a };
+                        char id[32];
+                        snprintf(id, sizeof id, "accent-set-%d", a);
+                        cui_canvas_result r = cui_canvas(ui, id, CUI_PX(28), CUI_PX(28), paint_swatch, &d, sizeof d);
+                        cui_tooltip(ui, accent_names_zh[a]);
+                        if (r.clicked) {
                             s->accent_color = a;
                             cui_set_accent(ui, (cui_accent)a);
+                            app_save_settings(s);
                         }
                     }
+                    cui_gap(ui, 8);
+                    cui_badge(ui, accent_names_zh[s->accent_color], .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
                 }
             }
 

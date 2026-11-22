@@ -849,19 +849,6 @@ void start_broadcast_thread(app_state_t *s, const char *skill_name, int tool_idx
     pthread_detach(s->op_progress.thread);
 }
 
-typedef struct {
-    cui_color color;
-    bool selected;
-} swatch_data_t;
-
-static void paint_swatch(cui_ctx *ui, cui_rect r, void *user) {
-    swatch_data_t *d = (swatch_data_t *)user;
-    cui_vec2 c = { r.x + r.w / 2.0f, r.y + r.h / 2.0f };
-    if (d->selected) cui_draw_circle(ui, c, r.w / 2.0f, cui_color_of(ui, CUI_COLOR_FOREGROUND));
-    cui_draw_circle(ui, c, r.w / 2.0f - (d->selected ? 2.0f : 0.0f), cui_color_of(ui, CUI_COLOR_SURFACE_MUTED));
-    cui_draw_circle(ui, c, r.w / 2.0f - 4.0f, d->color);
-}
-
 void render_app_sidebar(cui_ctx *ui, app_state_t *s) {
     cui_column(ui, .width = CUI_PX(230), .height = CUI_FILL,
                .bg = CUI_COLOR_SURFACE_MUTED, .pad = 12, .gap = 2) {
@@ -925,42 +912,9 @@ void render_app_sidebar(cui_ctx *ui, app_state_t *s) {
                 s->current_page = PAGE_SETTINGS;
             }
 
-            if (cui_nav_item(ui, "关于系统", .icon = CUI_ICON_INFO, .selected = s->show_about_dialog, .group = "pages")) {
-                s->show_about_dialog = true;
-            }
-        }
-
-        /* Bottom Controls: Theme Mode (Light / Dark) & Accent Swatches */
-        cui_column(ui, .gap = 12, .pad = 8) {
-            const char *modes[2] = { "浅色", "深色" };
-            const char *mode_icons[2] = { CUI_ICON_SUN, CUI_ICON_MOON };
-            int mode = s->dark_theme ? 1 : 0;
-            if (cui_segmented(ui, "theme_mode", modes, 2, &mode, .full_width = true, .icons = mode_icons, .size = CUI_SIZE_SM)) {
-                s->dark_theme = (mode == 1);
-                cui_set_theme(ui, s->dark_theme ? CUI_THEME_DARK : CUI_THEME_LIGHT);
-                app_save_settings(s);
-            }
-
-            static const char *accent_names_zh[CUI_ACCENT_COUNT] = {
-                "中性灰", "经典紫", "科技蓝", "翡翠绿", "琥珀黄", "活力橙", "珊瑚红", "玫瑰粉"
-            };
-            cui_row(ui, .justify = CUI_JUSTIFY_BETWEEN) {
-                for (int a = 0; a < CUI_ACCENT_COUNT; a++) {
-                    static const unsigned hex[CUI_ACCENT_COUNT] = {
-                        0x555555, 0x7747ff, 0x0562ef, 0x00864b,
-                        0xf3ad20, 0xc25300, 0xd1403a, 0xd23286
-                    };
-                    swatch_data_t d = { CUI_RGB(hex[a]), s->accent_color == a };
-                    char id[32];
-                    snprintf(id, sizeof id, "accent-sb-%d", a);
-                    cui_canvas_result r = cui_canvas(ui, id, CUI_PX(20), CUI_PX(20), paint_swatch, &d, sizeof d);
-                    cui_tooltip(ui, accent_names_zh[a]);
-                    if (r.clicked) {
-                        s->accent_color = a;
-                        cui_set_accent(ui, (cui_accent)a);
-                        app_save_settings(s);
-                    }
-                }
+            bool is_about = (s->current_page == PAGE_ABOUT);
+            if (cui_nav_item(ui, "关于系统", .icon = CUI_ICON_INFO, .selected = is_about, .group = "pages")) {
+                s->current_page = PAGE_ABOUT;
             }
         }
     }
@@ -976,59 +930,119 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
     (void)s;
 }
 
-void render_about_modal(cui_ctx *ui, app_state_t *s) {
-    if (!s || !s->show_about_dialog) return;
+void render_about_page(cui_ctx *ui, app_state_t *s) {
+    if (!ui || !s) return;
 
-    cui_dialog(ui, "关于 AI-Space", &s->show_about_dialog, .width = 540) {
-        cui_column(ui, .width = CUI_FILL, .gap = 14, .pad = 6) {
-            cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
-                cui_box(ui, .width = CUI_PX(40), .height = CUI_PX(40), .radius = 10,
-                        .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_ACCENT), 0.18f),
-                        .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
-                    cui_icon(ui, CUI_ICON_LAYERS, 20, CUI_COLOR_ACCENT);
+    /* 1. Header */
+    cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+        cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
+            cui_box(ui, .width = CUI_PX(42), .height = CUI_PX(42), .radius = 10,
+                    .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_ACCENT), 0.15f),
+                    .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
+                cui_icon(ui, CUI_ICON_INFO, 22, CUI_COLOR_ACCENT);
+            }
+            cui_column(ui, .gap = 3) {
+                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                    cui_heading(ui, "关于系统", 3);
+                    cui_badge(ui, "v1.0.0", .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
                 }
+                cui_text(ui, "本地优先的多智能体技能与主仓集中同步管理工作台",
+                         .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+            }
+        }
+    }
+
+    /* 2. Overview Metrics Cards */
+    cui_row(ui, .width = CUI_FILL, .gap = 14) {
+        cui_card(ui, .width = CUI_GROW(1), .pad = 16, .gap = 6) {
+            cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                cui_icon(ui, CUI_ICON_FOLDER, 16, CUI_COLOR_ACCENT);
+                cui_text(ui, "已识别工具", .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+            }
+            cui_textf(ui, "%d 个", s->record_count);
+        }
+        cui_card(ui, .width = CUI_GROW(1), .pad = 16, .gap = 6) {
+            cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                cui_icon(ui, CUI_ICON_PACKAGE, 16, CUI_COLOR_ACCENT);
+                cui_text(ui, "主仓入库技能", .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+            }
+            cui_textf(ui, "%d 项", s->hub_matrix.hub_managed_skills);
+        }
+        cui_card(ui, .width = CUI_GROW(1), .pad = 16, .gap = 6) {
+            cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                cui_icon(ui, CUI_ICON_GLOBE, 16, CUI_COLOR_ACCENT);
+                cui_text(ui, "远端同步后端", .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+            }
+            cui_text(ui, sync_backend_display_name(s->sync_cfg.type), .size = 15, .font = CUI_FONT_MEDIUM);
+        }
+    }
+
+    /* 3. Core Architecture & Design Principles Card */
+    cui_card(ui, .width = CUI_FILL, .pad = 18, .gap = 12) {
+        cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+            cui_icon(ui, CUI_ICON_SHIELD, 18, CUI_COLOR_ACCENT);
+            cui_heading(ui, "核心架构规范与设计原则", 4);
+        }
+
+        cui_column(ui, .gap = 10) {
+            cui_row(ui, .gap = 8, .align = CUI_ALIGN_START) {
+                cui_icon(ui, CUI_ICON_CHECK, 14, CUI_COLOR_ACCENT);
                 cui_column(ui, .gap = 2) {
-                    cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                        cui_heading(ui, "AI-Space", 3);
-                        cui_badge(ui, "v1.0.0 Release", .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
-                    }
-                    cui_text(ui, "本地优先的多智能体技能与主仓集中同步管理工作台",
+                    cui_text(ui, "物理原子复制", .font = CUI_FONT_MEDIUM, .size = 13);
+                    cui_text(ui, "杜绝软链接在跨运行时与容器挂载环境中的失效风险，确保本地环境零污染与绝对独立性。",
                              .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
                 }
             }
-
-            cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 12, .gap = 8,
-                    .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
-                    .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-                cui_text(ui, "核心架构规范与设计原则:", .size = 12, .color = CUI_COLOR_FOREGROUND);
-                cui_column(ui, .gap = 6) {
-                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, CUI_ICON_CHECK, 13, CUI_COLOR_ACCENT);
-                        cui_text(ui, "物理原子复制: 杜绝软链接在跨运行时与容器挂载环境中的失效风险。",
-                                 .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                    }
-                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, CUI_ICON_CHECK, 13, CUI_COLOR_ACCENT);
-                        cui_text(ui, "强一致性与快照回退: 每次覆盖自动在 ~/.ai-space/backups 归档时间戳快照。",
-                                 .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                    }
-                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, CUI_ICON_CHECK, 13, CUI_COLOR_ACCENT);
-                        cui_text(ui, "主机无关多端同步: 支持 WebDAV、NFS 共享挂载、Git 远端版本库，跨主机无缝协同。",
-                                 .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                    }
+            cui_row(ui, .gap = 8, .align = CUI_ALIGN_START) {
+                cui_icon(ui, CUI_ICON_CHECK, 14, CUI_COLOR_ACCENT);
+                cui_column(ui, .gap = 2) {
+                    cui_text(ui, "强一致性与快照回退", .font = CUI_FONT_MEDIUM, .size = 13);
+                    cui_text(ui, "任何安装覆盖前均自动对目标目录生成时间戳快照并归档，杜绝因误操作导致的代码丢失。",
+                             .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
                 }
             }
-
-            cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                cui_text(ui, "C99 原生引擎 · SQLite3 持久化 · CUI 响应式图形界面", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
-                cui_spacer(ui);
-                if (cui_button(ui, "确定", .variant = CUI_BUTTON_PRIMARY, .size = CUI_SIZE_SM)) {
-                    s->show_about_dialog = false;
+            cui_row(ui, .gap = 8, .align = CUI_ALIGN_START) {
+                cui_icon(ui, CUI_ICON_CHECK, 14, CUI_COLOR_ACCENT);
+                cui_column(ui, .gap = 2) {
+                    cui_text(ui, "多后端跨主机协同", .font = CUI_FONT_MEDIUM, .size = 13);
+                    cui_text(ui, "支持 Git 远端版本库、WebDAV 云盘与局域网 NFS 共享，多工作站随时拉取与推送对齐最新技能。",
+                             .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
                 }
             }
         }
     }
+
+    /* 4. Runtime Environment and Paths Card */
+    cui_card(ui, .width = CUI_FILL, .pad = 18, .gap = 12) {
+        cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+            cui_icon(ui, CUI_ICON_TERMINAL, 18, CUI_COLOR_ACCENT);
+            cui_heading(ui, "运行环境与本地路径", 4);
+        }
+
+        cui_column(ui, .gap = 8) {
+            cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                cui_text(ui, "主仓存储路径:", .size = 12, .color = CUI_COLOR_TEXT_MUTED, .width = CUI_PX(110));
+                cui_text(ui, s->setting_hub_dir, .font = CUI_FONT_MONO, .size = 12);
+            }
+            cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                cui_text(ui, "快照备份路径:", .size = 12, .color = CUI_COLOR_TEXT_MUTED, .width = CUI_PX(110));
+                cui_text(ui, s->setting_backup_dir, .font = CUI_FONT_MONO, .size = 12);
+            }
+            cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                cui_text(ui, "数据库位置:", .size = 12, .color = CUI_COLOR_TEXT_MUTED, .width = CUI_PX(110));
+                cui_text(ui, s->db_path, .font = CUI_FONT_MONO, .size = 12);
+            }
+            cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                cui_text(ui, "核心引擎:", .size = 12, .color = CUI_COLOR_TEXT_MUTED, .width = CUI_PX(110));
+                cui_text(ui, "C99 原生引擎 · SQLite3 持久化 · CUI 原生 GUI 渲染架构", .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+            }
+        }
+    }
+}
+
+void render_about_modal(cui_ctx *ui, app_state_t *s) {
+    (void)ui;
+    (void)s;
 }
 
 void render_op_progress_modal(cui_ctx *ui, app_state_t *s) {
