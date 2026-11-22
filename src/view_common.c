@@ -4,6 +4,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #include "db.h"
 
 bool ci_contains(const char *haystack, const char *needle) {
@@ -50,6 +52,242 @@ void clear_diff_texts(app_state_t *s) {
     }
 }
 
+
+typedef struct {
+    char rel_path[256];
+} rel_file_t;
+
+static void collect_rel_files(const char *root, const char *sub, rel_file_t **arr, int *cnt, int *cap) {
+    char dir_path[1024];
+    if (sub && sub[0] != '\0') {
+        snprintf(dir_path, sizeof(dir_path), "%s/%s", root, sub);
+    } else {
+        snprintf(dir_path, sizeof(dir_path), "%s", root);
+    }
+
+    DIR *d = opendir(dir_path);
+    if (!d) return;
+
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] == '.') continue;
+        if (strcmp(ent->d_name, "__pycache__") == 0) continue;
+
+        char next_sub[256];
+        if (sub && sub[0] != '\0') {
+            snprintf(next_sub, sizeof(next_sub), "%s/%s", sub, ent->d_name);
+        } else {
+            snprintf(next_sub, sizeof(next_sub), "%s", ent->d_name);
+        }
+
+        char abs_path[1024];
+        snprintf(abs_path, sizeof(abs_path), "%s/%s", root, next_sub);
+
+        struct stat st;
+        if (stat(abs_path, &st) == 0) {
+            if (S_ISDIR(st.st_mode)) {
+                collect_rel_files(root, next_sub, arr, cnt, cap);
+            } else if (S_ISREG(st.st_mode)) {
+                if (*cnt >= *cap) {
+                    *cap *= 2;
+                    *arr = (rel_file_t *)realloc(*arr, sizeof(rel_file_t) * (*cap));
+                }
+                strncpy((*arr)[*cnt].rel_path, next_sub, sizeof((*arr)[*cnt].rel_path) - 1);
+                (*arr)[*cnt].rel_path[sizeof((*arr)[*cnt].rel_path) - 1] = '\0';
+                (*cnt)++;
+            }
+        }
+    }
+    closedir(d);
+}
+
+static int compare_manifest_items(const void *a, const void *b) {
+    const hub_diff_file_item_t *ia = (const hub_diff_file_item_t *)a;
+    const hub_diff_file_item_t *ib = (const hub_diff_file_item_t *)b;
+
+    /* SKILL.md always first */
+    if (strcmp(ia->rel_path, "SKILL.md") == 0) return -1;
+    if (strcmp(ib->rel_path, "SKILL.md") == 0) return 1;
+
+    /* Changed before in-sync */
+    bool ia_changed = (ia->status != DIFF_FILE_IN_SYNC);
+    bool ib_changed = (ib->status != DIFF_FILE_IN_SYNC);
+    if (ia_changed != ib_changed) {
+        return ia_changed ? -1 : 1;
+    }
+
+    return strcmp(ia->rel_path, ib->rel_path);
+}
+
+void free_skill_diff_manifest(hub_skill_diff_manifest_t *m) {
+    if (!m) return;
+    if (m->items) {
+        free(m->items);
+        m->items = NULL;
+    }
+    m->count = 0;
+    m->modified_count = 0;
+    m->added_count = 0;
+    m->deleted_count = 0;
+    m->in_sync_count = 0;
+}
+
+void build_skill_diff_manifest(app_state_t *s, const char *skill_name, int tool_idx) {
+    if (!s || !skill_name) return;
+
+    free_skill_diff_manifest(&s->diff_manifest);
+    strncpy(s->diff_manifest.skill_name, skill_name, sizeof(s->diff_manifest.skill_name) - 1);
+
+    hub_skill_entry_t *entry = NULL;
+    for (int i = 0; i < s->hub_matrix.skill_count; i++) {
+        if (strcmp(s->hub_matrix.skills[i].skill_name, skill_name) == 0) {
+            entry = &s->hub_matrix.skills[i];
+            break;
+        }
+    }
+    if (!entry) return;
+
+    const char *tool_skills_path = NULL;
+    if (tool_idx >= 0 && tool_idx < entry->tool_count) {
+        strncpy(s->diff_manifest.tool_name, entry->tool_copies[tool_idx].tool_name, sizeof(s->diff_manifest.tool_name) - 1);
+        if (entry->tool_copies[tool_idx].exists) {
+            tool_skills_path = entry->tool_copies[tool_idx].skill_path;
+        }
+    }
+
+    int rel_cap = 64;
+    int rel_count = 0;
+    rel_file_t *rel_files = (rel_file_t *)malloc(sizeof(rel_file_t) * rel_cap);
+
+    /* 1. Collect from master hub */
+    if (entry->in_hub) {
+        collect_rel_files(entry->hub_path, "", &rel_files, &rel_count, &rel_cap);
+    }
+
+    /* 2. Collect from tool copy */
+    if (tool_skills_path) {
+        int tool_cap = 64;
+        int tool_count = 0;
+        rel_file_t *tool_files = (rel_file_t *)malloc(sizeof(rel_file_t) * tool_cap);
+        collect_rel_files(tool_skills_path, "", &tool_files, &tool_count, &tool_cap);
+
+        for (int i = 0; i < tool_count; i++) {
+            bool found = false;
+            for (int j = 0; j < rel_count; j++) {
+                if (strcmp(rel_files[j].rel_path, tool_files[i].rel_path) == 0) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                if (rel_count >= rel_cap) {
+                    rel_cap *= 2;
+                    rel_files = (rel_file_t *)realloc(rel_files, sizeof(rel_file_t) * rel_cap);
+                }
+                strncpy(rel_files[rel_count].rel_path, tool_files[i].rel_path, sizeof(rel_files[rel_count].rel_path) - 1);
+                rel_files[rel_count].rel_path[sizeof(rel_files[rel_count].rel_path) - 1] = '\0';
+                rel_count++;
+            }
+        }
+        free(tool_files);
+    }
+
+    /* 3. Build manifest items */
+    s->diff_manifest.items = (hub_diff_file_item_t *)calloc(rel_count, sizeof(hub_diff_file_item_t));
+    s->diff_manifest.count = rel_count;
+
+    for (int i = 0; i < rel_count; i++) {
+        hub_diff_file_item_t *item = &s->diff_manifest.items[i];
+        strncpy(item->rel_path, rel_files[i].rel_path, sizeof(item->rel_path) - 1);
+
+        const char *fname = strrchr(item->rel_path, '/');
+        strncpy(item->file_name, fname ? (fname + 1) : item->rel_path, sizeof(item->file_name) - 1);
+
+        char m_full[1200];
+        char t_full[1200];
+        snprintf(m_full, sizeof(m_full), "%s/%s", entry->hub_path, item->rel_path);
+        snprintf(t_full, sizeof(t_full), "%s/%s", tool_skills_path ? tool_skills_path : "", item->rel_path);
+
+        struct stat m_st, t_st;
+        bool has_m = (entry->in_hub && stat(m_full, &m_st) == 0 && S_ISREG(m_st.st_mode));
+        bool has_t = (tool_skills_path && stat(t_full, &t_st) == 0 && S_ISREG(t_st.st_mode));
+
+        if (has_m) item->master_size = m_st.st_size;
+        if (has_t) item->tool_size = t_st.st_size;
+
+        if (has_m && !has_t) {
+            item->status = DIFF_FILE_DELETED;
+            s->diff_manifest.deleted_count++;
+        } else if (!has_m && has_t) {
+            item->status = DIFF_FILE_ADDED;
+            s->diff_manifest.added_count++;
+        } else if (has_m && has_t) {
+            /* Check if identical bytes */
+            if (m_st.st_size == t_st.st_size) {
+                FILE *fm = fopen(m_full, "rb");
+                FILE *ft = fopen(t_full, "rb");
+                bool same = true;
+                if (fm && ft) {
+                    char b1[4096], b2[4096];
+                    size_t n1, n2;
+                    while ((n1 = fread(b1, 1, sizeof(b1), fm)) > 0) {
+                        n2 = fread(b2, 1, sizeof(b2), ft);
+                        if (n1 != n2 || memcmp(b1, b2, n1) != 0) {
+                            same = false;
+                            break;
+                        }
+                    }
+                } else {
+                    same = false;
+                }
+                if (fm) fclose(fm);
+                if (ft) fclose(ft);
+
+                if (same) {
+                    item->status = DIFF_FILE_IN_SYNC;
+                    s->diff_manifest.in_sync_count++;
+                } else {
+                    item->status = DIFF_FILE_MODIFIED;
+                    s->diff_manifest.modified_count++;
+                }
+            } else {
+                item->status = DIFF_FILE_MODIFIED;
+                s->diff_manifest.modified_count++;
+            }
+        }
+    }
+    free(rel_files);
+
+    /* Sort manifest: SKILL.md first, then modified, then added/deleted, then in_sync */
+    if (s->diff_manifest.count > 1) {
+        qsort(s->diff_manifest.items, s->diff_manifest.count, sizeof(hub_diff_file_item_t), compare_manifest_items);
+    }
+
+    s->diff_manifest_loaded = true;
+
+    /* Ensure current active file is valid */
+    bool current_found = false;
+    for (int i = 0; i < s->diff_manifest.count; i++) {
+        if (strcmp(s->diff_manifest.items[i].rel_path, s->diff_file_rel) == 0) {
+            current_found = true;
+            break;
+        }
+    }
+    if (!current_found) {
+        if (s->diff_manifest.count > 0) {
+            int pick = 0;
+            for (int i = 0; i < s->diff_manifest.count; i++) {
+                if (s->diff_manifest.items[i].status != DIFF_FILE_IN_SYNC) {
+                    pick = i;
+                    break;
+                }
+            }
+            strncpy(s->diff_file_rel, s->diff_manifest.items[pick].rel_path, sizeof(s->diff_file_rel) - 1);
+        } else {
+            strncpy(s->diff_file_rel, "SKILL.md", sizeof(s->diff_file_rel) - 1);
+        }
+    }
+}
 
 void load_hub_diff(app_state_t *s, const char *skill_name, int tool_idx, const char *rel_file) {
     if (!s || !skill_name) return;
@@ -131,7 +369,8 @@ void open_hub_diff_view(app_state_t *s, const char *skill_name) {
     if (chosen_idx == -1 && entry->tool_count > 0) chosen_idx = 0;
 
     s->hub_subview = 1;
-    load_hub_diff(s, skill_name, chosen_idx, "SKILL.md");
+    build_skill_diff_manifest(s, skill_name, chosen_idx);
+    load_hub_diff(s, skill_name, chosen_idx, s->diff_file_rel);
 }
 
 /* Background scanning thread worker */
@@ -252,6 +491,7 @@ static void *hub_op_worker_thread(void *data) {
         snprintf(s->op_progress.message, sizeof(s->op_progress.message), "物理复制安装成功！");
         usleep(150000);
 
+        build_skill_diff_manifest(s, arg->skill_name, arg->tool_idx);
         load_hub_diff(s, arg->skill_name, arg->tool_idx, s->diff_file_rel);
         char toast[256];
         snprintf(toast, sizeof(toast), "已将主版本物理复制安装至 [%s]", arg->tool_name);
@@ -279,6 +519,7 @@ static void *hub_op_worker_thread(void *data) {
         snprintf(s->op_progress.message, sizeof(s->op_progress.message), "覆盖同步成功！");
         usleep(150000);
 
+        build_skill_diff_manifest(s, arg->skill_name, arg->tool_idx);
         load_hub_diff(s, arg->skill_name, arg->tool_idx, s->diff_file_rel);
         char toast[256];
         snprintf(toast, sizeof(toast), "已同步主版本到 [%s]（原副本已安全备份）", arg->tool_name);
@@ -306,6 +547,7 @@ static void *hub_op_worker_thread(void *data) {
         snprintf(s->op_progress.message, sizeof(s->op_progress.message), "采纳成功！");
         usleep(150000);
 
+        build_skill_diff_manifest(s, arg->skill_name, arg->tool_idx);
         load_hub_diff(s, arg->skill_name, arg->tool_idx, s->diff_file_rel);
         char toast[256];
         snprintf(toast, sizeof(toast), "已将 [%s] 副本采纳为技能主版本", arg->tool_name);
@@ -335,6 +577,7 @@ static void *hub_op_worker_thread(void *data) {
         usleep(150000);
 
         if (s->hub_subview == 1) {
+            build_skill_diff_manifest(s, arg->skill_name, arg->tool_idx);
             load_hub_diff(s, arg->skill_name, arg->tool_idx, s->diff_file_rel);
         }
         char toast[256];

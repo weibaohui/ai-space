@@ -38,6 +38,34 @@ typedef struct {
     bool thread_running;
 } hub_scan_state_t;
 
+/* Status for individual files within a skill */
+typedef enum {
+    DIFF_FILE_IN_SYNC = 0,    /* Identical in both master and tool */
+    DIFF_FILE_MODIFIED = 1,   /* Exists in both but content has drifted */
+    DIFF_FILE_ADDED = 2,      /* Exists only in tool (added locally) */
+    DIFF_FILE_DELETED = 3,    /* Exists only in master (missing in tool copy) */
+} diff_file_status_t;
+
+typedef struct {
+    char rel_path[256];
+    char file_name[128];
+    diff_file_status_t status;
+    size_t master_size;
+    size_t tool_size;
+    bool is_binary;
+} hub_diff_file_item_t;
+
+typedef struct {
+    char skill_name[128];
+    char tool_name[128];
+    hub_diff_file_item_t *items;
+    int count;
+    int modified_count;
+    int added_count;
+    int deleted_count;
+    int in_sync_count;
+} hub_skill_diff_manifest_t;
+
 typedef struct app_state_t {
     sqlite3 *db;
     char db_path[512];
@@ -80,6 +108,8 @@ typedef struct app_state_t {
     char *diff_new_text;        /* Tool copy text */
     int diff_current_change;    /* Selected change index for cui_diff_view */
     cui_diff_mode diff_mode;    /* CUI_DIFF_SPLIT (0) or CUI_DIFF_INLINE (1) */
+    hub_skill_diff_manifest_t diff_manifest;
+    bool diff_manifest_loaded;
 
     /* Tool skills view state */
     char active_tool_name[128];

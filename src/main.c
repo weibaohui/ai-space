@@ -51,6 +51,11 @@ int main(void) {
             hub_scan_matrix(s.db, &s.hub_matrix);
             s.hub_matrix_loaded = true;
             open_hub_diff_view(&s, start_diff);
+            const char *start_file = getenv("CUI_START_DIFF_FILE");
+            if (start_file && start_file[0] != '\0') {
+                strncpy(s.diff_file_rel, start_file, sizeof(s.diff_file_rel) - 1);
+                load_hub_diff(&s, start_diff, s.selected_hub_tool_idx, start_file);
+            }
         } else if (getenv("CUI_SYNC_SCAN")) {
             hub_scan_matrix(s.db, &s.hub_matrix);
             s.hub_matrix_loaded = true;
@@ -124,6 +129,7 @@ int main(void) {
         s.selected_file_content = NULL;
     }
     hub_free_matrix(&s.hub_matrix);
+    free_skill_diff_manifest(&s.diff_manifest);
     clear_diff_texts(&s);
     db_close(s.db);
 
