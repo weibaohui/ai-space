@@ -212,7 +212,7 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
             cui_metric(ui, "本地副本待同步/分化", buf_drift, .icon = CUI_ICON_TRIANGLE_ALERT);
         }
         cui_card(ui, .width = CUI_GROW(1), .pad = 16) {
-            cui_metric(ui, "主仓存储路径", "~/.ai-space/skills", .icon = CUI_ICON_FOLDER);
+            cui_metric(ui, "主仓存储路径", s->setting_hub_dir[0] ? s->setting_hub_dir : "~/.ai-space/skills", .icon = CUI_ICON_FOLDER);
         }
     }
 
@@ -249,7 +249,10 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                        .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
                 cui_icon(ui, CUI_ICON_ARCHIVE, 48, CUI_COLOR_TEXT_MUTED);
                 cui_gap(ui, 16);
-                cui_heading(ui, "当前主仓 (~/.ai-space/skills) 尚未收录基准技能", 3);
+                char empty_title[256];
+                snprintf(empty_title, sizeof(empty_title), "当前主仓 (%s) 尚未收录基准技能",
+                         s->setting_hub_dir[0] ? s->setting_hub_dir : "~/.ai-space/skills");
+                cui_heading(ui, empty_title, 3);
                 cui_gap(ui, 6);
                 cui_text(ui, "主仓用于集中沉淀与统一管理跨工具的标准基准技能版本。可切换至【全景扫描】一键全量收录主库，或单独比对采纳。",
                          .color = CUI_COLOR_TEXT_SECONDARY, .size = 13);

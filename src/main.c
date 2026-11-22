@@ -44,9 +44,30 @@ static void frame(cui_ctx *ui, void *user) {
     render_distribute_skill_modal(ui, s);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
     static app_state_t s = {0};
     strncpy(s.db_path, "data/ai_space.db", sizeof(s.db_path) - 1);
+
+    const char *custom_hub = getenv("AI_SPACE_HUB_DIR");
+    const char *custom_backup = getenv("AI_SPACE_BACKUP_DIR");
+    const char *custom_title = getenv("AI_SPACE_TITLE");
+    const char *custom_db = getenv("AI_SPACE_DB");
+
+    if (custom_db && custom_db[0] != '\0') {
+        strncpy(s.db_path, custom_db, sizeof(s.db_path) - 1);
+    }
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
+            strncpy(s.db_path, argv[++i], sizeof(s.db_path) - 1);
+        } else if (strcmp(argv[i], "--hub") == 0 && i + 1 < argc) {
+            custom_hub = argv[++i];
+        } else if (strcmp(argv[i], "--backup") == 0 && i + 1 < argc) {
+            custom_backup = argv[++i];
+        } else if (strcmp(argv[i], "--title") == 0 && i + 1 < argc) {
+            custom_title = argv[++i];
+        }
+    }
 
     if (db_init(s.db_path, &s.db) != 0) {
         fprintf(stderr, "Failed to initialize database at %s\n", s.db_path);
@@ -55,6 +76,17 @@ int main(void) {
 
     /* Load user settings from SQLite */
     app_init_settings(&s);
+
+    /* If CLI or env specified custom hub / backup dirs, override database settings */
+    if (custom_hub && custom_hub[0] != '\0') {
+        strncpy(s.setting_hub_dir, custom_hub, sizeof(s.setting_hub_dir) - 1);
+        db_set_setting(s.db, "master_hub_dir", s.setting_hub_dir);
+    }
+    if (custom_backup && custom_backup[0] != '\0') {
+        strncpy(s.setting_backup_dir, custom_backup, sizeof(s.setting_backup_dir) - 1);
+        db_set_setting(s.db, "backup_dir", s.setting_backup_dir);
+    }
+    hub_set_custom_dirs(s.setting_hub_dir, s.setting_backup_dir);
 
     /* Initial synchronization on application launch */
     if (s.setting_auto_scan) {
@@ -143,13 +175,18 @@ int main(void) {
         }
     }
 
+    cui_accent accent = CUI_ACCENT_BLUE;
+    if (custom_title && (strstr(custom_title, "B") || strstr(custom_title, "node2") || strstr(custom_title, "节点 B"))) {
+        accent = CUI_ACCENT_ORANGE;
+    }
+
     cui_app *app = cui_app_create(&(cui_app_desc){
-        .title = "AI-Space 本地工具与技能管理器",
+        .title = custom_title ? custom_title : "AI-Space 本地工具与技能管理器",
         .width = 1260,
         .height = 780,
         .min_width = 960,
         .min_height = 620,
-        .accent = CUI_ACCENT_BLUE,
+        .accent = accent,
     });
 
     if (!app) {

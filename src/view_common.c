@@ -861,6 +861,9 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
                 cui_icon(ui, CUI_ICON_LAYERS, 16, CUI_COLOR_ACCENT);
             }
             cui_text(ui, "AI-Space", .font = CUI_FONT_DISPLAY, .size = 17, .color = CUI_COLOR_ACCENT);
+            if (s->setting_hub_dir[0] != '\0' && strstr(s->setting_hub_dir, ".ai-space/skills") == NULL) {
+                cui_badge(ui, "节点 B (仿真测试)", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
+            }
             cui_text(ui, " · ", .color = CUI_COLOR_TEXT_MUTED);
 
             /* Tab 1: 工具列表 */

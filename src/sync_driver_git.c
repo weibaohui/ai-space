@@ -66,7 +66,19 @@ static int git_init(sync_backend_t *self, const sync_config_t *cfg) {
         if (env_cache && env_cache[0] != '\0') {
             strncpy(raw_cache, env_cache, sizeof(raw_cache) - 1);
         } else {
-            strncpy(raw_cache, "~/.ai-space/cache/git_remote", sizeof(raw_cache) - 1);
+            /* If custom hub dir is active, derive git cache relative to custom hub parent */
+            char custom_hub[512] = "";
+            hub_get_custom_dirs(custom_hub, sizeof(custom_hub), NULL, 0);
+            if (custom_hub[0] != '\0' && strstr(custom_hub, ".ai-space/skills") == NULL) {
+                char tmp[512];
+                strncpy(tmp, custom_hub, sizeof(tmp) - 1);
+                tmp[sizeof(tmp) - 1] = '\0';
+                char *slash = strrchr(tmp, '/');
+                if (slash) *slash = '\0';
+                snprintf(raw_cache, sizeof(raw_cache), "%s/cache/git_remote", tmp);
+            } else {
+                strncpy(raw_cache, "~/.ai-space/cache/git_remote", sizeof(raw_cache) - 1);
+            }
         }
     }
     expand_path_local(raw_cache, priv->git_cache_dir, sizeof(priv->git_cache_dir));

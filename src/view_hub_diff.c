@@ -117,7 +117,7 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
             cui_card(ui, .width = CUI_FILL, .pad = 8, .gap = 3, .muted = true) {
                 cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_ARCHIVE, 14, CUI_COLOR_ACCENT);
-                    cui_text(ui, "~/.ai-space/skills", .size = 11, .font = CUI_FONT_MEDIUM);
+                    cui_text(ui, s->setting_hub_dir[0] ? s->setting_hub_dir : "~/.ai-space/skills", .size = 11, .font = CUI_FONT_MEDIUM);
                 }
                 if (entry->in_hub) {
                     char h_txt[64];

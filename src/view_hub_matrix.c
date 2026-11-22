@@ -59,8 +59,10 @@ void render_hub_matrix_page(cui_ctx *ui, app_state_t *s) {
             }
             cui_column(ui, .gap = 2) {
                 cui_heading(ui, "主仓管理 (Master Hub)", 3);
-                cui_text(ui, "基准版本库 (~/.ai-space/skills) 集中管理与全景扫描调度",
-                         .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                char hub_sub[256];
+                snprintf(hub_sub, sizeof(hub_sub), "基准版本库 (%s) 集中管理与全景扫描调度",
+                         s->setting_hub_dir[0] ? s->setting_hub_dir : "~/.ai-space/skills");
+                cui_text(ui, hub_sub, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
             }
         }
 
