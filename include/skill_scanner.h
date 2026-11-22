@@ -31,6 +31,12 @@ typedef struct file_node_t {
     bool is_open;               /* tree expansion state */
     struct file_node_t *children;
     int child_count;
+
+    /* Diff metadata for Central Hub diff view */
+    int diff_status;            /* 0: IN_SYNC, 1: MODIFIED, 2: ADDED, 3: DELETED */
+    int added_lines;
+    int removed_lines;
+    bool has_diff_info;
 } file_node_t;
 
 /*

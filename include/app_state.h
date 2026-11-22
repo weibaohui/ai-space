@@ -115,6 +115,7 @@ typedef struct app_state_t {
     int diff_sync_view_mode;    /* 0: 文档预览, 1: 双栏比对 */
     hub_skill_diff_manifest_t diff_manifest;
     bool diff_manifest_loaded;
+    file_node_t *hub_diff_file_tree;
 
     /* Tool skills view state */
     char active_tool_name[128];

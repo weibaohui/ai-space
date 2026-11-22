@@ -1,7 +1,17 @@
 #include "view_hub_diff.h"
 #include "view_common.h"
+#include "view_skill_tree.h"
 #include <stdio.h>
 #include <string.h>
+
+static void on_hub_diff_file_select(file_node_t *node, void *user_data) {
+    app_state_t *s = (app_state_t *)user_data;
+    if (s && node && !node->is_dir) {
+        strncpy(s->diff_file_rel, node->rel_path, sizeof(s->diff_file_rel) - 1);
+        s->diff_file_rel[sizeof(s->diff_file_rel) - 1] = '\0';
+        load_hub_diff(s, s->selected_hub_skill, s->selected_hub_tool_idx, s->diff_file_rel);
+    }
+}
 
 void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
     hub_skill_entry_t *entry = NULL;
@@ -221,153 +231,24 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
             }
         }
 
-        /* ---------------- Pane 2: Skill Files Tree & Diff Markers (300px) ---------------- */
-        cui_card(ui, .width = CUI_PX(300), .height = CUI_FILL, .pad = 10, .gap = 8) {
-            cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                    cui_icon(ui, CUI_ICON_FOLDER_OPEN, 15, CUI_COLOR_ACCENT);
-                    cui_label(ui, "技能文件结构树");
-                }
-                cui_spacer(ui);
-                char fc_buf[32];
-                snprintf(fc_buf, sizeof(fc_buf), "%d 文件", s->diff_manifest.count);
-                cui_text(ui, fc_buf, .size = 11, .color = CUI_COLOR_TEXT_SECONDARY);
-            }
-
-            /* Manifest Diff Summary Badges */
-            cui_row(ui, .gap = 4, .align = CUI_ALIGN_CENTER) {
-                if (s->diff_manifest.modified_count > 0) {
-                    char m_buf[32];
-                    snprintf(m_buf, sizeof(m_buf), "%d 改动", s->diff_manifest.modified_count);
-                    cui_badge(ui, m_buf, .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
-                }
-                if (s->diff_manifest.added_count > 0) {
-                    char a_buf[32];
-                    snprintf(a_buf, sizeof(a_buf), "%d 新增", s->diff_manifest.added_count);
-                    cui_badge(ui, a_buf, .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                }
-                if (s->diff_manifest.deleted_count > 0) {
-                    char d_buf[32];
-                    snprintf(d_buf, sizeof(d_buf), "%d 缺失", s->diff_manifest.deleted_count);
-                    cui_badge(ui, d_buf, .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
-                }
-                if (s->diff_manifest.total_added_lines > 0 || s->diff_manifest.total_removed_lines > 0) {
-                    char l_buf[48];
-                    snprintf(l_buf, sizeof(l_buf), "+%d / -%d 行", s->diff_manifest.total_added_lines, s->diff_manifest.total_removed_lines);
-                    cui_badge(ui, l_buf, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
-                }
-                if (s->diff_manifest.modified_count == 0 &&
-                    s->diff_manifest.added_count == 0 &&
-                    s->diff_manifest.deleted_count == 0 &&
-                    s->diff_manifest.count > 0) {
-                    cui_badge(ui, "全文件一致", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                }
-            }
-
-            cui_separator(ui);
-
-            /* Files Scroll Area */
-            cui_scroll(ui, .id = "diff_files_scroll", .width = CUI_FILL, .height = CUI_FILL) {
-                cui_column(ui, .width = CUI_FILL, .gap = 4) {
-                    for (int i = 0; i < s->diff_manifest.count; i++) {
-                        hub_diff_file_item_t *f = &s->diff_manifest.items[i];
-                        bool is_cur_file = (strcmp(s->diff_file_rel, f->rel_path) == 0);
-
-                        cui_push_id_int(ui, 5000 + i);
-
-                        bool file_clicked = cui_card_begin(ui, &(cui_card_opts){
-                            .width = CUI_FILL,
-                            .pad = 6,
-                            .gap = 2,
-                            .hoverable = true,
-                            .selected = is_cur_file,
-                        });
-
-                        char dir_buf[256] = {0};
-                        const char *last_slash = strrchr(f->rel_path, '/');
-                        if (last_slash) {
-                            size_t dlen = (size_t)(last_slash - f->rel_path);
-                            if (dlen < sizeof(dir_buf)) {
-                                strncpy(dir_buf, f->rel_path, dlen);
-                                dir_buf[dlen] = '\0';
-                            }
-                        }
-
-                        cui_column(ui, .width = CUI_FILL, .gap = 2) {
-                            cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                                cui_row(ui, .gap = 5, .align = CUI_ALIGN_CENTER) {
-                                    const char *ic = CUI_ICON_FILE;
-                                    if (strstr(f->rel_path, ".md")) ic = CUI_ICON_FILE_TEXT;
-                                    else if (strstr(f->rel_path, ".py") || strstr(f->rel_path, ".sh") ||
-                                             strstr(f->rel_path, ".c") || strstr(f->rel_path, ".json") ||
-                                             strstr(f->rel_path, ".html")) ic = CUI_ICON_CODE;
-
-                                    cui_icon(ui, ic, 13, is_cur_file ? CUI_COLOR_ACCENT : CUI_COLOR_FOREGROUND);
-                                    cui_text(ui, f->file_name, .size = 11, .font = is_cur_file ? CUI_FONT_MEDIUM : CUI_FONT_BODY);
-                                }
-
-                                cui_spacer(ui);
-
-                                /* Difference indicators with explicit + and - signs and exact counts */
-                                if (f->is_binary) {
-                                    cui_badge(ui, "BIN", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
-                                } else if (f->status == DIFF_FILE_MODIFIED) {
-                                    cui_row(ui, .gap = 3, .align = CUI_ALIGN_CENTER) {
-                                        if (f->added_lines > 0) {
-                                            char a_buf[24];
-                                            snprintf(a_buf, sizeof(a_buf), "+%d", f->added_lines);
-                                            cui_badge(ui, a_buf, .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                                        }
-                                        if (f->removed_lines > 0) {
-                                            char r_buf[24];
-                                            snprintf(r_buf, sizeof(r_buf), "-%d", f->removed_lines);
-                                            cui_badge(ui, r_buf, .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
-                                        }
-                                        if (f->added_lines == 0 && f->removed_lines == 0) {
-                                            cui_badge(ui, "改动", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
-                                        }
-                                    }
-                                } else if (f->status == DIFF_FILE_ADDED) {
-                                    char a_buf[24];
-                                    if (f->added_lines > 0) {
-                                        snprintf(a_buf, sizeof(a_buf), "+%d", f->added_lines);
-                                    } else {
-                                        snprintf(a_buf, sizeof(a_buf), "+新增");
-                                    }
-                                    cui_badge(ui, a_buf, .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                                } else if (f->status == DIFF_FILE_DELETED) {
-                                    char r_buf[24];
-                                    if (f->removed_lines > 0) {
-                                        snprintf(r_buf, sizeof(r_buf), "-%d", f->removed_lines);
-                                    } else {
-                                        snprintf(r_buf, sizeof(r_buf), "-缺失");
-                                    }
-                                    cui_badge(ui, r_buf, .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
-                                } else {
-                                    cui_badge(ui, "一致", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
-                                }
-                            }
-
-                            if (dir_buf[0] != '\0') {
-                                cui_row(ui, .gap = 4, .align = CUI_ALIGN_CENTER) {
-                                    cui_gap(ui, 18);
-                                    cui_text(ui, dir_buf, .size = 9, .color = CUI_COLOR_TEXT_MUTED);
-                                }
-                            }
-                        }
-
-                        cui_card_end(ui);
-
-                        if (file_clicked) {
-                            strncpy(s->diff_file_rel, f->rel_path, sizeof(s->diff_file_rel) - 1);
-                            load_hub_diff(s, entry->skill_name, s->selected_hub_tool_idx, s->diff_file_rel);
-                        }
-
-                        cui_pop_id(ui);
-                    }
-                }
-            }
-        }
+        /* ---------------- Pane 2: 技能文件结构树 (复用统一组件) ---------------- */
+        skill_tree_view_opts_t tree_opts = {
+            .title = "技能文件结构树",
+            .badge_label = s->diff_manifest.skill_name[0] ? s->diff_manifest.skill_name : NULL,
+            .badge_tone = CUI_TONE_ACCENT,
+            .selected_path = s->diff_file_rel,
+            .match_by_rel_path = true,
+            .show_diff_badges = true,
+            .show_summary_badges = true,
+            .summary_total_files = s->diff_manifest.count,
+            .summary_modified = s->diff_manifest.modified_count,
+            .summary_added = s->diff_manifest.added_count,
+            .summary_deleted = s->diff_manifest.deleted_count,
+            .summary_total_added_lines = s->diff_manifest.total_added_lines,
+            .summary_total_removed_lines = s->diff_manifest.total_removed_lines,
+            .width = 300,
+        };
+        render_skill_file_tree_component(ui, s->hub_diff_file_tree, &tree_opts, on_hub_diff_file_select, s);
 
         /* ---------------- Pane 3: Diff Viewer / Content Preview (Fill) ---------------- */
         cui_card(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 12, .gap = 8) {

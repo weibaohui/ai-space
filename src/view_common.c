@@ -1,4 +1,5 @@
 #include "view_common.h"
+#include "view_skill_tree.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -138,6 +139,11 @@ void build_skill_diff_manifest(app_state_t *s, const char *skill_name, int tool_
     if (!s || !skill_name) return;
 
     free_skill_diff_manifest(&s->diff_manifest);
+    if (s->hub_diff_file_tree) {
+        free_skill_file_tree(s->hub_diff_file_tree);
+        free(s->hub_diff_file_tree);
+        s->hub_diff_file_tree = NULL;
+    }
     strncpy(s->diff_manifest.skill_name, skill_name, sizeof(s->diff_manifest.skill_name) - 1);
 
     hub_skill_entry_t *entry = NULL;
@@ -335,6 +341,9 @@ void build_skill_diff_manifest(app_state_t *s, const char *skill_name, int tool_
             strncpy(s->diff_file_rel, "SKILL.md", sizeof(s->diff_file_rel) - 1);
         }
     }
+
+    /* Build hierarchical diff file tree for Central Hub view */
+    s->hub_diff_file_tree = build_tree_from_diff_manifest(&s->diff_manifest, entry->hub_path, tool_skills_path);
 }
 
 void load_hub_diff(app_state_t *s, const char *skill_name, int tool_idx, const char *rel_file) {

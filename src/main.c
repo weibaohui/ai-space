@@ -72,6 +72,15 @@ int main(void) {
         for (int i = 0; i < s.record_count; i++) {
             if (strcmp(s.records[i].name, start_tool) == 0) {
                 open_tool_skills_page(&s, s.records[i].name, s.records[i].path);
+                const char *start_sk = getenv("CUI_START_SKILL");
+                if (start_sk && start_sk[0] != '\0') {
+                    for (int j = 0; j < s.skill_count; j++) {
+                        if (strcmp(s.skill_items[j].name, start_sk) == 0) {
+                            select_active_skill(&s, s.skill_items[j].name, s.skill_items[j].path);
+                            break;
+                        }
+                    }
+                }
                 break;
             }
         }
@@ -126,6 +135,11 @@ int main(void) {
         free_skill_file_tree(s.skill_file_tree);
         free(s.skill_file_tree);
         s.skill_file_tree = NULL;
+    }
+    if (s.hub_diff_file_tree) {
+        free_skill_file_tree(s.hub_diff_file_tree);
+        free(s.hub_diff_file_tree);
+        s.hub_diff_file_tree = NULL;
     }
     if (s.selected_file_content) {
         free(s.selected_file_content);

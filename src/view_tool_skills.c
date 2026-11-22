@@ -1,5 +1,6 @@
 #include "view_tool_skills.h"
 #include "view_common.h"
+#include "view_skill_tree.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,7 +46,7 @@ static void load_skill_file(app_state_t *s, const char *path, const char *name) 
     s->doc_render_mode = 0;
 }
 
-static void select_active_skill(app_state_t *s, const char *skill_name, const char *skill_path) {
+void select_active_skill(app_state_t *s, const char *skill_name, const char *skill_path) {
     strncpy(s->active_skill_name, skill_name, sizeof(s->active_skill_name) - 1);
     s->active_skill_name[sizeof(s->active_skill_name) - 1] = '\0';
 
@@ -123,40 +124,10 @@ void open_tool_skills_page(app_state_t *s, const char *tool_name, const char *to
     s->current_page = PAGE_TOOL_SKILLS;
 }
 
-static void render_file_tree_node(cui_ctx *ui, app_state_t *s, file_node_t *node) {
-    if (!node) return;
-
-    if (node->is_dir) {
-        cui_push_id(ui, node->abs_path);
-        cui_tree(ui, node->name, &node->is_open,
-                 .icon = node->is_open ? CUI_ICON_FOLDER_OPEN : CUI_ICON_FOLDER) {
-            for (int i = 0; i < node->child_count; i++) {
-                render_file_tree_node(ui, s, &node->children[i]);
-            }
-        }
-        cui_pop_id(ui);
-    } else {
-        cui_push_id(ui, node->abs_path);
-        bool dummy = false;
-        bool is_sel = (strcmp(s->selected_file_path, node->abs_path) == 0);
-
-        const char *icon = CUI_ICON_FILE_TEXT;
-        if (strstr(node->name, ".md") || strstr(node->name, ".markdown")) {
-            icon = CUI_ICON_BOOKMARK;
-        } else if (strstr(node->name, ".py") || strstr(node->name, ".c") ||
-                   strstr(node->name, ".h") || strstr(node->name, ".sh") ||
-                   strstr(node->name, ".bash") || strstr(node->name, ".zsh") ||
-                   strstr(node->name, ".js") || strstr(node->name, ".ts")) {
-            icon = CUI_ICON_CODE;
-        }
-
-        /* Leaf node click check must be outside braces in CUI */
-        cui_tree(ui, node->name, &dummy, .icon = icon, .leaf = true, .selected = is_sel) {}
-        if (cui_tree_clicked(ui)) {
-            load_skill_file(s, node->abs_path, node->name);
-        }
-
-        cui_pop_id(ui);
+static void on_tool_skill_file_select(file_node_t *node, void *user_data) {
+    app_state_t *s = (app_state_t *)user_data;
+    if (s && node && !node->is_dir) {
+        load_skill_file(s, node->abs_path, node->name);
     }
 }
 
@@ -240,32 +211,18 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
                 }
             }
 
-            /* Middle Pane: 左树 (Skill 目录与文件树) */
-            cui_card(ui, .width = CUI_PX(280), .height = CUI_FILL, .pad = 12, .gap = 10) {
-                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_label(ui, "目录结构树");
-                    cui_spacer(ui);
-                    if (s->active_skill_name[0] != '\0') {
-                        cui_badge(ui, s->active_skill_name, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
-                    }
-                }
-
-                cui_separator(ui);
-
-                cui_scroll(ui, .id = "tree_pane_scroll", .width = CUI_FILL, .height = CUI_FILL) {
-                    if (s->skill_file_tree && s->skill_file_tree->child_count > 0) {
-                        for (int i = 0; i < s->skill_file_tree->child_count; i++) {
-                            render_file_tree_node(ui, s, &s->skill_file_tree->children[i]);
-                        }
-                    } else {
-                        cui_column(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER,
-                                   .justify = CUI_JUSTIFY_CENTER) {
-                            cui_gap(ui, 40);
-                            cui_muted(ui, "当前技能目录下无文件");
-                        }
-                    }
-                }
-            }
+            /* Middle Pane: 技能目录结构树 (复用统一组件) */
+            skill_tree_view_opts_t tree_opts = {
+                .title = "目录结构树",
+                .badge_label = s->active_skill_name[0] ? s->active_skill_name : NULL,
+                .badge_tone = CUI_TONE_ACCENT,
+                .selected_path = s->selected_file_path,
+                .match_by_rel_path = false,
+                .show_diff_badges = false,
+                .show_summary_badges = false,
+                .width = 280,
+            };
+            render_skill_file_tree_component(ui, s->skill_file_tree, &tree_opts, on_tool_skill_file_select, s);
 
             /* Right Pane: 右具体内容 (File Content Viewer) */
             cui_card(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 14, .gap = 10) {
