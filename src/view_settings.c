@@ -411,44 +411,22 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
             /* Action Buttons for non-none backends: Availability Check is strictly required! */
             if (s->setting_sync_candidate_type != SYNC_BACKEND_NONE) {
                 cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
-                    /* Primary action: Check availability first, only activate if check succeeds */
-                    if (cui_button(ui, " 🔍 检测可用性并激活生效", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_CHECK_CHECK)) {
-                        sync_config_t cand_cfg = s->sync_cfg;
-                        cand_cfg.type = s->setting_sync_candidate_type;
-                        char check_err[256] = "";
-                        int rc = sync_backend_check_available(&cand_cfg, check_err, sizeof(check_err));
+                    bool is_checking = s->op_progress.active;
 
-                        s->sync_has_checked_candidate = true;
-                        s->sync_candidate_checked_ok = (rc == 0);
-                        strncpy(s->sync_candidate_check_msg, check_err, sizeof(s->sync_candidate_check_msg) - 1);
-
-                        if (rc == 0) {
-                            /* Passed: Allow activation! */
-                            s->sync_cfg.type = s->setting_sync_candidate_type;
-                            app_save_settings(s);
-                            s->sync_drift_loaded = false;
-                            char toast[256];
-                            snprintf(toast, sizeof(toast), "检测通过！已成功激活后端: %s",
-                                     sync_backend_display_name(s->sync_cfg.type));
-                            app_set_toast(s, toast);
-                        } else {
-                            /* Failed: Strictly block activation! */
-                            char toast[256];
-                            snprintf(toast, sizeof(toast), "后端不可用，激活被阻止: %s", check_err);
-                            app_set_toast(s, toast);
-                        }
+                    /* Primary action: Check availability in background with progress modal, only activate if check succeeds */
+                    if (cui_button(ui, " 🔍 检测可用性并激活生效",
+                                   .variant = CUI_BUTTON_PRIMARY,
+                                   .icon = is_checking ? CUI_ICON_LOADER_CIRCLE : CUI_ICON_CHECK_CHECK,
+                                   .disabled = is_checking)) {
+                        start_sync_check_available_thread(s, true);
                     }
 
                     /* Secondary action: Check only, do not alter active backend */
-                    if (cui_button(ui, " ⚡ 仅检测可用性 (不激活)", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_ACTIVITY)) {
-                        sync_config_t cand_cfg = s->sync_cfg;
-                        cand_cfg.type = s->setting_sync_candidate_type;
-                        char check_err[256] = "";
-                        int rc = sync_backend_check_available(&cand_cfg, check_err, sizeof(check_err));
-
-                        s->sync_has_checked_candidate = true;
-                        s->sync_candidate_checked_ok = (rc == 0);
-                        strncpy(s->sync_candidate_check_msg, check_err, sizeof(s->sync_candidate_check_msg) - 1);
+                    if (cui_button(ui, " ⚡ 仅检测可用性 (不激活)",
+                                   .variant = CUI_BUTTON_SECONDARY,
+                                   .icon = is_checking ? CUI_ICON_LOADER_CIRCLE : CUI_ICON_ACTIVITY,
+                                   .disabled = is_checking)) {
+                        start_sync_check_available_thread(s, false);
                     }
                 }
             }

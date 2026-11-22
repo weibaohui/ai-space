@@ -57,6 +57,20 @@ echo -e "  - 主机 A (北京) 本地主仓: $HOST_A_HUB"
 echo -e "  - 主机 B (上海) 本地主仓: $HOST_B_HUB"
 echo ""
 
+# 重置远端分支技能状态以保证测试幂等可重复执行
+echo -e "${BLUE}[+] 重置远端测试分支技能状态 (保证测试幂等)...${NC}"
+TMP_CLEAN=$(mktemp -d)
+git clone --depth 1 -b "$BRANCH" "$REPO_URL" "$TMP_CLEAN" 2>/dev/null || git clone --depth 1 "$REPO_URL" "$TMP_CLEAN"
+(
+    cd "$TMP_CLEAN"
+    git checkout -B "$BRANCH" 2>/dev/null || true
+    rm -rf search-engine doc-summarizer k8s-helper
+    git add .
+    git diff --cached --quiet || (git commit -m "chore: reset test branch state" && git push origin "$BRANCH")
+)
+rm -rf "$TMP_CLEAN"
+echo ""
+
 # Helper for test assertions
 assert_ok() {
     local desc="$1"

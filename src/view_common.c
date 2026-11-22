@@ -891,8 +891,10 @@ void render_op_progress_modal(cui_ctx *ui, app_state_t *s) {
 
             cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                 cui_icon(ui, CUI_ICON_SHIELD, 13, CUI_COLOR_TEXT_MUTED);
-                cui_text(ui, "正在进行纯物理复制，覆盖前已自动在 ~/.ai-space/backups/ 保存备份快照",
-                         .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                const char *sub = (s->op_progress.sub_message[0] != '\0')
+                    ? s->op_progress.sub_message
+                    : "正在进行纯物理复制，覆盖前已自动在 ~/.ai-space/backups/ 保存备份快照";
+                cui_text(ui, sub, .size = 11, .color = CUI_COLOR_TEXT_MUTED);
             }
         }
     }
@@ -1003,10 +1005,13 @@ static void *sync_check_worker_thread(void *arg) {
     if (!s->sync_backend) app_init_sync_backend(s);
     if (!s->sync_backend || !s->sync_backend->ops->check_drift) {
         s->sync_is_busy = false;
+        s->op_progress.active = false;
+        s->op_progress.thread_running = false;
         return NULL;
     }
 
     s->sync_is_busy = true;
+    s->op_progress.percent = 0.5f;
     char err_buf[256] = "";
     sync_drift_summary_t new_diff = {0};
 
@@ -1026,16 +1031,108 @@ static void *sync_check_worker_thread(void *arg) {
         app_set_toast(s, err_buf[0] ? err_buf : "检查远端变动失败");
     }
 
+    s->op_progress.percent = 1.0f;
+    usleep(150000);
+    s->op_progress.active = false;
+    s->op_progress.thread_running = false;
     s->sync_is_busy = false;
     return NULL;
 }
 
 void start_sync_check_thread(app_state_t *s) {
-    if (!s || s->sync_is_busy) return;
+    if (!s || s->sync_is_busy || s->op_progress.active) return;
     s->sync_is_busy = true;
-    pthread_t th;
-    pthread_create(&th, NULL, sync_check_worker_thread, s);
-    pthread_detach(th);
+
+    s->op_progress.active = true;
+    s->op_progress.percent = 0.2f;
+    snprintf(s->op_progress.title, sizeof(s->op_progress.title), "正在检查远端变动...");
+    strncpy(s->op_progress.message, "正在拉取远端清单并比对内容哈希...", sizeof(s->op_progress.message) - 1);
+    strncpy(s->op_progress.sub_message, "正在比对本地技能主仓与远端共享版本差异...", sizeof(s->op_progress.sub_message) - 1);
+    s->op_progress.thread_running = true;
+
+    pthread_create(&s->op_progress.thread, NULL, sync_check_worker_thread, s);
+    pthread_detach(s->op_progress.thread);
+}
+
+typedef struct {
+    app_state_t *s;
+    sync_config_t cand_cfg;
+    bool activate_on_success;
+} sync_check_avail_arg_t;
+
+static void *sync_check_avail_worker_thread(void *arg) {
+    sync_check_avail_arg_t *ca = (sync_check_avail_arg_t *)arg;
+    app_state_t *s = ca->s;
+
+    s->op_progress.percent = 0.35f;
+    strncpy(s->op_progress.message, "正在执行网络探测与鉴权验证...", sizeof(s->op_progress.message) - 1);
+
+    char check_err[256] = "";
+    int rc = sync_backend_check_available(&ca->cand_cfg, check_err, sizeof(check_err));
+
+    s->op_progress.percent = 0.85f;
+
+    s->sync_has_checked_candidate = true;
+    s->sync_candidate_checked_ok = (rc == 0);
+    strncpy(s->sync_candidate_check_msg, check_err, sizeof(s->sync_candidate_check_msg) - 1);
+
+    if (ca->activate_on_success) {
+        if (rc == 0) {
+            s->sync_cfg.type = ca->cand_cfg.type;
+            app_save_settings(s);
+            s->sync_drift_loaded = false;
+            char toast[256];
+            snprintf(toast, sizeof(toast), "检测通过！已成功激活后端: %s",
+                     sync_backend_display_name(s->sync_cfg.type));
+            app_set_toast(s, toast);
+            strncpy(s->op_progress.message, "检测通过，已激活生效！", sizeof(s->op_progress.message) - 1);
+        } else {
+            char toast[256];
+            snprintf(toast, sizeof(toast), "后端不可用，激活被阻止: %s", check_err);
+            app_set_toast(s, toast);
+            strncpy(s->op_progress.message, "检测未通过，激活已阻止", sizeof(s->op_progress.message) - 1);
+        }
+    } else {
+        if (rc == 0) {
+            app_set_toast(s, "可用性检测通过，连接正常！");
+            strncpy(s->op_progress.message, "可用性检测通过！", sizeof(s->op_progress.message) - 1);
+        } else {
+            char toast[256];
+            snprintf(toast, sizeof(toast), "可用性检测失败: %s", check_err);
+            app_set_toast(s, toast);
+            strncpy(s->op_progress.message, "检测未通过", sizeof(s->op_progress.message) - 1);
+        }
+    }
+
+    s->op_progress.percent = 1.0f;
+    usleep(250000);
+
+    s->op_progress.active = false;
+    s->op_progress.thread_running = false;
+    free(ca);
+    return NULL;
+}
+
+void start_sync_check_available_thread(app_state_t *s, bool activate_on_success) {
+    if (!s || s->op_progress.active) return;
+
+    sync_check_avail_arg_t *arg = (sync_check_avail_arg_t *)malloc(sizeof(sync_check_avail_arg_t));
+    if (!arg) return;
+    arg->s = s;
+    arg->cand_cfg = s->sync_cfg;
+    arg->cand_cfg.type = s->setting_sync_candidate_type;
+    arg->activate_on_success = activate_on_success;
+
+    s->op_progress.active = true;
+    s->op_progress.percent = 0.15f;
+    snprintf(s->op_progress.title, sizeof(s->op_progress.title), "正在检测后端可用性...");
+    snprintf(s->op_progress.message, sizeof(s->op_progress.message), "正在连接 %s 验证可用性...",
+             sync_backend_display_name(s->setting_sync_candidate_type));
+    strncpy(s->op_progress.sub_message, "正在探测远端网络连通性、服务响应及读写访问权限...", sizeof(s->op_progress.sub_message) - 1);
+    s->op_progress.thread_running = true;
+
+    pthread_create(&s->op_progress.thread, NULL, sync_check_avail_worker_thread, arg);
+    pthread_detach(s->op_progress.thread);
 }
 
 typedef struct {

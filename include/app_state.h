@@ -31,6 +31,7 @@ typedef struct {
     bool active;
     char title[128];
     char message[256];
+    char sub_message[256];      /* Detail / security note */
     float percent;              /* 0.0 to 1.0 */
     bool indeterminate;
     int current_item;

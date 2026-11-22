@@ -32,6 +32,14 @@ void start_promote_to_master_thread(app_state_t *s, const char *tool_skills_path
                                     const char *skill_name, const char *tool_name, int tool_idx);
 void start_broadcast_thread(app_state_t *s, const char *skill_name, int tool_idx);
 
+/* Remote Sync background dispatchers */
+void start_sync_check_thread(app_state_t *s);
+void start_sync_check_available_thread(app_state_t *s, bool activate_on_success);
+void start_sync_pull_skill_thread(app_state_t *s, const char *skill_name);
+void start_sync_push_skill_thread(app_state_t *s, const char *skill_name);
+void start_sync_pull_all_thread(app_state_t *s);
+void start_sync_push_all_thread(app_state_t *s);
+
 /* Toast feedback */
 void app_set_toast(app_state_t *s, const char *msg);
 
