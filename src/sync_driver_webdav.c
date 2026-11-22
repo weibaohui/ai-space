@@ -29,7 +29,7 @@ static void webdav_destroy(sync_backend_t *self) {
     }
 }
 
-static int webdav_test_connection(sync_backend_t *self, char *err_buf, size_t err_cap) {
+static int webdav_check_available(sync_backend_t *self, char *err_buf, size_t err_cap) {
     webdav_priv_t *priv = (webdav_priv_t *)self->priv_data;
     if (!priv || priv->url[0] == '\0') {
         if (err_buf) snprintf(err_buf, err_cap, "未配置 WebDAV 服务器地址 (URL)");
@@ -40,10 +40,53 @@ static int webdav_test_connection(sync_backend_t *self, char *err_buf, size_t er
         return -1;
     }
 
-    /* Connection simulation & verification */
-    self->is_connected = true;
-    snprintf(self->status_msg, sizeof(self->status_msg), "WebDAV 远端服务就绪: %s", priv->url);
-    return 0;
+    char cmd[1024];
+    if (priv->user[0] != '\0') {
+        snprintf(cmd, sizeof(cmd),
+                 "curl -s -m 5 -o /dev/null -w \"%%{http_code}\" -u \"%s:%s\" -X OPTIONS \"%s\" 2>/dev/null",
+                 priv->user, priv->pass, priv->url);
+    } else {
+        snprintf(cmd, sizeof(cmd),
+                 "curl -s -m 5 -o /dev/null -w \"%%{http_code}\" -X OPTIONS \"%s\" 2>/dev/null",
+                 priv->url);
+    }
+
+    FILE *pipe = popen(cmd, "r");
+    if (!pipe) {
+        if (err_buf) snprintf(err_buf, err_cap, "无法执行 curl 网络检测命令");
+        return -1;
+    }
+    char code_str[16] = {0};
+    if (!fgets(code_str, sizeof(code_str), pipe)) {
+        pclose(pipe);
+        if (err_buf) snprintf(err_buf, err_cap, "WebDAV 服务器连接超时或无响应");
+        return -1;
+    }
+    pclose(pipe);
+
+    int status_code = atoi(code_str);
+    if (status_code >= 200 && status_code < 400) {
+        self->is_connected = true;
+        if (err_buf) snprintf(err_buf, err_cap, "WebDAV 远端服务检测通过，连接正常 (HTTP %d)", status_code);
+        snprintf(self->status_msg, sizeof(self->status_msg), "WebDAV 服务正常: %s (HTTP %d)", priv->url, status_code);
+        return 0;
+    } else if (status_code == 401 || status_code == 403) {
+        if (err_buf) snprintf(err_buf, err_cap, "WebDAV 鉴权失败：用户名或授权码错误 (HTTP %d)", status_code);
+        return -1;
+    } else if (status_code == 404) {
+        if (err_buf) snprintf(err_buf, err_cap, "WebDAV 远端目录路径不存在 (HTTP 404)");
+        return -1;
+    } else if (status_code == 0) {
+        if (err_buf) snprintf(err_buf, err_cap, "无法连接到 WebDAV 服务器 (网络超时或域名不可达)");
+        return -1;
+    } else {
+        if (err_buf) snprintf(err_buf, err_cap, "WebDAV 服务器返回异常状态码: HTTP %d", status_code);
+        return -1;
+    }
+}
+
+static int webdav_test_connection(sync_backend_t *self, char *err_buf, size_t err_cap) {
+    return webdav_check_available(self, err_buf, err_cap);
 }
 
 static int webdav_fetch_remote_manifest(sync_backend_t *self, sync_remote_manifest_t *out_manifest,
@@ -124,6 +167,7 @@ const sync_driver_ops_t g_webdav_driver_ops = {
     .init = webdav_init,
     .destroy = webdav_destroy,
     .test_connection = webdav_test_connection,
+    .check_available = webdav_check_available,
     .fetch_remote_manifest = webdav_fetch_remote_manifest,
     .check_drift = webdav_check_drift,
     .pull_skill = webdav_pull_skill,

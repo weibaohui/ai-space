@@ -31,7 +31,7 @@ static void git_destroy(sync_backend_t *self) {
     }
 }
 
-static int git_test_connection(sync_backend_t *self, char *err_buf, size_t err_cap) {
+static int git_check_available(sync_backend_t *self, char *err_buf, size_t err_cap) {
     git_priv_t *priv = (git_priv_t *)self->priv_data;
     if (!priv || priv->repo_url[0] == '\0') {
         if (err_buf) snprintf(err_buf, err_cap, "未配置 Git 远端仓库地址 (Repository URL)");
@@ -41,14 +41,58 @@ static int git_test_connection(sync_backend_t *self, char *err_buf, size_t err_c
     if (strncmp(priv->repo_url, "http://", 7) != 0 &&
         strncmp(priv->repo_url, "https://", 8) != 0 &&
         strncmp(priv->repo_url, "git@", 4) != 0) {
-        if (err_buf) snprintf(err_buf, err_cap, "Git 仓库地址格式不正确 (支持 HTTPS 或 SSH git@)");
+        if (err_buf) snprintf(err_buf, err_cap, "Git 仓库地址格式不正确 (必须以 https://、http:// 或 git@ 开头)");
         return -1;
     }
 
-    self->is_connected = true;
-    snprintf(self->status_msg, sizeof(self->status_msg), "Git 远端仓库配置就绪: %s [%s]",
-             priv->repo_url, priv->branch);
-    return 0;
+    char auth_url[768];
+    if (priv->auth_token[0] != '\0' && strncmp(priv->repo_url, "https://", 8) == 0) {
+        snprintf(auth_url, sizeof(auth_url), "https://oauth2:%s@%s", priv->auth_token, priv->repo_url + 8);
+    } else {
+        strncpy(auth_url, priv->repo_url, sizeof(auth_url) - 1);
+        auth_url[sizeof(auth_url) - 1] = '\0';
+    }
+
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "git ls-remote --exit-code \"%s\" HEAD 2>&1", auth_url);
+
+    FILE *pipe = popen(cmd, "r");
+    if (!pipe) {
+        if (err_buf) snprintf(err_buf, err_cap, "无法执行 git 检测命令");
+        return -1;
+    }
+    char line[512] = {0};
+    char first_line[256] = {0};
+    if (fgets(line, sizeof(line), pipe)) {
+        strncpy(first_line, line, sizeof(first_line) - 1);
+        size_t l = strlen(first_line);
+        if (l > 0 && first_line[l - 1] == '\n') first_line[l - 1] = '\0';
+    }
+    int rc = pclose(pipe);
+
+    if (rc == 0) {
+        self->is_connected = true;
+        if (err_buf) snprintf(err_buf, err_cap, "Git 远端版本库检测通过，连接正常！");
+        snprintf(self->status_msg, sizeof(self->status_msg), "Git 远端仓库就绪: %s [%s]", priv->repo_url, priv->branch);
+        return 0;
+    } else {
+        if (err_buf) {
+            if (strstr(first_line, "Repository not found") || strstr(first_line, "not found")) {
+                snprintf(err_buf, err_cap, "Git 仓库不存在或无读取权限 (Repository not found)");
+            } else if (strstr(first_line, "Authentication failed") || strstr(first_line, "fatal: Authentication")) {
+                snprintf(err_buf, err_cap, "Git 鉴权失败：Access Token 无效或过期");
+            } else if (first_line[0] != '\0') {
+                snprintf(err_buf, err_cap, "Git 远端连接失败: %s", first_line);
+            } else {
+                snprintf(err_buf, err_cap, "Git 远端检测失败 (退出代码: %d)", rc);
+            }
+        }
+        return -1;
+    }
+}
+
+static int git_test_connection(sync_backend_t *self, char *err_buf, size_t err_cap) {
+    return git_check_available(self, err_buf, err_cap);
 }
 
 static int git_fetch_remote_manifest(sync_backend_t *self, sync_remote_manifest_t *out_manifest,
@@ -129,6 +173,7 @@ const sync_driver_ops_t g_git_driver_ops = {
     .init = git_init,
     .destroy = git_destroy,
     .test_connection = git_test_connection,
+    .check_available = git_check_available,
     .fetch_remote_manifest = git_fetch_remote_manifest,
     .check_drift = git_check_drift,
     .pull_skill = git_pull_skill,

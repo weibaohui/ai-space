@@ -952,6 +952,7 @@ void app_init_settings(app_state_t *s) {
     db_get_setting(s->db, "sync_git_user", s->sync_cfg.git_user_name, sizeof(s->sync_cfg.git_user_name), "AI-Space User");
     db_get_setting(s->db, "sync_git_email", s->sync_cfg.git_user_email, sizeof(s->sync_cfg.git_user_email), "user@example.com");
 
+    s->setting_sync_candidate_type = s->sync_cfg.type;
     app_init_sync_backend(s);
 }
 

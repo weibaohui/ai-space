@@ -47,7 +47,7 @@ static void nfs_destroy(sync_backend_t *self) {
     }
 }
 
-static int nfs_test_connection(sync_backend_t *self, char *err_buf, size_t err_cap) {
+static int nfs_check_available(sync_backend_t *self, char *err_buf, size_t err_cap) {
     nfs_priv_t *priv = (nfs_priv_t *)self->priv_data;
     if (!priv || priv->expanded_path[0] == '\0') {
         if (err_buf) snprintf(err_buf, err_cap, "未配置 NFS / 局域网共享目录路径");
@@ -56,24 +56,53 @@ static int nfs_test_connection(sync_backend_t *self, char *err_buf, size_t err_c
 
     struct stat st;
     if (stat(priv->expanded_path, &st) != 0) {
-        /* Try creating directory if parent exists */
         if (mkdir(priv->expanded_path, 0755) != 0) {
             if (err_buf) snprintf(err_buf, err_cap, "共享目录不存在且无法自动创建: %s", priv->expanded_path);
             return -1;
         }
     } else if (!S_ISDIR(st.st_mode)) {
-        if (err_buf) snprintf(err_buf, err_cap, "指定路径非有效目录: %s", priv->expanded_path);
+        if (err_buf) snprintf(err_buf, err_cap, "指定路径非有效物理目录: %s", priv->expanded_path);
         return -1;
     }
 
-    if (access(priv->expanded_path, R_OK | W_OK) != 0) {
-        if (err_buf) snprintf(err_buf, err_cap, "共享目录读写权限受限 (Permission Denied): %s", priv->expanded_path);
+    /* Perform a real filesystem read/write/delete probe test */
+    char probe_file[1024];
+    snprintf(probe_file, sizeof(probe_file), "%s/.probe_ai_space_%d", priv->expanded_path, (int)getpid());
+
+    FILE *fp = fopen(probe_file, "w");
+    if (!fp) {
+        if (err_buf) snprintf(err_buf, err_cap, "共享目录写入测试失败 (只读或无写权限): %s", priv->expanded_path);
         return -1;
     }
+    const char *test_token = "ai-space-probe-availability-ok";
+    fputs(test_token, fp);
+    fclose(fp);
+
+    /* Read test */
+    fp = fopen(probe_file, "r");
+    if (!fp) {
+        unlink(probe_file);
+        if (err_buf) snprintf(err_buf, err_cap, "共享目录读取测试失败: %s", priv->expanded_path);
+        return -1;
+    }
+    char buf[64] = {0};
+    if (!fgets(buf, sizeof(buf), fp) || strcmp(buf, test_token) != 0) {
+        fclose(fp);
+        unlink(probe_file);
+        if (err_buf) snprintf(err_buf, err_cap, "共享目录数据完整性校验失败: %s", priv->expanded_path);
+        return -1;
+    }
+    fclose(fp);
+    unlink(probe_file);
 
     self->is_connected = true;
+    if (err_buf) snprintf(err_buf, err_cap, "NFS 共享目录可用性检测通过，读写正常 (路径: %s)", priv->expanded_path);
     snprintf(self->status_msg, sizeof(self->status_msg), "共享目录连接就绪: %s", priv->expanded_path);
     return 0;
+}
+
+static int nfs_test_connection(sync_backend_t *self, char *err_buf, size_t err_cap) {
+    return nfs_check_available(self, err_buf, err_cap);
 }
 
 static int nfs_fetch_remote_manifest(sync_backend_t *self, sync_remote_manifest_t *out_manifest,
@@ -348,6 +377,7 @@ const sync_driver_ops_t g_nfs_driver_ops = {
     .init = nfs_init,
     .destroy = nfs_destroy,
     .test_connection = nfs_test_connection,
+    .check_available = nfs_check_available,
     .fetch_remote_manifest = nfs_fetch_remote_manifest,
     .check_drift = nfs_check_drift,
     .pull_skill = nfs_pull_skill,

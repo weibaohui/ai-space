@@ -220,49 +220,51 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
             cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_GLOBE, 18, CUI_COLOR_ACCENT);
-                    cui_heading(ui, "跨主机远端同步后端选择 (仅选一个生效)", 4);
+                    cui_heading(ui, "跨主机远端同步后端选择 (仅选一个生效，必须先检测可用才可激活)", 4);
                 }
                 cui_spacer(ui);
-                cui_badge(ui, sync_backend_display_name(s->sync_cfg.type),
+                char act_lbl[128];
+                snprintf(act_lbl, sizeof(act_lbl), "当前生效: %s", sync_backend_display_name(s->sync_cfg.type));
+                cui_badge(ui, act_lbl,
                           .tone = (s->sync_cfg.type != SYNC_BACKEND_NONE) ? CUI_TONE_ACCENT : CUI_TONE_NEUTRAL,
                           .size = CUI_SIZE_SM);
             }
 
-            cui_text(ui, "本机制为【主机无关】架构。多台主机配置相同的远端同步模式与参数，即可共享同一个云端主仓。一台主机操作后，其他主机即时拉取同步。",
+            cui_text(ui, "本机制为【主机无关】架构。多台主机配置相同的远端同步模式与参数，即可共享同一个云端主仓。各个后端必须先检测通过后才可激活。",
                      .size = 13, .color = CUI_COLOR_TEXT_SECONDARY);
 
             /* Radio-style Backend Selection (Strictly 1 Active Backend) */
             cui_row(ui, .width = CUI_FILL, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                bool is_none = (s->sync_cfg.type == SYNC_BACKEND_NONE);
+                bool is_cand_none = (s->setting_sync_candidate_type == SYNC_BACKEND_NONE);
                 if (cui_button(ui, "单机本地模式",
-                               .variant = is_none ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
+                               .variant = is_cand_none ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                .icon = CUI_ICON_BOX)) {
-                    s->sync_cfg.type = SYNC_BACKEND_NONE;
-                    s->sync_test_result[0] = '\0';
+                    s->setting_sync_candidate_type = SYNC_BACKEND_NONE;
+                    s->sync_has_checked_candidate = false;
                 }
 
-                bool is_webdav = (s->sync_cfg.type == SYNC_BACKEND_WEBDAV);
+                bool is_cand_webdav = (s->setting_sync_candidate_type == SYNC_BACKEND_WEBDAV);
                 if (cui_button(ui, "WebDAV (坚果云/Nextcloud)",
-                               .variant = is_webdav ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
+                               .variant = is_cand_webdav ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                .icon = CUI_ICON_GLOBE)) {
-                    s->sync_cfg.type = SYNC_BACKEND_WEBDAV;
-                    s->sync_test_result[0] = '\0';
+                    s->setting_sync_candidate_type = SYNC_BACKEND_WEBDAV;
+                    s->sync_has_checked_candidate = false;
                 }
 
-                bool is_nfs = (s->sync_cfg.type == SYNC_BACKEND_NFS);
+                bool is_cand_nfs = (s->setting_sync_candidate_type == SYNC_BACKEND_NFS);
                 if (cui_button(ui, "NFS / 局域网共享目录",
-                               .variant = is_nfs ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
+                               .variant = is_cand_nfs ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                .icon = CUI_ICON_FOLDER)) {
-                    s->sync_cfg.type = SYNC_BACKEND_NFS;
-                    s->sync_test_result[0] = '\0';
+                    s->setting_sync_candidate_type = SYNC_BACKEND_NFS;
+                    s->sync_has_checked_candidate = false;
                 }
 
-                bool is_git = (s->sync_cfg.type == SYNC_BACKEND_GIT);
+                bool is_cand_git = (s->setting_sync_candidate_type == SYNC_BACKEND_GIT);
                 if (cui_button(ui, "Git 远端版本库",
-                               .variant = is_git ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
+                               .variant = is_cand_git ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                                .icon = CUI_ICON_GIT_BRANCH)) {
-                    s->sync_cfg.type = SYNC_BACKEND_GIT;
-                    s->sync_test_result[0] = '\0';
+                    s->setting_sync_candidate_type = SYNC_BACKEND_GIT;
+                    s->sync_has_checked_candidate = false;
                 }
             }
         }
@@ -271,14 +273,42 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
         cui_box(ui, .width = CUI_FILL, .radius = 8, .pad = 16, .gap = 14,
                 .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
                 .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-            if (s->sync_cfg.type == SYNC_BACKEND_NONE) {
+
+            bool is_active = (s->sync_cfg.type == s->setting_sync_candidate_type);
+
+            if (s->setting_sync_candidate_type == SYNC_BACKEND_NONE) {
+                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                    cui_heading(ui, "单机本地模式参数", 4);
+                    cui_spacer(ui);
+                    cui_badge(ui, is_active ? "🟢 当前已激活生效" : "⚪ 未激活",
+                              .tone = is_active ? CUI_TONE_SUCCESS : CUI_TONE_NEUTRAL,
+                              .size = CUI_SIZE_SM);
+                }
+
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_INFO, 16, CUI_COLOR_TEXT_MUTED);
-                    cui_text(ui, "当前已选择【单机离线模式】。技能仅在本地主仓与各个本地工具间流转，不与远端服务器同步。",
+                    cui_text(ui, "单机离线模式下技能仅在本地主仓与各个本地工具间流转，不与任何远端服务器进行跨主机同步。",
                              .size = 13, .color = CUI_COLOR_TEXT_MUTED);
                 }
-            } else if (s->sync_cfg.type == SYNC_BACKEND_WEBDAV) {
-                cui_heading(ui, "WebDAV 远端服务参数配置", 4);
+
+                cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
+                    if (cui_button(ui, " 💾 激活单机本地模式", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
+                        s->sync_cfg.type = SYNC_BACKEND_NONE;
+                        app_save_settings(s);
+                        s->sync_drift_loaded = false;
+                        app_set_toast(s, "已成功激活单机本地模式");
+                    }
+                }
+
+            } else if (s->setting_sync_candidate_type == SYNC_BACKEND_WEBDAV) {
+                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                    cui_heading(ui, "WebDAV 远端服务参数配置", 4);
+                    cui_spacer(ui);
+                    cui_badge(ui, is_active ? "🟢 当前已激活生效" : "⚪ 未激活 (须先检测可用)",
+                              .tone = is_active ? CUI_TONE_SUCCESS : CUI_TONE_WARNING,
+                              .size = CUI_SIZE_SM);
+                }
+
                 cui_text(ui, "支持坚果云、Nextcloud、ownCloud 或自建 WebDAV 网盘。在各台电脑输入相同配置即可共享技能版本。",
                          .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
 
@@ -305,8 +335,15 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                           .placeholder = "/ai-space/skills",
                           .width = CUI_FILL);
 
-            } else if (s->sync_cfg.type == SYNC_BACKEND_NFS) {
-                cui_heading(ui, "NFS / 局域网共享挂载目录配置", 4);
+            } else if (s->setting_sync_candidate_type == SYNC_BACKEND_NFS) {
+                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                    cui_heading(ui, "NFS / 局域网共享挂载目录配置", 4);
+                    cui_spacer(ui);
+                    cui_badge(ui, is_active ? "🟢 当前已激活生效" : "⚪ 未激活 (须先检测可用)",
+                              .tone = is_active ? CUI_TONE_SUCCESS : CUI_TONE_WARNING,
+                              .size = CUI_SIZE_SM);
+                }
+
                 cui_text(ui, "支持挂载在各主机的 NAS、SMB 共享文件夹或网络文件系统。多台机器挂载至相同路径即可实现实时多端协同。",
                          .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
 
@@ -328,8 +365,15 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                     cui_text(ui, nfs_stat, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
                 }
 
-            } else if (s->sync_cfg.type == SYNC_BACKEND_GIT) {
-                cui_heading(ui, "Git 远端版本库配置", 4);
+            } else if (s->setting_sync_candidate_type == SYNC_BACKEND_GIT) {
+                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                    cui_heading(ui, "Git 远端版本库配置", 4);
+                    cui_spacer(ui);
+                    cui_badge(ui, is_active ? "🟢 当前已激活生效" : "⚪ 未激活 (须先检测可用)",
+                              .tone = is_active ? CUI_TONE_SUCCESS : CUI_TONE_WARNING,
+                              .size = CUI_SIZE_SM);
+                }
+
                 cui_text(ui, "以 Git 仓库作为全量多端共享源，支持 GitHub、GitLab、Gitea 等标准 Git 远端托管平台。",
                          .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
 
@@ -364,49 +408,66 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                 }
             }
 
-            /* Action Buttons */
-            cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
-                if (cui_button(ui, " 💾 保存并激活此后端", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
-                    app_save_settings(s);
-                    s->sync_drift_loaded = false;
-                    char toast[256];
-                    snprintf(toast, sizeof(toast), "已激活并保存同步后端: %s",
-                             sync_backend_display_name(s->sync_cfg.type));
-                    app_set_toast(s, toast);
-                }
+            /* Action Buttons for non-none backends: Availability Check is strictly required! */
+            if (s->setting_sync_candidate_type != SYNC_BACKEND_NONE) {
+                cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
+                    /* Primary action: Check availability first, only activate if check succeeds */
+                    if (cui_button(ui, " 🔍 检测可用性并激活生效", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_CHECK_CHECK)) {
+                        sync_config_t cand_cfg = s->sync_cfg;
+                        cand_cfg.type = s->setting_sync_candidate_type;
+                        char check_err[256] = "";
+                        int rc = sync_backend_check_available(&cand_cfg, check_err, sizeof(check_err));
 
-                if (s->sync_cfg.type != SYNC_BACKEND_NONE) {
-                    if (cui_button(ui, " 🔌 测试远端连接", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_ACTIVITY)) {
-                        if (!s->sync_backend) app_init_sync_backend(s);
-                        if (s->sync_backend && s->sync_backend->ops->test_connection) {
-                            char err[256] = "";
-                            int rc = s->sync_backend->ops->test_connection(s->sync_backend, err, sizeof(err));
-                            s->sync_test_ok = (rc == 0);
-                            if (rc == 0) {
-                                snprintf(s->sync_test_result, sizeof(s->sync_test_result),
-                                         "连接正常！%s", s->sync_backend->status_msg);
-                            } else {
-                                snprintf(s->sync_test_result, sizeof(s->sync_test_result),
-                                         "连接失败: %s", err[0] ? err : "未知错误");
-                            }
+                        s->sync_has_checked_candidate = true;
+                        s->sync_candidate_checked_ok = (rc == 0);
+                        strncpy(s->sync_candidate_check_msg, check_err, sizeof(s->sync_candidate_check_msg) - 1);
+
+                        if (rc == 0) {
+                            /* Passed: Allow activation! */
+                            s->sync_cfg.type = s->setting_sync_candidate_type;
+                            app_save_settings(s);
+                            s->sync_drift_loaded = false;
+                            char toast[256];
+                            snprintf(toast, sizeof(toast), "检测通过！已成功激活后端: %s",
+                                     sync_backend_display_name(s->sync_cfg.type));
+                            app_set_toast(s, toast);
+                        } else {
+                            /* Failed: Strictly block activation! */
+                            char toast[256];
+                            snprintf(toast, sizeof(toast), "后端不可用，激活被阻止: %s", check_err);
+                            app_set_toast(s, toast);
                         }
+                    }
+
+                    /* Secondary action: Check only, do not alter active backend */
+                    if (cui_button(ui, " ⚡ 仅检测可用性 (不激活)", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_ACTIVITY)) {
+                        sync_config_t cand_cfg = s->sync_cfg;
+                        cand_cfg.type = s->setting_sync_candidate_type;
+                        char check_err[256] = "";
+                        int rc = sync_backend_check_available(&cand_cfg, check_err, sizeof(check_err));
+
+                        s->sync_has_checked_candidate = true;
+                        s->sync_candidate_checked_ok = (rc == 0);
+                        strncpy(s->sync_candidate_check_msg, check_err, sizeof(s->sync_candidate_check_msg) - 1);
                     }
                 }
             }
 
-            /* Test Result Feedback */
-            if (s->sync_test_result[0] != '\0') {
+            /* Pre-activation Check Feedback Banner */
+            if (s->sync_has_checked_candidate && s->sync_candidate_check_msg[0] != '\0') {
                 cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 10, .gap = 4,
-                        .bg = s->sync_test_ok ? cui_alpha(cui_color_of(ui, CUI_COLOR_SUCCESS), 0.12f)
-                                              : cui_alpha(cui_color_of(ui, CUI_COLOR_DANGER), 0.12f),
+                        .bg = s->sync_candidate_checked_ok ? cui_alpha(cui_color_of(ui, CUI_COLOR_SUCCESS), 0.12f)
+                                                           : cui_alpha(cui_color_of(ui, CUI_COLOR_DANGER), 0.12f),
                         .border = 1,
-                        .border_color = s->sync_test_ok ? cui_color_of(ui, CUI_COLOR_SUCCESS)
-                                                        : cui_color_of(ui, CUI_COLOR_DANGER)) {
+                        .border_color = s->sync_candidate_checked_ok ? cui_color_of(ui, CUI_COLOR_SUCCESS)
+                                                                     : cui_color_of(ui, CUI_COLOR_DANGER)) {
                     cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, s->sync_test_ok ? CUI_ICON_CHECK : CUI_ICON_TRIANGLE_ALERT,
-                                 15, s->sync_test_ok ? CUI_COLOR_SUCCESS : CUI_COLOR_DANGER);
-                        cui_text(ui, s->sync_test_result, .size = 12,
-                                 .color = s->sync_test_ok ? CUI_COLOR_SUCCESS : CUI_COLOR_DANGER);
+                        cui_icon(ui, s->sync_candidate_checked_ok ? CUI_ICON_CHECK : CUI_ICON_TRIANGLE_ALERT,
+                                 15, s->sync_candidate_checked_ok ? CUI_COLOR_SUCCESS : CUI_COLOR_DANGER);
+                        cui_text(ui, s->sync_candidate_checked_ok ? "检测通过，符合激活条件：" : "检测未通过，无法激活：",
+                                 .size = 12, .color = s->sync_candidate_checked_ok ? CUI_COLOR_SUCCESS : CUI_COLOR_DANGER);
+                        cui_text(ui, s->sync_candidate_check_msg, .size = 12,
+                                 .color = s->sync_candidate_checked_ok ? CUI_COLOR_SUCCESS : CUI_COLOR_DANGER);
                     }
                 }
             }

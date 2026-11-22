@@ -25,6 +25,12 @@ static int none_test(sync_backend_t *self, char *err_buf, size_t err_cap) {
     return 0;
 }
 
+static int none_check_available(sync_backend_t *self, char *err_buf, size_t err_cap) {
+    (void)self;
+    if (err_buf) snprintf(err_buf, err_cap, "单机本地模式无需远端检测，随时可用");
+    return 0;
+}
+
 static int none_fetch(sync_backend_t *self, sync_remote_manifest_t *out_manifest, char *err_buf, size_t err_cap) {
     (void)self;
     (void)err_buf;
@@ -71,6 +77,7 @@ static const sync_driver_ops_t g_none_driver_ops = {
     .init = none_init,
     .destroy = none_destroy,
     .test_connection = none_test,
+    .check_available = none_check_available,
     .fetch_remote_manifest = none_fetch,
     .check_drift = none_drift,
     .pull_skill = none_pull,
@@ -125,6 +132,34 @@ void sync_backend_destroy(sync_backend_t *backend) {
         backend->ops->destroy(backend);
     }
     free(backend);
+}
+
+int sync_backend_check_available(const sync_config_t *cfg, char *err_buf, size_t err_cap) {
+    if (!cfg) {
+        if (err_buf) snprintf(err_buf, err_cap, "配置参数为空");
+        return -1;
+    }
+
+    if (cfg->type == SYNC_BACKEND_NONE) {
+        if (err_buf) snprintf(err_buf, err_cap, "单机本地模式无需远端检测，随时可用");
+        return 0;
+    }
+
+    sync_backend_t *tmp_backend = NULL;
+    if (sync_backend_create(cfg, &tmp_backend) != 0 || !tmp_backend) {
+        if (err_buf) snprintf(err_buf, err_cap, "后端驱动初始化失败");
+        return -1;
+    }
+
+    int rc = -1;
+    if (tmp_backend->ops && tmp_backend->ops->check_available) {
+        rc = tmp_backend->ops->check_available(tmp_backend, err_buf, err_cap);
+    } else {
+        if (err_buf) snprintf(err_buf, err_cap, "该后端驱动未实现可用性检测接口");
+    }
+
+    sync_backend_destroy(tmp_backend);
+    return rc;
 }
 
 const char *sync_backend_name(sync_backend_type_t type) {

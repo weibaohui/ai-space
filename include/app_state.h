@@ -172,6 +172,12 @@ typedef struct app_state_t {
     char sync_test_result[256];
     bool sync_test_ok;
 
+    /* Pre-activation Availability Check State */
+    sync_backend_type_t setting_sync_candidate_type;
+    char sync_candidate_check_msg[256];
+    bool sync_candidate_checked_ok;
+    bool sync_has_checked_candidate;
+
     /* Global About Dialog (extracted from settings) */
     bool show_about_dialog;
 } app_state_t;

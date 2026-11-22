@@ -117,6 +117,9 @@ typedef struct sync_driver_ops_t {
     /* Connection & Health Check */
     int (*test_connection)(sync_backend_t *self, char *err_buf, size_t err_cap);
 
+    /* Availability Check Interface (各个后端检测是否可用，必须通过后才可激活) */
+    int (*check_available)(sync_backend_t *self, char *err_buf, size_t err_cap);
+
     /* Remote Manifest & Drift Detection */
     int (*fetch_remote_manifest)(sync_backend_t *self, sync_remote_manifest_t *out_manifest, char *err_buf, size_t err_cap);
     int (*check_drift)(sync_backend_t *self, const char *local_hub_dir, sync_drift_summary_t *out_diff, char *err_buf, size_t err_cap);
@@ -141,6 +144,12 @@ struct sync_backend_t {
 /* Factory and memory helpers */
 int sync_backend_create(const sync_config_t *cfg, sync_backend_t **out_backend);
 void sync_backend_destroy(sync_backend_t *backend);
+
+/*
+ * Check if a candidate backend configuration is healthy and available.
+ * Must return 0 before the backend is allowed to be activated.
+ */
+int sync_backend_check_available(const sync_config_t *cfg, char *err_buf, size_t err_cap);
 
 const char *sync_backend_name(sync_backend_type_t type);
 const char *sync_backend_display_name(sync_backend_type_t type);
