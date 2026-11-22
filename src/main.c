@@ -56,6 +56,10 @@ static void frame(cui_ctx *ui, void *user) {
 
     /* Global Skill Distribution Modal (分发技能到本地各工具) */
     render_distribute_skill_modal(ui, s);
+
+    /* Global Uninstall Confirmation Modals */
+    render_uninstall_all_modal(ui, s);
+    render_uninstall_tool_modal(ui, s);
 }
 
 int main(int argc, char **argv) {

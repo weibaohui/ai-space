@@ -712,6 +712,27 @@ int hub_uninstall_skill_from_tool(const char *tool_skills_path, const char *skil
     return remove_dir_recursive(target);
 }
 
+int hub_uninstall_skill_from_all_tools(const hub_matrix_t *matrix, const char *skill_name) {
+    if (!matrix || !skill_name || skill_name[0] == '\0') return -1;
+    int uninstalled = 0;
+    for (int i = 0; i < matrix->skill_count; i++) {
+        const hub_skill_entry_t *entry = &matrix->skills[i];
+        if (strcmp(entry->skill_name, skill_name) == 0) {
+            for (int t = 0; t < entry->tool_count; t++) {
+                if (entry->tool_copies[t].exists) {
+                    if (hub_uninstall_skill_from_tool(entry->tool_copies[t].tool_skills_path,
+                                                      skill_name,
+                                                      entry->tool_copies[t].tool_name) == 0) {
+                        uninstalled++;
+                    }
+                }
+            }
+            break;
+        }
+    }
+    return uninstalled;
+}
+
 int hub_adopt_all_to_master_ex(const hub_matrix_t *matrix, int *out_adopted_count,
                               hub_progress_cb cb, void *user_data) {
     if (!matrix) return -1;

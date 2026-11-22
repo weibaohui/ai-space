@@ -41,6 +41,10 @@ void start_distribute_all_thread(app_state_t *s);
 void start_distribute_skill_to_all_thread(app_state_t *s, const char *skill_name);
 void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s);
 
+/* Uninstall modals */
+void render_uninstall_all_modal(cui_ctx *ui, app_state_t *s);
+void render_uninstall_tool_modal(cui_ctx *ui, app_state_t *s);
+
 /* Remote Sync background dispatchers */
 void start_sync_check_thread(app_state_t *s);
 void start_sync_check_available_thread(app_state_t *s, bool activate_on_success);

@@ -100,6 +100,10 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                         start_hub_scan_thread(s);
                     }
                 }
+                if (cui_button(ui, "批量卸载", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_TRASH_2)) {
+                    s->show_uninstall_all_modal = true;
+                    s->uninstall_all_is_batch = true;
+                }
                 if (cui_button(ui, "清空", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM)) {
                     for (int i = 0; i < s->hub_matrix.skill_count; i++) s->hub_matrix.skills[i].selected = false;
                 }
@@ -173,7 +177,7 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
         { "技能名称与描述", CUI_PX(280), CUI_TEXT_LEFT,   true  },
         { "主仓状态",       CUI_PX(130), CUI_TEXT_LEFT,   true  },
         { "工具分布与状态", CUI_FILL,    CUI_TEXT_LEFT,   false },
-        { "操作",           CUI_PX(150), CUI_TEXT_CENTER, false },
+        { "操作",           CUI_PX(210), CUI_TEXT_CENTER, false },
     };
 
     /* Count filtered items */
@@ -335,6 +339,14 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                                     }
                                 }
                             }
+                        }
+
+                        if (cui_button(ui, "卸载", .variant = CUI_BUTTON_OUTLINE,
+                                       .size = CUI_SIZE_SM, .icon = CUI_ICON_TRASH_2)) {
+                            s->show_uninstall_all_modal = true;
+                            s->uninstall_all_is_batch = false;
+                            strncpy(s->uninstall_all_skill_name, e->skill_name, sizeof(s->uninstall_all_skill_name) - 1);
+                            s->uninstall_all_skill_name[sizeof(s->uninstall_all_skill_name) - 1] = '\0';
                         }
                     }
 

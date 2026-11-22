@@ -110,6 +110,11 @@ int hub_distribute_all_to_all_tools(const hub_matrix_t *matrix, int *out_distrib
 int hub_uninstall_skill_from_tool(const char *tool_skills_path, const char *skill_name, const char *tool_name);
 
 /*
+ * Uninstall / remove a skill from ALL registered tools
+ */
+int hub_uninstall_skill_from_all_tools(const hub_matrix_t *matrix, const char *skill_name);
+
+/*
  * Adopt all unmanaged skills from all tools into the Master Hub (one-click initial sync)
  */
 int hub_adopt_all_to_master(const hub_matrix_t *matrix, int *out_adopted_count);

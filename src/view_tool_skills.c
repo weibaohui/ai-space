@@ -162,6 +162,14 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
         }
 
         cui_spacer(ui);
+
+        if (s->active_skill_name[0] != '\0') {
+            if (cui_button(ui, "卸载", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_TRASH_2)) {
+                s->show_uninstall_tool_modal = true;
+                strncpy(s->uninstall_tool_skill_name, s->active_skill_name, sizeof(s->uninstall_tool_skill_name) - 1);
+                s->uninstall_tool_skill_name[sizeof(s->uninstall_tool_skill_name) - 1] = '\0';
+            }
+        }
     }
 
     /* 2. Main Content Body: Left Skills List (250px) | Middle File Tree (280px) | Right Content Viewer (Fill) */

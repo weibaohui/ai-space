@@ -189,6 +189,14 @@ typedef struct app_state_t {
     /* Skill Distribution Modal State (从主仓分发技能至各本地工具) */
     bool show_distribute_modal;
     char distribute_skill_name[128];
+
+    /* Uninstall Modals State */
+    bool show_uninstall_all_modal;
+    bool uninstall_all_is_batch;
+    char uninstall_all_skill_name[128];
+
+    bool show_uninstall_tool_modal;
+    char uninstall_tool_skill_name[128];
 } app_state_t;
 
 /* Common helper functions */
