@@ -1,6 +1,7 @@
 #include "view_hub_matrix.h"
 #include "view_common.h"
 #include "view_hub_diff.h"
+#include "view_master_hub.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -12,9 +13,13 @@ void render_hub_matrix_page(cui_ctx *ui, app_state_t *s) {
     /* 1. Global Navigation Bar */
     render_global_navbar(ui, s);
 
-    /* 2. Check Subview: 0 = Overview Matrix, 1 = Side-by-Side Diff & Sync */
-    if (s->hub_subview == 1) {
+    /* 2. Check Subview: Diff View or Master Explorer View */
+    if (s->hub_subview == HUB_SUBVIEW_DIFF) {
         render_hub_diff_subview(ui, s);
+        return;
+    }
+    if (s->hub_subview == HUB_SUBVIEW_EXPLORER) {
+        render_master_hub_explorer_view(ui, s);
         return;
     }
 
@@ -44,24 +49,59 @@ void render_hub_matrix_page(cui_ctx *ui, app_state_t *s) {
         return;
     }
 
-    /* Subview 0: Matrix Overview */
-    /* 2.1 Header Area */
+    /* 4. Top Header & Sub-Navigation Tabs inside Master Hub Management */
     cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
         cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
-            cui_box(ui, .width = CUI_PX(42), .height = CUI_PX(42), .radius = 10,
+            cui_box(ui, .width = CUI_PX(40), .height = CUI_PX(40), .radius = 10,
                     .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_ACCENT), 0.15f),
                     .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
-                cui_icon(ui, CUI_ICON_LAYERS, 22, CUI_COLOR_ACCENT);
+                cui_icon(ui, CUI_ICON_ARCHIVE, 22, CUI_COLOR_ACCENT);
             }
-            cui_column(ui, .gap = 3) {
-                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                    cui_heading(ui, "统一技能中心与版本关系管理", 3);
-                    cui_badge(ui, "物理复制同步", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                    cui_badge(ui, "自动快照备份", .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
-                }
-                cui_text(ui, "集中维护技能主版本 (~/.ai-space/skills)，自动跟踪多工具物理副本分化与漂移，支持可视化对比与一键同步",
+            cui_column(ui, .gap = 2) {
+                cui_heading(ui, "主仓管理 (Master Hub)", 3);
+                cui_text(ui, "基准版本库 (~/.ai-space/skills) 集中管理与全景扫描调度",
                          .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
             }
+        }
+
+        cui_spacer(ui);
+
+        /* Sub-navigation Switcher */
+        cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+            bool is_master = (s->hub_subview == HUB_SUBVIEW_MASTER_SKILLS);
+            char master_tab_label[64];
+            snprintf(master_tab_label, sizeof(master_tab_label), "  主仓技能列表 (%d)", s->hub_matrix.hub_managed_skills);
+            if (cui_button(ui, master_tab_label,
+                           .variant = is_master ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
+                           .icon = CUI_ICON_ARCHIVE, .size = CUI_SIZE_SM)) {
+                s->hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
+            }
+
+            bool is_scan = (s->hub_subview == HUB_SUBVIEW_SCAN_MATRIX);
+            char scan_tab_label[64];
+            snprintf(scan_tab_label, sizeof(scan_tab_label), "  全景扫描与比对 (%d)", s->hub_matrix.total_unique_skills);
+            if (cui_button(ui, scan_tab_label,
+                           .variant = is_scan ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
+                           .icon = CUI_ICON_GRID_3X3, .size = CUI_SIZE_SM)) {
+                s->hub_subview = HUB_SUBVIEW_SCAN_MATRIX;
+            }
+        }
+    }
+
+    cui_separator(ui);
+
+    /* 5. Dispatch Subview: Master Hub Skills List */
+    if (s->hub_subview == HUB_SUBVIEW_MASTER_SKILLS) {
+        render_master_hub_skills_view(ui, s);
+        return;
+    }
+
+    /* Subview 2: HUB_SUBVIEW_SCAN_MATRIX (全景扫描与关系矩阵) */
+    /* 2.1 Header Area */
+    cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+        cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+            cui_heading(ui, "技能全景扫描与关系矩阵", 4);
+            cui_badge(ui, "跨工具扫描", .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
         }
 
         cui_spacer(ui);
@@ -267,6 +307,7 @@ void render_hub_matrix_page(cui_ctx *ui, app_state_t *s) {
                     cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                         if (cui_button(ui, " 对比同步", .variant = CUI_BUTTON_OUTLINE,
                                        .size = CUI_SIZE_SM, .icon = CUI_ICON_SEARCH)) {
+                            s->prev_hub_subview = HUB_SUBVIEW_SCAN_MATRIX;
                             open_hub_diff_view(s, e->skill_name);
                         }
 

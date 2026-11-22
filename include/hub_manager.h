@@ -94,6 +94,12 @@ int hub_broadcast_skill(const hub_matrix_t *matrix, const char *skill_name, int 
 int hub_adopt_all_to_master(const hub_matrix_t *matrix, int *out_adopted_count);
 int hub_adopt_all_to_master_ex(const hub_matrix_t *matrix, int *out_adopted_count, hub_progress_cb cb, void *user_data);
 
+/*
+ * Delete a skill from the Master Hub (~/.ai-space/skills/<name>/).
+ * Creates a safety backup in ~/.ai-space/backups/ before deletion.
+ */
+int hub_delete_master_skill(const char *skill_name);
+
 /* Recursive directory copy */
 int hub_copy_dir_recursive(const char *src_dir, const char *dst_dir);
 

@@ -10,6 +10,7 @@
 #include "view_tool_skills.h"
 #include "view_hub_matrix.h"
 #include "view_hub_diff.h"
+#include "view_master_hub.h"
 
 /* -------------------- Main Frame Dispatcher -------------------- */
 
@@ -46,7 +47,11 @@ int main(void) {
     const char *start_page = getenv("CUI_START_PAGE");
     if (start_page && strcmp(start_page, "hub") == 0) {
         s.current_page = PAGE_HUB_MATRIX;
-        s.hub_subview = 0;
+        s.hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
+        const char *subv = getenv("CUI_START_SUBVIEW");
+        if (subv && strcmp(subv, "scan") == 0) {
+            s.hub_subview = HUB_SUBVIEW_SCAN_MATRIX;
+        }
 
         const char *start_diff = getenv("CUI_START_DIFF");
         if (start_diff && start_diff[0] != '\0') {
@@ -62,6 +67,10 @@ int main(void) {
         } else if (getenv("CUI_SYNC_SCAN")) {
             hub_scan_matrix(s.db, &s.hub_matrix);
             s.hub_matrix_loaded = true;
+            const char *start_exp = getenv("CUI_START_EXPLORER");
+            if (start_exp && start_exp[0] != '\0') {
+                open_master_skill_explorer(&s, start_exp);
+            }
         } else {
             start_hub_scan_thread(&s);
         }
@@ -135,6 +144,11 @@ int main(void) {
         free_skill_file_tree(s.skill_file_tree);
         free(s.skill_file_tree);
         s.skill_file_tree = NULL;
+    }
+    if (s.master_skill_file_tree) {
+        free_skill_file_tree(s.master_skill_file_tree);
+        free(s.master_skill_file_tree);
+        s.master_skill_file_tree = NULL;
     }
     if (s.hub_diff_file_tree) {
         free_skill_file_tree(s.hub_diff_file_tree);

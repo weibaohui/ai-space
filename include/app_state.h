@@ -16,6 +16,13 @@ typedef enum {
     PAGE_TOOL_SKILLS = 2,
 } page_view_t;
 
+typedef enum {
+    HUB_SUBVIEW_MASTER_SKILLS = 0, /* 主仓技能集中管理 (已入库技能) */
+    HUB_SUBVIEW_DIFF = 1,          /* 差异对比与同步面板 */
+    HUB_SUBVIEW_SCAN_MATRIX = 2,   /* 技能全景扫描与关系矩阵 */
+    HUB_SUBVIEW_EXPLORER = 3,      /* 主仓技能文件浏览 */
+} hub_subview_t;
+
 /* Progress state for long-running batch operations */
 typedef struct {
     bool active;
@@ -99,7 +106,10 @@ typedef struct app_state_t {
     hub_scan_state_t hub_scan;
     char hub_search_kw[128];
     int hub_filter_mode;        /* 0: 全部, 1: 存在分化, 2: 未建立主仓, 3: 完全一致 */
-    int hub_subview;            /* 0: 关系全景表, 1: 差异对比与同步面板 */
+    int hub_subview;            /* hub_subview_t */
+    int prev_hub_subview;       /* previous subview to return to from diff/explorer */
+    char master_skill_search_kw[128];
+    file_node_t *master_skill_file_tree;
 
     /* Generic operation progress state (progress bar / modal) */
     op_progress_t op_progress;

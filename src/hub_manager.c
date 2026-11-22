@@ -629,3 +629,19 @@ int hub_adopt_all_to_master_ex(const hub_matrix_t *matrix, int *out_adopted_coun
 int hub_adopt_all_to_master(const hub_matrix_t *matrix, int *out_adopted_count) {
     return hub_adopt_all_to_master_ex(matrix, out_adopted_count, NULL, NULL);
 }
+
+int hub_delete_master_skill(const char *skill_name) {
+    if (!skill_name || skill_name[0] == '\0') return -1;
+    char hub_dir[512];
+    hub_init_dirs(hub_dir, sizeof(hub_dir), NULL, 0);
+
+    char target[1024];
+    snprintf(target, sizeof(target), "%s/%s", hub_dir, skill_name);
+
+    struct stat st;
+    if (stat(target, &st) == 0 && S_ISDIR(st.st_mode)) {
+        backup_tool_skill("master", skill_name, target);
+        return remove_dir_recursive(target);
+    }
+    return -1;
+}

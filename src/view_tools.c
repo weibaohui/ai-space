@@ -79,12 +79,12 @@ void render_tools_list_page(cui_ctx *ui, app_state_t *s) {
             if (cui_button(ui, " 重新扫描同步", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_REFRESH_CW)) {
                 do_scan_sync(s);
             }
-            if (cui_button(ui, " 统一技能中心与全景关系", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_LAYERS)) {
+            if (cui_button(ui, " 进入主仓管理", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_ARCHIVE)) {
                 if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning) {
                     start_hub_scan_thread(s);
                 }
                 s->current_page = PAGE_HUB_MATRIX;
-                s->hub_subview = 0;
+                s->hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
             }
         }
     }

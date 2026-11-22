@@ -22,7 +22,7 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
         }
     }
     if (!entry) {
-        s->hub_subview = 0;
+        s->hub_subview = s->prev_hub_subview;
         return;
     }
 
@@ -46,8 +46,10 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
 
     /* Top Navigation Row */
     cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        if (cui_button(ui, " 返回全景列表", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_CHEVRON_LEFT)) {
-            s->hub_subview = 0;
+        const char *back_lbl = (s->prev_hub_subview == HUB_SUBVIEW_MASTER_SKILLS) ?
+                               " 返回主仓列表" : " 返回全景列表";
+        if (cui_button(ui, back_lbl, .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_CHEVRON_LEFT)) {
+            s->hub_subview = s->prev_hub_subview;
         }
 
         cui_gap(ui, 12);

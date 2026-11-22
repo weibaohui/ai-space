@@ -763,17 +763,19 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
                 s->current_page = PAGE_TOOL_LIST;
             }
 
-            /* Tab 2: 技能中心与全景关系 */
+            /* Tab 2: 主仓管理 */
             bool is_hub = (s->current_page == PAGE_HUB_MATRIX);
-            if (cui_button(ui, "  统一技能中心与全景关系",
+            if (cui_button(ui, "  主仓管理",
                            .variant = is_hub ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                            .size = CUI_SIZE_SM,
-                           .icon = CUI_ICON_GRID_3X3)) {
+                           .icon = CUI_ICON_ARCHIVE)) {
                 if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning) {
                     start_hub_scan_thread(s);
                 }
                 s->current_page = PAGE_HUB_MATRIX;
-                s->hub_subview = 0;
+                if (s->hub_subview == HUB_SUBVIEW_DIFF || s->hub_subview == HUB_SUBVIEW_EXPLORER) {
+                    s->hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
+                }
             }
         }
 
