@@ -646,6 +646,72 @@ int hub_broadcast_skill(const hub_matrix_t *matrix, const char *skill_name, int 
     return 0;
 }
 
+int hub_distribute_skill_to_all_tools(const hub_matrix_t *matrix, const char *skill_name, int *out_synced_count) {
+    if (!matrix || !skill_name) return -1;
+
+    int synced = 0;
+    for (int t = 0; t < matrix->tool_count; t++) {
+        const char *t_name = matrix->tools[t];
+        const char *t_path = matrix->tool_paths[t];
+        if (!t_path || t_path[0] == '\0') continue;
+
+        if (hub_sync_master_to_tool(t_path, skill_name, t_name) == 0) {
+            synced++;
+        }
+    }
+
+    if (out_synced_count) *out_synced_count = synced;
+    return 0;
+}
+
+int hub_distribute_all_to_all_tools(const hub_matrix_t *matrix, int *out_distributed_count,
+                                    hub_progress_cb cb, void *user_data) {
+    if (!matrix) return -1;
+
+    int total_actions = 0;
+    int master_count = 0;
+    for (int i = 0; i < matrix->skill_count; i++) {
+        if (matrix->skills[i].in_hub) master_count++;
+    }
+
+    int current = 0;
+    for (int i = 0; i < matrix->skill_count; i++) {
+        hub_skill_entry_t *entry = &matrix->skills[i];
+        if (!entry->in_hub) continue;
+
+        current++;
+        if (cb) {
+            float p = (float)current / (float)(master_count ? master_count : 1);
+            char p_msg[128];
+            snprintf(p_msg, sizeof(p_msg), "正在全量分发主仓技能 (%d/%d): %s", current, master_count, entry->skill_name);
+            cb(p, p_msg, user_data);
+        }
+
+        int synced = 0;
+        hub_distribute_skill_to_all_tools(matrix, entry->skill_name, &synced);
+        total_actions += synced;
+    }
+
+    if (out_distributed_count) *out_distributed_count = total_actions;
+    return 0;
+}
+
+int hub_uninstall_skill_from_tool(const char *tool_skills_path, const char *skill_name, const char *tool_name) {
+    if (!tool_skills_path || !skill_name) return -1;
+
+    char target[1024];
+    snprintf(target, sizeof(target), "%s/%s", tool_skills_path, skill_name);
+
+    struct stat st;
+    if (stat(target, &st) != 0 || !S_ISDIR(st.st_mode)) {
+        return 0; /* Not installed */
+    }
+
+    /* Backup before uninstalling */
+    backup_tool_skill(tool_name ? tool_name : "tool", skill_name, target);
+    return remove_dir_recursive(target);
+}
+
 int hub_adopt_all_to_master_ex(const hub_matrix_t *matrix, int *out_adopted_count,
                               hub_progress_cb cb, void *user_data) {
     if (!matrix) return -1;

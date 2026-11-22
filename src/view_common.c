@@ -506,9 +506,118 @@ void start_adopt_all_thread(app_state_t *s) {
     s->op_progress.percent = 0.05f;
     strncpy(s->op_progress.title, "正在全量收录本地技能至主库...", sizeof(s->op_progress.title) - 1);
     strncpy(s->op_progress.message, "开始物理复制并建立主版本...", sizeof(s->op_progress.message) - 1);
+    strncpy(s->op_progress.sub_message, "正在进行纯物理复制，覆盖前已自动在 ~/.ai-space/backups/ 保存备份快照", sizeof(s->op_progress.sub_message) - 1);
     s->op_progress.thread_running = true;
 
     pthread_create(&s->op_progress.thread, NULL, adopt_all_worker_thread, s);
+    pthread_detach(s->op_progress.thread);
+}
+
+/* Background Distribute All Skills to All Tools */
+static void distribute_progress_callback(float percent, const char *status_msg, void *user_data) {
+    app_state_t *s = (app_state_t *)user_data;
+    if (!s) return;
+    s->op_progress.percent = percent;
+    if (status_msg) {
+        strncpy(s->op_progress.message, status_msg, sizeof(s->op_progress.message) - 1);
+        s->op_progress.message[sizeof(s->op_progress.message) - 1] = '\0';
+    }
+}
+
+static void *distribute_all_worker_thread(void *arg) {
+    app_state_t *s = (app_state_t *)arg;
+    int distributed = 0;
+    hub_distribute_all_to_all_tools(&s->hub_matrix, &distributed, distribute_progress_callback, s);
+
+    /* Rescan matrix after distribution */
+    hub_matrix_t new_matrix;
+    hub_scan_matrix_ex(s->db, &new_matrix, NULL, NULL);
+    hub_free_matrix(&s->hub_matrix);
+    s->hub_matrix = new_matrix;
+
+    s->op_progress.percent = 1.0f;
+    usleep(150000);
+
+    s->op_progress.active = false;
+    s->op_progress.thread_running = false;
+
+    char toast[256];
+    snprintf(toast, sizeof(toast), "全量分发完成！已完成 %d 次工具副本同步分发", distributed);
+    app_set_toast(s, toast);
+    return NULL;
+}
+
+void start_distribute_all_thread(app_state_t *s) {
+    if (!s || s->op_progress.active) return;
+
+    s->op_progress.active = true;
+    s->op_progress.percent = 0.05f;
+    strncpy(s->op_progress.title, "正在全量分发主仓技能到所有工具...", sizeof(s->op_progress.title) - 1);
+    strncpy(s->op_progress.message, "正在准备物理复制并分发技能副本...", sizeof(s->op_progress.message) - 1);
+    strncpy(s->op_progress.sub_message, "正在进行纯物理复制，覆盖前已自动在 ~/.ai-space/backups/ 保存备份快照", sizeof(s->op_progress.sub_message) - 1);
+    s->op_progress.thread_running = true;
+
+    pthread_create(&s->op_progress.thread, NULL, distribute_all_worker_thread, s);
+    pthread_detach(s->op_progress.thread);
+}
+
+typedef struct {
+    app_state_t *s;
+    char skill_name[128];
+} distribute_skill_arg_t;
+
+static void *distribute_skill_worker_thread(void *data) {
+    distribute_skill_arg_t *arg = (distribute_skill_arg_t *)data;
+    app_state_t *s = arg->s;
+
+    s->op_progress.percent = 0.2f;
+    snprintf(s->op_progress.message, sizeof(s->op_progress.message), "正在为受影响的各工具建立安全备份快照...");
+    usleep(80000);
+
+    s->op_progress.percent = 0.5f;
+    snprintf(s->op_progress.message, sizeof(s->op_progress.message), "正在物理下发技能 [%s] 到各工具...", arg->skill_name);
+
+    int synced = 0;
+    hub_distribute_skill_to_all_tools(&s->hub_matrix, arg->skill_name, &synced);
+    usleep(80000);
+
+    s->op_progress.percent = 0.8f;
+    snprintf(s->op_progress.message, sizeof(s->op_progress.message), "正在重新更新全景矩阵关系...");
+    hub_matrix_t new_matrix;
+    hub_scan_matrix(s->db, &new_matrix);
+    hub_free_matrix(&s->hub_matrix);
+    s->hub_matrix = new_matrix;
+
+    s->op_progress.percent = 1.0f;
+    usleep(150000);
+
+    s->op_progress.active = false;
+    s->op_progress.thread_running = false;
+
+    char toast[256];
+    snprintf(toast, sizeof(toast), "分发成功！已将【%s】物理分发安装至 %d 个本地工具", arg->skill_name, synced);
+    app_set_toast(s, toast);
+
+    free(arg);
+    return NULL;
+}
+
+void start_distribute_skill_to_all_thread(app_state_t *s, const char *skill_name) {
+    if (!s || s->op_progress.active || !skill_name) return;
+
+    distribute_skill_arg_t *arg = (distribute_skill_arg_t *)malloc(sizeof(distribute_skill_arg_t));
+    if (!arg) return;
+    arg->s = s;
+    strncpy(arg->skill_name, skill_name, sizeof(arg->skill_name) - 1);
+
+    s->op_progress.active = true;
+    s->op_progress.percent = 0.05f;
+    snprintf(s->op_progress.title, sizeof(s->op_progress.title), "正在分发技能 [%s] 到所有工具...", skill_name);
+    strncpy(s->op_progress.message, "准备物理复制并初始化安全快照...", sizeof(s->op_progress.message) - 1);
+    strncpy(s->op_progress.sub_message, "正在进行纯物理复制，覆盖前已自动在 ~/.ai-space/backups/ 保存备份快照", sizeof(s->op_progress.sub_message) - 1);
+    s->op_progress.thread_running = true;
+
+    pthread_create(&s->op_progress.thread, NULL, distribute_skill_worker_thread, arg);
     pthread_detach(s->op_progress.thread);
 }
 
@@ -895,6 +1004,149 @@ void render_op_progress_modal(cui_ctx *ui, app_state_t *s) {
                     ? s->op_progress.sub_message
                     : "正在进行纯物理复制，覆盖前已自动在 ~/.ai-space/backups/ 保存备份快照";
                 cui_text(ui, sub, .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+            }
+        }
+    }
+}
+
+void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
+    if (!s || !s->show_distribute_modal || s->distribute_skill_name[0] == '\0') return;
+
+    /* Find entry in hub_matrix */
+    hub_skill_entry_t *entry = NULL;
+    for (int i = 0; i < s->hub_matrix.skill_count; i++) {
+        if (strcmp(s->hub_matrix.skills[i].skill_name, s->distribute_skill_name) == 0) {
+            entry = &s->hub_matrix.skills[i];
+            break;
+        }
+    }
+
+    cui_dialog(ui, "分发主仓技能到本地工具", &s->show_distribute_modal,
+               .width = 720, .persistent = false) {
+        cui_column(ui, .width = CUI_FILL, .gap = 14) {
+            /* 1. Skill Header Card */
+            cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 12, .gap = 8,
+                    .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
+                    .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
+                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                    cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                        cui_icon(ui, CUI_ICON_ARCHIVE, 20, CUI_COLOR_ACCENT);
+                        cui_heading(ui, s->distribute_skill_name, 3);
+                    }
+                    cui_spacer(ui);
+                    if (entry) {
+                        char cov_txt[64];
+                        snprintf(cov_txt, sizeof(cov_txt), "当前覆盖: %d / %d 个本地工具",
+                                 entry->installed_count, s->hub_matrix.tool_count);
+                        cui_badge(ui, cov_txt,
+                                  .tone = (entry->installed_count > 0) ? CUI_TONE_SUCCESS : CUI_TONE_NEUTRAL,
+                                  .size = CUI_SIZE_MD);
+                    }
+                }
+
+                if (entry && entry->description[0] != '\0') {
+                    cui_text(ui, entry->description, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                }
+
+                cui_row(ui, .gap = 16, .align = CUI_ALIGN_CENTER) {
+                    if (entry && entry->hub_hash[0] != '\0') {
+                        cui_textf(ui, "主仓指纹: %s", entry->hub_hash);
+                    }
+                    cui_spacer(ui);
+                    /* Quick Action: Distribute to ALL tools */
+                    if (cui_button(ui, " ⚡ 一键分发/安装到全部工具", .variant = CUI_BUTTON_PRIMARY,
+                                   .icon = CUI_ICON_SEND, .size = CUI_SIZE_SM)) {
+                        start_distribute_skill_to_all_thread(s, s->distribute_skill_name);
+                    }
+                }
+            }
+
+            /* 2. Tools Distribution List */
+            cui_text(ui, "各本地工具分发状态与操作:", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
+
+            cui_scroll(ui, .id = "distribute_tools_scroll", .width = CUI_FILL, .height = CUI_PX(300)) {
+                cui_column(ui, .width = CUI_FILL, .gap = 8) {
+                    for (int t = 0; t < s->hub_matrix.tool_count; t++) {
+                        const char *t_name = s->hub_matrix.tools[t];
+                        const char *t_path = s->hub_matrix.tool_paths[t];
+
+                        /* Find tool_copies status if entry exists */
+                        tool_copy_status_t *tc = NULL;
+                        if (entry) {
+                            for (int k = 0; k < entry->tool_count; k++) {
+                                if (strcmp(entry->tool_copies[k].tool_name, t_name) == 0) {
+                                    tc = &entry->tool_copies[k];
+                                    break;
+                                }
+                            }
+                        }
+
+                        bool exists = (tc && tc->exists);
+                        int status = tc ? tc->status : HUB_STATUS_NOT_INSTALLED;
+
+                        cui_push_id_int(ui, t);
+                        cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 10, .gap = 8,
+                                .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_SURFACE), 0.7f),
+                                .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
+                            cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                                    cui_icon(ui, CUI_ICON_BOX, 16, CUI_COLOR_ACCENT);
+                                    cui_column(ui, .gap = 2) {
+                                        cui_text(ui, t_name, .font = CUI_FONT_MEDIUM, .size = 13);
+                                        cui_text(ui, t_path, .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                                    }
+                                }
+
+                                cui_spacer(ui);
+
+                                /* Status Badge */
+                                if (!exists) {
+                                    cui_badge(ui, "⚪ 未安装", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
+                                } else if (status == HUB_STATUS_IN_SYNC) {
+                                    cui_badge(ui, "🟢 已安装 (版本一致)", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
+                                } else if (status == HUB_STATUS_LOCAL_MODIFIED) {
+                                    cui_badge(ui, "🟡 已安装 (本地有改动)", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
+                                } else if (status == HUB_STATUS_OUTDATED) {
+                                    cui_badge(ui, "🔵 已安装 (版本落后)", .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
+                                }
+
+                                /* Action Buttons */
+                                cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                                    if (!exists) {
+                                        if (cui_button(ui, " ＋ 安装到此工具", .variant = CUI_BUTTON_PRIMARY,
+                                                       .icon = CUI_ICON_PLUS, .size = CUI_SIZE_SM)) {
+                                            start_copy_install_thread(s, t_path, s->distribute_skill_name, t_name, t);
+                                        }
+                                    } else if (status == HUB_STATUS_LOCAL_MODIFIED || status == HUB_STATUS_OUTDATED) {
+                                        if (cui_button(ui, " ↺ 覆盖同步", .variant = CUI_BUTTON_SECONDARY,
+                                                       .icon = CUI_ICON_REFRESH_CW, .size = CUI_SIZE_SM)) {
+                                            start_sync_master_to_tool_thread(s, t_path, s->distribute_skill_name, t_name, t);
+                                        }
+                                    } else {
+                                        if (cui_button(ui, " ↺ 重新安装", .variant = CUI_BUTTON_GHOST,
+                                                       .icon = CUI_ICON_REFRESH_CW, .size = CUI_SIZE_SM)) {
+                                            start_sync_master_to_tool_thread(s, t_path, s->distribute_skill_name, t_name, t);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        cui_pop_id(ui);
+                    }
+                }
+            }
+
+            /* 3. Footer Safety Note */
+            cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                    cui_icon(ui, CUI_ICON_SHIELD, 14, CUI_COLOR_TEXT_MUTED);
+                    cui_text(ui, "纯物理复制，非软链接，覆盖前已自动在 ~/.ai-space/backups/ 保存备份快照",
+                             .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                }
+                cui_spacer(ui);
+                if (cui_button(ui, "关闭", .variant = CUI_BUTTON_SECONDARY, .size = CUI_SIZE_SM)) {
+                    s->show_distribute_modal = false;
+                }
             }
         }
     }

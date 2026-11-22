@@ -232,8 +232,11 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
             if (cui_button(ui, " 打开全景扫描矩阵", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_GRID_3X3)) {
                 s->hub_subview = HUB_SUBVIEW_SCAN_MATRIX;
             }
-            if (cui_button(ui, " 一键全量收录主库", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_CHECK)) {
+            if (cui_button(ui, " 一键全量收录主库", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_CHECK)) {
                 start_adopt_all_thread(s);
+            }
+            if (cui_button(ui, " 🚀 全量分发到所有工具", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SEND)) {
+                start_distribute_all_thread(s);
             }
         }
     }
@@ -303,6 +306,14 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                                     open_master_skill_explorer(s, entry->skill_name);
                                 }
 
+                                /* Core Distribution Entry Point */
+                                if (cui_button(ui, (entry->installed_count == 0) ? " 🚀 分发到工具..." : " 🚀 分发管理...",
+                                               .variant = (entry->installed_count == 0) ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
+                                               .icon = CUI_ICON_SEND, .size = CUI_SIZE_SM)) {
+                                    s->show_distribute_modal = true;
+                                    strncpy(s->distribute_skill_name, entry->skill_name, sizeof(s->distribute_skill_name) - 1);
+                                }
+
                                 if (entry->installed_count > 0) {
                                     if (cui_button(ui, " 全景比对", .variant = CUI_BUTTON_OUTLINE,
                                                    .icon = CUI_ICON_GIT_BRANCH, .size = CUI_SIZE_SM)) {
@@ -311,14 +322,9 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                                     }
 
                                     if (entry->modified_count > 0 || entry->outdated_count > 0) {
-                                        if (cui_button(ui, " 一键同步到所有工具", .variant = CUI_BUTTON_PRIMARY,
-                                                       .icon = CUI_ICON_SEND, .size = CUI_SIZE_SM)) {
-                                            int synced = 0;
-                                            hub_broadcast_skill(&s->hub_matrix, entry->skill_name, &synced);
-                                            char tmsg[128];
-                                            snprintf(tmsg, sizeof(tmsg), "已成功将主仓【%s】同步至 %d 个工具", entry->skill_name, synced);
-                                            app_set_toast(s, tmsg);
-                                            start_hub_scan_thread(s);
+                                        if (cui_button(ui, " ↺ 覆盖同步所有副本", .variant = CUI_BUTTON_OUTLINE,
+                                                       .icon = CUI_ICON_REFRESH_CW, .size = CUI_SIZE_SM)) {
+                                            start_broadcast_thread(s, entry->skill_name, 0);
                                         }
                                     }
                                 }
@@ -346,25 +352,30 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                         /* Row 3: Tool Distribution Badges */
                         cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                             cui_textf(ui, "分发覆盖 (%d/%d):", entry->installed_count, s->hub_matrix.tool_count);
-                            for (int t = 0; t < entry->tool_count; t++) {
-                                tool_copy_status_t *tc = &entry->tool_copies[t];
-                                if (!tc->exists) continue;
+                            if (entry->installed_count == 0) {
+                                cui_text(ui, "尚未安装到任何本地工具，点击上方【🚀 分发到工具...】开始安装下发",
+                                         .size = 12, .color = CUI_COLOR_TEXT_MUTED);
+                            } else {
+                                for (int t = 0; t < entry->tool_count; t++) {
+                                    tool_copy_status_t *tc = &entry->tool_copies[t];
+                                    if (!tc->exists) continue;
 
-                                cui_tone tone = CUI_TONE_NEUTRAL;
-                                char label[96];
-                                if (tc->status == HUB_STATUS_IN_SYNC) {
-                                    tone = CUI_TONE_SUCCESS;
-                                    snprintf(label, sizeof(label), "%s (一致)", tc->tool_name);
-                                } else if (tc->status == HUB_STATUS_LOCAL_MODIFIED) {
-                                    tone = CUI_TONE_WARNING;
-                                    snprintf(label, sizeof(label), "%s (有改动)", tc->tool_name);
-                                } else if (tc->status == HUB_STATUS_OUTDATED) {
-                                    tone = CUI_TONE_INFO;
-                                    snprintf(label, sizeof(label), "%s (落后)", tc->tool_name);
-                                } else {
-                                    snprintf(label, sizeof(label), "%s", tc->tool_name);
+                                    cui_tone tone = CUI_TONE_NEUTRAL;
+                                    char label[96];
+                                    if (tc->status == HUB_STATUS_IN_SYNC) {
+                                        tone = CUI_TONE_SUCCESS;
+                                        snprintf(label, sizeof(label), "%s (一致)", tc->tool_name);
+                                    } else if (tc->status == HUB_STATUS_LOCAL_MODIFIED) {
+                                        tone = CUI_TONE_WARNING;
+                                        snprintf(label, sizeof(label), "%s (有改动)", tc->tool_name);
+                                    } else if (tc->status == HUB_STATUS_OUTDATED) {
+                                        tone = CUI_TONE_INFO;
+                                        snprintf(label, sizeof(label), "%s (落后)", tc->tool_name);
+                                    } else {
+                                        snprintf(label, sizeof(label), "%s", tc->tool_name);
+                                    }
+                                    cui_badge(ui, label, .tone = tone, .size = CUI_SIZE_SM);
                                 }
-                                cui_badge(ui, label, .tone = tone, .size = CUI_SIZE_SM);
                             }
                         }
                     }

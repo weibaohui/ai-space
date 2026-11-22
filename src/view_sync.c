@@ -89,6 +89,11 @@ void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
                            .icon = CUI_ICON_UPLOAD)) {
                 start_sync_push_all_thread(s);
             }
+
+            if (cui_button(ui, " 🚀 前往主仓分发技能", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_SEND)) {
+                s->current_page = PAGE_HUB_MATRIX;
+                s->hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
+            }
         }
 
         cui_spacer(ui);
@@ -198,7 +203,14 @@ void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
                                     start_sync_push_skill_thread(s, item->skill_name);
                                 }
                             } else if (item->status == SYNC_DRIFT_IN_SYNC) {
-                                cui_badge(ui, "无需操作", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
+                                cui_badge(ui, "两端一致", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
+                                if (cui_button(ui, " 🚀 分发到工具...", .variant = CUI_BUTTON_SECONDARY,
+                                               .icon = CUI_ICON_SEND, .size = CUI_SIZE_SM)) {
+                                    s->current_page = PAGE_HUB_MATRIX;
+                                    s->hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
+                                    s->show_distribute_modal = true;
+                                    strncpy(s->distribute_skill_name, item->skill_name, sizeof(s->distribute_skill_name) - 1);
+                                }
                             }
                         }
                     }

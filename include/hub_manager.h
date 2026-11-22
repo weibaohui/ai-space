@@ -93,6 +93,22 @@ int hub_sync_master_to_tool(const char *tool_skills_path, const char *skill_name
 int hub_broadcast_skill(const hub_matrix_t *matrix, const char *skill_name, int *out_synced_count);
 
 /*
+ * Distribute Master Hub's version of a skill to all registered tools (installs if missing, updates if exists)
+ */
+int hub_distribute_skill_to_all_tools(const hub_matrix_t *matrix, const char *skill_name, int *out_synced_count);
+
+/*
+ * Batch distribute all Master Hub skills to all registered tools
+ */
+int hub_distribute_all_to_all_tools(const hub_matrix_t *matrix, int *out_distributed_count,
+                                    hub_progress_cb cb, void *user_data);
+
+/*
+ * Uninstall / remove a skill from a specific tool
+ */
+int hub_uninstall_skill_from_tool(const char *tool_skills_path, const char *skill_name, const char *tool_name);
+
+/*
  * Adopt all unmanaged skills from all tools into the Master Hub (one-click initial sync)
  */
 int hub_adopt_all_to_master(const hub_matrix_t *matrix, int *out_adopted_count);

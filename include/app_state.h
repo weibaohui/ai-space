@@ -181,6 +181,10 @@ typedef struct app_state_t {
 
     /* Global About Dialog (extracted from settings) */
     bool show_about_dialog;
+
+    /* Skill Distribution Modal State (从主仓分发技能至各本地工具) */
+    bool show_distribute_modal;
+    char distribute_skill_name[128];
 } app_state_t;
 
 /* Common helper functions */

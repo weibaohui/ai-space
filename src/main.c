@@ -39,6 +39,9 @@ static void frame(cui_ctx *ui, void *user) {
 
     /* Global About AI-Space Modal */
     render_about_modal(ui, s);
+
+    /* Global Skill Distribution Modal (分发技能到本地各工具) */
+    render_distribute_skill_modal(ui, s);
 }
 
 int main(void) {
@@ -106,6 +109,11 @@ int main(void) {
             const char *start_exp = getenv("CUI_START_EXPLORER");
             if (start_exp && start_exp[0] != '\0') {
                 open_master_skill_explorer(&s, start_exp);
+            }
+            const char *start_dist = getenv("CUI_START_DISTRIBUTE");
+            if (start_dist && start_dist[0] != '\0') {
+                s.show_distribute_modal = true;
+                strncpy(s.distribute_skill_name, start_dist, sizeof(s.distribute_skill_name) - 1);
             }
         } else {
             start_hub_scan_thread(&s);
