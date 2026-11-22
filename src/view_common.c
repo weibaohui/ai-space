@@ -858,15 +858,12 @@ void render_app_sidebar(cui_ctx *ui, app_state_t *s) {
 
         /* Navigation items */
         cui_scroll(ui, .id = "sidebar_nav", .height = CUI_FILL, .gap = 2) {
-            cui_nav_section(ui, "核心总览");
+            cui_nav_section(ui, "工作空间");
 
             bool is_dash = (s->current_page == PAGE_DASHBOARD);
             if (cui_nav_item(ui, "首页", .icon = CUI_ICON_LAYOUT_DASHBOARD, .selected = is_dash, .group = "pages")) {
                 s->current_page = PAGE_DASHBOARD;
             }
-
-            cui_gap(ui, 10);
-            cui_nav_section(ui, "工作空间");
 
             bool is_tools = (s->current_page == PAGE_TOOL_LIST || s->current_page == PAGE_TOOL_SKILLS);
             if (cui_nav_item(ui, "工具列表", .icon = CUI_ICON_FOLDER, .selected = is_tools, .group = "pages")) {
