@@ -754,9 +754,9 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
             cui_text(ui, "AI-Space", .font = CUI_FONT_DISPLAY, .size = 17, .color = CUI_COLOR_ACCENT);
             cui_text(ui, " · ", .color = CUI_COLOR_TEXT_MUTED);
 
-            /* Tab 1: 本地工具目录 */
+            /* Tab 1: 工具列表 */
             bool is_tools = (s->current_page == PAGE_TOOL_LIST);
-            if (cui_button(ui, "  本地工具目录",
+            if (cui_button(ui, "  工具列表",
                            .variant = is_tools ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                            .size = CUI_SIZE_SM,
                            .icon = CUI_ICON_FOLDER)) {
@@ -776,6 +776,15 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
                 if (s->hub_subview == HUB_SUBVIEW_DIFF || s->hub_subview == HUB_SUBVIEW_EXPLORER) {
                     s->hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
                 }
+            }
+
+            /* Tab 3: 设置 */
+            bool is_settings = (s->current_page == PAGE_SETTINGS);
+            if (cui_button(ui, "  设置",
+                           .variant = is_settings ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
+                           .size = CUI_SIZE_SM,
+                           .icon = CUI_ICON_SETTINGS)) {
+                s->current_page = PAGE_SETTINGS;
             }
         }
 
@@ -815,4 +824,47 @@ void render_op_progress_modal(cui_ctx *ui, app_state_t *s) {
             }
         }
     }
+}
+
+void app_init_settings(app_state_t *s) {
+    if (!s || !s->db) return;
+
+    db_get_setting(s->db, "master_hub_dir", s->setting_hub_dir, sizeof(s->setting_hub_dir), "~/.ai-space/skills");
+    db_get_setting(s->db, "backup_dir", s->setting_backup_dir, sizeof(s->setting_backup_dir), "~/.ai-space/backups");
+
+    char val[64];
+    db_get_setting(s->db, "auto_backup", val, sizeof(val), "1");
+    s->setting_auto_backup = (strcmp(val, "0") != 0);
+
+    db_get_setting(s->db, "auto_scan", val, sizeof(val), "1");
+    s->setting_auto_scan = (strcmp(val, "0") != 0);
+
+    db_get_setting(s->db, "default_view", val, sizeof(val), "0");
+    s->setting_default_view = atoi(val);
+
+    db_get_setting(s->db, "scan_depth", val, sizeof(val), "5");
+    s->setting_scan_depth = atoi(val);
+    if (s->setting_scan_depth <= 0) s->setting_scan_depth = 5;
+
+    /* Apply custom dirs to hub manager */
+    hub_set_custom_dirs(s->setting_hub_dir, s->setting_backup_dir);
+}
+
+void app_save_settings(app_state_t *s) {
+    if (!s || !s->db) return;
+
+    db_set_setting(s->db, "master_hub_dir", s->setting_hub_dir);
+    db_set_setting(s->db, "backup_dir", s->setting_backup_dir);
+    db_set_setting(s->db, "auto_backup", s->setting_auto_backup ? "1" : "0");
+    db_set_setting(s->db, "auto_scan", s->setting_auto_scan ? "1" : "0");
+
+    char val[32];
+    snprintf(val, sizeof(val), "%d", s->setting_default_view);
+    db_set_setting(s->db, "default_view", val);
+
+    snprintf(val, sizeof(val), "%d", s->setting_scan_depth);
+    db_set_setting(s->db, "scan_depth", val);
+
+    /* Apply custom dirs to hub manager */
+    hub_set_custom_dirs(s->setting_hub_dir, s->setting_backup_dir);
 }

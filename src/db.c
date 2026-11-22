@@ -52,7 +52,11 @@ int db_init(const char *db_path, sqlite3 **out_db) {
         "  created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),"
         "  updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))"
         ");"
-        "CREATE INDEX IF NOT EXISTS idx_tools_name ON local_tools(name);";
+        "CREATE INDEX IF NOT EXISTS idx_tools_name ON local_tools(name);"
+        "CREATE TABLE IF NOT EXISTS app_settings ("
+        "  key TEXT PRIMARY KEY,"
+        "  value TEXT NOT NULL"
+        ");";
 
     char *errmsg = NULL;
     rc = sqlite3_exec(db, schema, NULL, NULL, &errmsg);
@@ -335,4 +339,46 @@ int db_query_stats(sqlite3 *db, tool_stats_t *out_stats) {
 
     sqlite3_finalize(stmt);
     return 0;
+}
+
+int db_get_setting(sqlite3 *db, const char *key, char *out_val, size_t cap, const char *default_val) {
+    if (!out_val || cap == 0) return -1;
+    if (default_val) {
+        strncpy(out_val, default_val, cap - 1);
+        out_val[cap - 1] = '\0';
+    } else {
+        out_val[0] = '\0';
+    }
+    if (!db || !key) return -1;
+
+    const char *sql = "SELECT value FROM app_settings WHERE key = ? LIMIT 1;";
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) return -1;
+
+    sqlite3_bind_text(stmt, 1, key, -1, SQLITE_STATIC);
+    int res = -1;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        const unsigned char *val = sqlite3_column_text(stmt, 0);
+        if (val) {
+            strncpy(out_val, (const char *)val, cap - 1);
+            out_val[cap - 1] = '\0';
+            res = 0;
+        }
+    }
+    sqlite3_finalize(stmt);
+    return res;
+}
+
+int db_set_setting(sqlite3 *db, const char *key, const char *value) {
+    if (!db || !key) return -1;
+    const char *sql = "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+                      "ON CONFLICT(key) DO UPDATE SET value = excluded.value;";
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) return -1;
+
+    sqlite3_bind_text(stmt, 1, key, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, value ? value : "", -1, SQLITE_STATIC);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return (rc == SQLITE_DONE) ? 0 : -1;
 }

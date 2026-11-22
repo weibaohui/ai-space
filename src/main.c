@@ -11,6 +11,7 @@
 #include "view_hub_matrix.h"
 #include "view_hub_diff.h"
 #include "view_master_hub.h"
+#include "view_settings.h"
 
 /* -------------------- Main Frame Dispatcher -------------------- */
 
@@ -25,6 +26,8 @@ static void frame(cui_ctx *ui, void *user) {
             render_hub_matrix_page(ui, s);
         } else if (s->current_page == PAGE_TOOL_SKILLS) {
             render_tool_skills_page(ui, s);
+        } else if (s->current_page == PAGE_SETTINGS) {
+            render_settings_page(ui, s);
         }
     }
 
@@ -41,11 +44,30 @@ int main(void) {
         return 1;
     }
 
+    /* Load user settings from SQLite */
+    app_init_settings(&s);
+
     /* Initial synchronization on application launch */
-    do_scan_sync(&s);
+    if (s.setting_auto_scan) {
+        do_scan_sync(&s);
+    } else {
+        reload_db_data(&s);
+    }
+
+    /* Apply default view setting */
+    if (s.setting_default_view == 1) {
+        s.current_page = PAGE_HUB_MATRIX;
+        s.hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
+    }
 
     const char *start_page = getenv("CUI_START_PAGE");
-    if (start_page && strcmp(start_page, "hub") == 0) {
+    if (start_page && strcmp(start_page, "settings") == 0) {
+        s.current_page = PAGE_SETTINGS;
+        const char *start_tab = getenv("CUI_START_TAB");
+        if (start_tab) {
+            s.settings_active_tab = atoi(start_tab);
+        }
+    } else if (start_page && strcmp(start_page, "hub") == 0) {
         s.current_page = PAGE_HUB_MATRIX;
         s.hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
         const char *subv = getenv("CUI_START_SUBVIEW");

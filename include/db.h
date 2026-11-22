@@ -1,6 +1,7 @@
 #ifndef DB_H
 #define DB_H
 
+#include <stddef.h>
 #include <sqlite3.h>
 #include "models.h"
 
@@ -41,5 +42,11 @@ int db_query_tools(sqlite3 *db, tool_record_t **out_records, int *out_count,
  * Query aggregate statistical summary from the `local_tools` table.
  */
 int db_query_stats(sqlite3 *db, tool_stats_t *out_stats);
+
+/*
+ * Key-Value Configuration Settings stored in the `app_settings` table.
+ */
+int db_get_setting(sqlite3 *db, const char *key, char *out_val, size_t cap, const char *default_val);
+int db_set_setting(sqlite3 *db, const char *key, const char *value);
 
 #endif /* DB_H */

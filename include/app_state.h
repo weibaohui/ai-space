@@ -14,6 +14,7 @@ typedef enum {
     PAGE_TOOL_LIST = 0,
     PAGE_HUB_MATRIX = 1,
     PAGE_TOOL_SKILLS = 2,
+    PAGE_SETTINGS = 3,
 } page_view_t;
 
 typedef enum {
@@ -149,6 +150,15 @@ typedef struct app_state_t {
     int selected_file_lines;
     bool selected_file_is_binary;
     int doc_render_mode;        /* 0: 预览/高亮, 1: 源码/代码 */
+
+    /* Settings Page state */
+    int settings_active_tab;    /* 0: 仓储与路径, 1: 扫描与同步, 2: 常规与偏好, 3: 关于与维护 */
+    char setting_hub_dir[512];
+    char setting_backup_dir[512];
+    bool setting_auto_backup;
+    bool setting_auto_scan;
+    int setting_default_view;
+    int setting_scan_depth;
 } app_state_t;
 
 /* Common helper functions */
@@ -165,5 +175,8 @@ void open_hub_diff_view(app_state_t *s, const char *skill_name);
 
 void start_hub_scan_thread(app_state_t *s);
 void start_adopt_all_thread(app_state_t *s);
+
+void app_init_settings(app_state_t *s);
+void app_save_settings(app_state_t *s);
 
 #endif /* APP_STATE_H */

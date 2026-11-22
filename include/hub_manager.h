@@ -64,6 +64,10 @@ typedef void (*hub_progress_cb)(float percent, const char *status_msg, void *use
 /* Initialize central hub directories (~/.ai-space/skills, ~/.ai-space/backups) */
 int hub_init_dirs(char *out_hub_dir, size_t hub_cap, char *out_backup_dir, size_t backup_cap);
 
+/* Custom directory configuration (can be loaded from settings) */
+void hub_set_custom_dirs(const char *hub_dir, const char *backup_dir);
+void hub_get_custom_dirs(char *out_hub_dir, size_t hub_cap, char *out_backup_dir, size_t backup_cap);
+
 /* Scan all registered tools and the Master Hub, build the full relation & status matrix */
 int hub_scan_matrix(sqlite3 *db, hub_matrix_t *out_matrix);
 int hub_scan_matrix_ex(sqlite3 *db, hub_matrix_t *out_matrix, hub_progress_cb cb, void *user_data);
