@@ -99,16 +99,16 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
             cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_ARCHIVE, 18, CUI_COLOR_ACCENT);
-                    cui_heading(ui, "核心主仓存储路径 (Master Hub Repository)", 4);
+                    cui_heading(ui, "主仓存储路径", 4);
                 }
                 cui_spacer(ui);
-                cui_badge(ui, hub_exists ? "主库已就绪" : "待初始化",
+                cui_badge(ui, hub_exists ? "已就绪" : "待初始化",
                           .tone = hub_exists ? CUI_TONE_SUCCESS : CUI_TONE_NEUTRAL,
                           .size = CUI_SIZE_SM);
             }
 
-            cui_text(ui, "收录主库与跨工具多端同步的核心基准目录。所有已收录的 Skill 将在此以标准化目录树物理存储。",
-                     .size = 13, .color = CUI_COLOR_TEXT_SECONDARY);
+            cui_text(ui, "标准化基准技能物理存储根目录",
+                     .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
 
             /* Path input field */
             cui_input(ui, "input_setting_hub_dir", s->setting_hub_dir, sizeof(s->setting_hub_dir),
@@ -142,7 +142,7 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
                     app_set_toast(s, toast);
                 }
 
-                if (cui_button(ui, " ↺ 恢复默认 (~/.ai-space/skills)", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_UNDO_2)) {
+                if (cui_button(ui, " ↺ 恢复默认", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_UNDO_2)) {
                     strncpy(s->setting_hub_dir, "~/.ai-space/skills", sizeof(s->setting_hub_dir) - 1);
                     s->setting_hub_dir[sizeof(s->setting_hub_dir) - 1] = '\0';
                     app_save_settings(s);
@@ -159,16 +159,16 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
             cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_SHIELD, 18, CUI_COLOR_ACCENT);
-                    cui_heading(ui, "覆盖快照安全备份路径 (Snapshot Backups)", 4);
+                    cui_heading(ui, "快照备份存储路径", 4);
                 }
                 cui_spacer(ui);
-                cui_badge(ui, backup_exists ? "备份库正常" : "待初始化",
+                cui_badge(ui, backup_exists ? "正常" : "待初始化",
                           .tone = backup_exists ? CUI_TONE_SUCCESS : CUI_TONE_NEUTRAL,
                           .size = CUI_SIZE_SM);
             }
 
-            cui_text(ui, "在执行单工具物理覆盖、版本回滚或全量广播前，系统将自动创建时间戳快照归档至此路径。",
-                     .size = 13, .color = CUI_COLOR_TEXT_SECONDARY);
+            cui_text(ui, "覆盖或同步修改前自动归档时间戳历史快照，保障数据安全",
+                     .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
 
             /* Path input field */
             cui_input(ui, "input_setting_backup_dir", s->setting_backup_dir, sizeof(s->setting_backup_dir),
@@ -201,7 +201,7 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
                     app_set_toast(s, toast);
                 }
 
-                if (cui_button(ui, " ↺ 恢复默认 (~/.ai-space/backups)", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_UNDO_2)) {
+                if (cui_button(ui, " ↺ 恢复默认", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_UNDO_2)) {
                     strncpy(s->setting_backup_dir, "~/.ai-space/backups", sizeof(s->setting_backup_dir) - 1);
                     s->setting_backup_dir[sizeof(s->setting_backup_dir) - 1] = '\0';
                     app_save_settings(s);
@@ -220,7 +220,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
             cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_GLOBE, 18, CUI_COLOR_ACCENT);
-                    cui_heading(ui, "跨主机远端同步后端选择 (仅选一个生效，必须先检测可用才可激活)", 4);
+                    cui_heading(ui, "跨主机远端同步服务", 4);
                 }
                 cui_spacer(ui);
                 char act_lbl[128];
@@ -230,8 +230,8 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                           .size = CUI_SIZE_SM);
             }
 
-            cui_text(ui, "本机制为【主机无关】架构。多台主机配置相同的远端同步模式与参数，即可共享同一个云端主仓。各个后端必须先检测通过后才可激活。",
-                     .size = 13, .color = CUI_COLOR_TEXT_SECONDARY);
+            cui_text(ui, "选择远端同步后端。配置相同后端参数的多台主机将自动共享云端主仓并协同版本。",
+                     .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
 
             /* Radio-style Backend Selection (Strictly 1 Active Backend) */
             cui_row(ui, .width = CUI_FILL, .gap = 10, .align = CUI_ALIGN_CENTER) {
@@ -278,21 +278,21 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
 
             if (s->setting_sync_candidate_type == SYNC_BACKEND_NONE) {
                 cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_heading(ui, "单机本地模式参数", 4);
+                    cui_heading(ui, "单机本地模式", 4);
                     cui_spacer(ui);
-                    cui_badge(ui, is_active ? "🟢 当前已激活生效" : "⚪ 未激活",
+                    cui_badge(ui, is_active ? "已生效" : "未激活",
                               .tone = is_active ? CUI_TONE_SUCCESS : CUI_TONE_NEUTRAL,
                               .size = CUI_SIZE_SM);
                 }
 
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_INFO, 16, CUI_COLOR_TEXT_MUTED);
-                    cui_text(ui, "单机离线模式下技能仅在本地主仓与各个本地工具间流转，不与任何远端服务器进行跨主机同步。",
-                             .size = 13, .color = CUI_COLOR_TEXT_MUTED);
+                    cui_text(ui, "仅在本地主仓与各个本地工具间流转，不与远端服务器同步。",
+                             .size = 12, .color = CUI_COLOR_TEXT_MUTED);
                 }
 
                 cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
-                    if (cui_button(ui, " 💾 激活单机本地模式", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
+                    if (cui_button(ui, " 💾 激活单机模式", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
                         s->sync_cfg.type = SYNC_BACKEND_NONE;
                         app_save_settings(s);
                         s->sync_drift_loaded = false;
@@ -302,14 +302,14 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
 
             } else if (s->setting_sync_candidate_type == SYNC_BACKEND_WEBDAV) {
                 cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_heading(ui, "WebDAV 远端服务参数配置", 4);
+                    cui_heading(ui, "WebDAV 网盘服务配置", 4);
                     cui_spacer(ui);
-                    cui_badge(ui, is_active ? "🟢 当前已激活生效" : "⚪ 未激活 (须先检测可用)",
+                    cui_badge(ui, is_active ? "已生效" : "未激活",
                               .tone = is_active ? CUI_TONE_SUCCESS : CUI_TONE_WARNING,
                               .size = CUI_SIZE_SM);
                 }
 
-                cui_text(ui, "支持坚果云、Nextcloud、ownCloud 或自建 WebDAV 网盘。在各台电脑输入相同配置即可共享技能版本。",
+                cui_text(ui, "支持坚果云、Nextcloud、ownCloud 等 WebDAV 网盘",
                          .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
 
                 cui_input(ui, "webdav_url_input", s->sync_cfg.webdav_url, sizeof(s->sync_cfg.webdav_url),
@@ -337,14 +337,14 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
 
             } else if (s->setting_sync_candidate_type == SYNC_BACKEND_NFS) {
                 cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_heading(ui, "NFS / 局域网共享挂载目录配置", 4);
+                    cui_heading(ui, "局域网共享挂载目录 (NFS/SMB)", 4);
                     cui_spacer(ui);
-                    cui_badge(ui, is_active ? "🟢 当前已激活生效" : "⚪ 未激活 (须先检测可用)",
+                    cui_badge(ui, is_active ? "已生效" : "未激活",
                               .tone = is_active ? CUI_TONE_SUCCESS : CUI_TONE_WARNING,
                               .size = CUI_SIZE_SM);
                 }
 
-                cui_text(ui, "支持挂载在各主机的 NAS、SMB 共享文件夹或网络文件系统。多台机器挂载至相同路径即可实现实时多端协同。",
+                cui_text(ui, "支持挂载在各主机的 NAS、SMB 共享文件夹或网络文件系统",
                          .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
 
                 cui_input(ui, "nfs_path_input", s->sync_cfg.nfs_mount_path, sizeof(s->sync_cfg.nfs_mount_path),
@@ -369,12 +369,12 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                 cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                     cui_heading(ui, "Git 远端版本库配置", 4);
                     cui_spacer(ui);
-                    cui_badge(ui, is_active ? "🟢 当前已激活生效" : "⚪ 未激活 (须先检测可用)",
+                    cui_badge(ui, is_active ? "已生效" : "未激活",
                               .tone = is_active ? CUI_TONE_SUCCESS : CUI_TONE_WARNING,
                               .size = CUI_SIZE_SM);
                 }
 
-                cui_text(ui, "以 Git 仓库作为全量多端共享源，支持 GitHub、GitLab、Gitea 等标准 Git 远端托管平台。",
+                cui_text(ui, "以 Git 仓库作为共享源，支持 GitHub、GitLab、Gitea 等托管平台",
                          .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
 
                 cui_input(ui, "git_url_input", s->sync_cfg.git_repo_url, sizeof(s->sync_cfg.git_repo_url),

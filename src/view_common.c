@@ -1159,7 +1159,7 @@ void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
             cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                 cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_SHIELD, 14, CUI_COLOR_TEXT_MUTED);
-                    cui_text(ui, "纯物理复制，非软链接，覆盖前已自动在 ~/.ai-space/backups/ 保存备份快照",
+                    cui_text(ui, "覆盖前已自动生成安全快照备份",
                              .size = 11, .color = CUI_COLOR_TEXT_MUTED);
                 }
                 cui_spacer(ui);

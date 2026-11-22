@@ -358,7 +358,7 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
                         cui_icon(ui, CUI_ICON_CIRCLE_CHECK, 14, CUI_COLOR_SUCCESS);
                         cui_text(ui, "两端文件内容完全一致，无文本差异", .size = 11, .color = CUI_COLOR_SUCCESS);
                         cui_spacer(ui);
-                        cui_text(ui, "🛡️ 所有同步均为物理文件拷贝，覆盖前自动在 ~/.ai-space/backups/ 生成安全备份快照",
+                        cui_text(ui, "🛡️ 覆盖前自动生成快照备份",
                                  .size = 11, .color = CUI_COLOR_TEXT_MUTED);
                     }
                 } else {
@@ -463,7 +463,7 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
                     }
 
                     cui_spacer(ui);
-                    cui_text(ui, "🛡️ 所有同步均为物理文件拷贝，覆盖前自动在 ~/.ai-space/backups/ 生成安全备份快照",
+                    cui_text(ui, "🛡️ 覆盖前自动生成快照备份",
                              .size = 11, .color = CUI_COLOR_TEXT_MUTED);
                 }
             }

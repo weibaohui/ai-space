@@ -22,13 +22,28 @@ void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
             }
             cui_column(ui, .gap = 3) {
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                    cui_heading(ui, "跨主机远端同步管理 (Remote Synchronization)", 3);
+                    cui_heading(ui, "同步管理 (Sync)", 3);
                     cui_badge(ui, sync_backend_display_name(s->sync_cfg.type),
                               .tone = (s->sync_cfg.type != SYNC_BACKEND_NONE) ? CUI_TONE_ACCENT : CUI_TONE_NEUTRAL,
                               .size = CUI_SIZE_SM);
                 }
-                cui_text(ui, "主机无关架构：多台主机配置相同后端即可共享云端主仓。一台主机变更后，其他主机即时感知并同步更新。",
-                         .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                if (s->sync_cfg.type == SYNC_BACKEND_GIT) {
+                    char sub[256];
+                    snprintf(sub, sizeof(sub), "Git 远端: %s (%s 分支)",
+                             s->sync_cfg.git_repo_url[0] ? s->sync_cfg.git_repo_url : "未配置",
+                             s->sync_cfg.git_branch[0] ? s->sync_cfg.git_branch : "main");
+                    cui_text(ui, sub, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                } else if (s->sync_cfg.type == SYNC_BACKEND_WEBDAV) {
+                    char sub[256];
+                    snprintf(sub, sizeof(sub), "WebDAV 远端: %s", s->sync_cfg.webdav_url);
+                    cui_text(ui, sub, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                } else if (s->sync_cfg.type == SYNC_BACKEND_NFS) {
+                    char sub[256];
+                    snprintf(sub, sizeof(sub), "NFS 共享路径: %s", s->sync_cfg.nfs_mount_path);
+                    cui_text(ui, sub, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                } else {
+                    cui_text(ui, "单机离线模式，可在设置中启用多端同步后端", .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                }
             }
         }
 
@@ -77,28 +92,23 @@ void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
             }
 
             int to_pull = s->sync_drift.remote_ahead_count + s->sync_drift.remote_only_count;
-            if (cui_button(ui, " 全量从远端拉取 (Pull All)",
+            if (cui_button(ui, " 全量从远端拉取",
                            .variant = (to_pull > 0) ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                            .icon = CUI_ICON_DOWNLOAD)) {
                 start_sync_pull_all_thread(s);
             }
 
             int to_push = s->sync_drift.local_ahead_count + s->sync_drift.local_only_count;
-            if (cui_button(ui, " 全量推送到远端 (Push All)",
+            if (cui_button(ui, " 全量推送到远端",
                            .variant = (to_push > 0) ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
                            .icon = CUI_ICON_UPLOAD)) {
                 start_sync_push_all_thread(s);
-            }
-
-            if (cui_button(ui, " 🚀 前往主仓分发技能", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_SEND)) {
-                s->current_page = PAGE_HUB_MATRIX;
-                s->hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
             }
         }
 
         cui_spacer(ui);
 
-        if (cui_button(ui, " 切换/配置后端参数", .variant = CUI_BUTTON_GHOST, .icon = CUI_ICON_SETTINGS)) {
+        if (cui_button(ui, " 配置后端参数", .variant = CUI_BUTTON_GHOST, .icon = CUI_ICON_SETTINGS)) {
             s->current_page = PAGE_SETTINGS;
             s->settings_active_tab = 1; /* Switch directly to Remote Sync Tab */
         }
@@ -194,23 +204,16 @@ void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
                         cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                             if (item->status == SYNC_DRIFT_REMOTE_AHEAD ||
                                 item->status == SYNC_DRIFT_REMOTE_ONLY) {
-                                if (cui_button(ui, " ⬇️ 拉取到本地主仓", .variant = CUI_BUTTON_PRIMARY, .size = CUI_SIZE_SM)) {
+                                if (cui_button(ui, " ⬇️ 拉取", .variant = CUI_BUTTON_PRIMARY, .size = CUI_SIZE_SM)) {
                                     start_sync_pull_skill_thread(s, item->skill_name);
                                 }
                             } else if (item->status == SYNC_DRIFT_LOCAL_AHEAD ||
                                        item->status == SYNC_DRIFT_LOCAL_ONLY) {
-                                if (cui_button(ui, " ⬆️ 推送到远端共享", .variant = CUI_BUTTON_PRIMARY, .size = CUI_SIZE_SM)) {
+                                if (cui_button(ui, " ⬆️ 推送", .variant = CUI_BUTTON_PRIMARY, .size = CUI_SIZE_SM)) {
                                     start_sync_push_skill_thread(s, item->skill_name);
                                 }
                             } else if (item->status == SYNC_DRIFT_IN_SYNC) {
                                 cui_badge(ui, "两端一致", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                                if (cui_button(ui, " 🚀 分发到工具...", .variant = CUI_BUTTON_SECONDARY,
-                                               .icon = CUI_ICON_SEND, .size = CUI_SIZE_SM)) {
-                                    s->current_page = PAGE_HUB_MATRIX;
-                                    s->hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
-                                    s->show_distribute_modal = true;
-                                    strncpy(s->distribute_skill_name, item->skill_name, sizeof(s->distribute_skill_name) - 1);
-                                }
                             }
                         }
                     }
