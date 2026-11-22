@@ -286,7 +286,7 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
 
                     /* Col 3: Tool copies presence & drift relations (Merged with count) */
                     cui_table_cell(ui);
-                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                    cui_row(ui, .width = CUI_FILL, .gap = 6, .align = CUI_ALIGN_CENTER, .wrap = true) {
                         int shown = 0;
                         for (int t = 0; t < e->tool_count; t++) {
                             tool_copy_status_t *tc = &e->tool_copies[t];

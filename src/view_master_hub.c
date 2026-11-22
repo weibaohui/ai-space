@@ -404,7 +404,7 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                         }
 
                         /* Row 3: Tool Distribution Badges */
-                        cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                        cui_row(ui, .width = CUI_FILL, .gap = 6, .align = CUI_ALIGN_CENTER, .wrap = true) {
                             cui_textf(ui, "分发覆盖 (%d/%d):", entry->installed_count, s->hub_matrix.tool_count);
                             if (entry->installed_count == 0) {
                                 cui_text(ui, "尚未安装到任何本地工具，点击上方【分发...】开始安装",
