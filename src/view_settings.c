@@ -691,6 +691,29 @@ void render_settings_page(cui_ctx *ui, app_state_t *s) {
                 s->settings_active_tab = 3;
             }
 
+            cui_separator(ui);
+            cui_text(ui, "诊断与维护", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
+            if (cui_button(ui, "依赖检测",
+                           .variant = CUI_BUTTON_GHOST,
+                           .width = CUI_FILL,
+                           .size = CUI_SIZE_MD,
+                           .icon = CUI_ICON_SHIELD)) {
+                s->current_page = PAGE_DEPENDENCIES;
+                if (!s->dep_state.loaded) {
+                    app_check_dependencies(s);
+                }
+            }
+            if (cui_button(ui, "存储管理",
+                           .variant = CUI_BUTTON_GHOST,
+                           .width = CUI_FILL,
+                           .size = CUI_SIZE_MD,
+                           .icon = CUI_ICON_DATABASE)) {
+                s->current_page = PAGE_STORAGE;
+                if (!s->storage_stats.loaded) {
+                    app_refresh_storage_stats(s);
+                }
+            }
+
             cui_spacer(ui);
 
             cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 8, .gap = 4,
