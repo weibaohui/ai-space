@@ -47,6 +47,15 @@ jobs:
         with:
           submodules: recursive
 
+      # Archives are named after the ref. Outside main and v* tags the ref carries a
+      # "/" ("feature/x", "<pr>/merge"), which nests the output in a directory that is
+      # never created and fails the Linux and Windows packaging steps.
+      - name: Compute package ref
+        shell: bash
+        env:
+          REF: ${{ github.ref_name }}
+        run: echo "PKG_REF=${REF//\//-}" >> "$GITHUB_ENV"
+
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: >
@@ -160,7 +169,7 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          NAME="ai_space-${{ github.ref_name }}-${{ matrix.name }}"
+          NAME="ai_space-${PKG_REF}-${{ matrix.name }}"
           mkdir -p pack/ai_space
           cmake --install build --component ai_space_runtime --prefix "$PWD/pack/ai_space"
           strip pack/ai_space/ai_space || true
@@ -208,7 +217,7 @@ jobs:
         shell: bash
         run: |
           VER=$(sed -n 's/^#define AI_SPACE_VERSION "\(.*\)".*/\1/p' include/version.h)
-          NAME="ai_space-${{ github.ref_name }}-${{ matrix.name }}"
+          NAME="ai_space-${PKG_REF}-${{ matrix.name }}"
           STAGE="pack/${NAME}"
           APP="$STAGE/AI-Space.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -233,7 +242,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          NAME="ai_space-${{ github.ref_name }}-${{ matrix.name }}"
+          NAME="ai_space-${PKG_REF}-${{ matrix.name }}"
           mkdir -p pack/ai_space
           cmake --install build --component ai_space_runtime --prefix "$PWD/pack/ai_space"
           cp -r fonts pack/ai_space/fonts
