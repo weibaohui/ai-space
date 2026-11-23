@@ -9,8 +9,6 @@
 /* Configuration options for the reusable skill file tree component */
 typedef struct {
     const char *title;              /* e.g. "目录结构树" or "技能文件结构树" */
-    const char *badge_label;        /* e.g. skill_name, displayed at top right */
-    cui_tone badge_tone;            /* e.g. CUI_TONE_ACCENT */
     const char *selected_path;      /* current selected relative path or abs path */
     bool match_by_rel_path;         /* true: match by node->rel_path; false: match by node->abs_path */
     bool show_diff_badges;          /* true: render +X -Y / +新增 / -缺失 / 一致 badges */
@@ -21,7 +19,7 @@ typedef struct {
     int summary_deleted;
     int summary_total_added_lines;
     int summary_total_removed_lines;
-    float width;                    /* width of the card, e.g. 280 or 300 */
+    cui_size width;                 /* fixed or fill, defaults to 280 points */
 } skill_tree_view_opts_t;
 
 /* Callback signature when a file node in the tree is selected */

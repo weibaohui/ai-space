@@ -13,7 +13,7 @@
 #include "sync_backend.h"
 
 typedef enum {
-    PAGE_DASHBOARD = 0,        /* 首页 Dashboard (全景大屏与系统运行拓扑) */
+    PAGE_DASHBOARD = 0,        /* 首页 */
     PAGE_TOOL_LIST = 1,        /* 工具列表 (按工具维) */
     PAGE_ALL_SKILLS = 2,       /* 技能列表 (全网全景大盘) */
     PAGE_HUB_MATRIX = 3,       /* 主仓管理 (基准库管理与分发) */
@@ -32,6 +32,21 @@ typedef enum {
     SETTINGS_TAB_ABOUT,
     SETTINGS_TAB_COUNT,
 } settings_tab_t;
+
+typedef enum {
+    STORAGE_CLEANUP_CACHE,
+    STORAGE_CLEANUP_OLD_SNAPSHOTS,
+    STORAGE_CLEANUP_ALL_SNAPSHOTS,
+    STORAGE_CLEANUP_SINGLE_SNAPSHOT,
+    STORAGE_CLEANUP_CACHE_AND_OLD_SNAPSHOTS,
+} storage_cleanup_action_t;
+
+typedef enum {
+    SKILL_FILTER_ALL,
+    SKILL_FILTER_CHANGED,
+    SKILL_FILTER_UNCOLLECTED,
+    SKILL_FILTER_MATCHED,
+} skill_filter_t;
 
 typedef enum {
     HUB_SUBVIEW_MASTER_SKILLS = 0, /* 主仓技能集中管理 (已入库技能) */
@@ -183,10 +198,11 @@ typedef struct app_state_t {
     bool hub_matrix_loaded;
     hub_scan_state_t hub_scan;
     char hub_search_kw[128];
-    int hub_filter_mode;        /* 0: 全部, 1: 存在分化, 2: 未建立主仓, 3: 完全一致 */
+    int hub_filter_mode;        /* skill_filter_t */
     int hub_subview;            /* hub_subview_t */
     int prev_hub_subview;       /* previous subview to return to from diff/explorer */
     char master_skill_search_kw[128];
+    int master_skill_filter;
     file_node_t *master_skill_file_tree;
 
     /* Generic operation progress state (progress bar / modal) */
@@ -201,6 +217,7 @@ typedef struct app_state_t {
     int diff_current_change;    /* Selected change index for cui_diff_view */
     cui_diff_mode diff_mode;    /* CUI_DIFF_SPLIT (0) or CUI_DIFF_INLINE (1) */
     int diff_sync_view_mode;    /* 0: 文档预览, 1: 双栏比对 */
+    int diff_detail_tab;       /* 0: 差异, 1: 副本, 2: 文件 */
     hub_skill_diff_manifest_t diff_manifest;
     bool diff_manifest_loaded;
     file_node_t *hub_diff_file_tree;
@@ -211,6 +228,7 @@ typedef struct app_state_t {
     skill_item_t *skill_items;
     int skill_count;
     char skill_search_kw[128];
+    int tool_detail_tab;       /* 0: 预览, 1: 技能, 2: 文件 */
     int skill_view_mode;        /* 0: 树形浏览 (左树右内容), 1: 全部技能清单 */
     cui_table_sort skill_table_sort;
 
@@ -270,8 +288,15 @@ typedef struct app_state_t {
     bool show_uninstall_tool_modal;
     char uninstall_tool_skill_name[128];
 
+    /* Master repository removal confirmation */
+    bool show_remove_master_modal;
+    char remove_master_skill[128]; /* Empty for the selected batch */
+
     /* Local Storage Management State */
     storage_stats_t storage_stats;
+    bool show_storage_cleanup_modal;
+    storage_cleanup_action_t storage_cleanup_action;
+    char storage_cleanup_snapshot[128];
 
     /* Dependency Check State */
     dep_check_state_t dep_state;

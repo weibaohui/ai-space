@@ -340,289 +340,186 @@ void app_delete_single_snapshot(app_state_t *s, const char *snapshot_name) {
     app_refresh_storage_stats(s);
 }
 
-/* -------------------- Page UI Rendering -------------------- */
+static void request_storage_cleanup(app_state_t *s, storage_cleanup_action_t action) {
+    s->storage_cleanup_action = action;
+    s->show_storage_cleanup_modal = true;
+}
+
+static void render_storage_cleanup_modal(cui_ctx *ui, app_state_t *s, bool busy) {
+    if (!s->show_storage_cleanup_modal) return;
+
+    const char *title;
+    const char *description;
+    switch (s->storage_cleanup_action) {
+    case STORAGE_CLEANUP_CACHE:
+        title = "清理缓存";
+        description = "将删除本地临时缓存。下次同步时会按需重新生成。";
+        break;
+    case STORAGE_CLEANUP_OLD_SNAPSHOTS:
+        title = "清理旧快照";
+        description = "将保留最近 3 份快照，其余备份将被删除。";
+        break;
+    case STORAGE_CLEANUP_ALL_SNAPSHOTS:
+        title = "清空备份";
+        description = "将删除备份目录中的全部历史快照。";
+        break;
+    case STORAGE_CLEANUP_SINGLE_SNAPSHOT:
+        title = "删除快照";
+        description = s->storage_cleanup_snapshot;
+        break;
+    default:
+        title = "清理缓存与旧快照";
+        description = "将清空临时缓存，并删除最近 3 份以外的快照。";
+        break;
+    }
+
+    cui_dialog(ui, title, &s->show_storage_cleanup_modal, .width = 460) {
+        cui_column(ui, .width = CUI_FILL, .gap = 12) {
+            cui_text(ui, description, .width = CUI_FILL);
+            cui_row(ui, .width = CUI_FILL, .gap = 8, .justify = CUI_JUSTIFY_END) {
+                if (cui_button(ui, "取消", .variant = CUI_BUTTON_SECONDARY)) {
+                    s->show_storage_cleanup_modal = false;
+                }
+                if (cui_button(ui, "确认清理", .variant = CUI_BUTTON_DANGER,
+                               .icon = CUI_ICON_TRASH_2, .disabled = busy)) {
+                    switch (s->storage_cleanup_action) {
+                    case STORAGE_CLEANUP_CACHE:
+                        app_clear_storage_cache(s);
+                        break;
+                    case STORAGE_CLEANUP_OLD_SNAPSHOTS:
+                        app_prune_backups_keep_latest(s, 3);
+                        break;
+                    case STORAGE_CLEANUP_ALL_SNAPSHOTS:
+                        app_clear_all_backups(s);
+                        break;
+                    case STORAGE_CLEANUP_SINGLE_SNAPSHOT:
+                        app_delete_single_snapshot(s, s->storage_cleanup_snapshot);
+                        break;
+                    case STORAGE_CLEANUP_CACHE_AND_OLD_SNAPSHOTS:
+                        app_clear_storage_cache(s);
+                        app_prune_backups_keep_latest(s, 3);
+                        break;
+                    }
+                    s->show_storage_cleanup_modal = false;
+                    cui_toast(ui, "存储统计已更新", .tone = CUI_TONE_INFO);
+                }
+            }
+        }
+    }
+}
 
 void render_storage_page(cui_ctx *ui, app_state_t *s) {
-    if (!ui || !s) return;
+    if (!s->storage_stats.loaded) app_refresh_storage_stats(s);
 
-    if (!s->storage_stats.loaded) {
-        app_refresh_storage_stats(s);
-    }
-
-    storage_stats_t *st = &s->storage_stats;
-
-    char exp_backup[512] = "";
+    const storage_stats_t *st = &s->storage_stats;
+    bool busy = s->hub_scan.is_scanning || s->sync_is_busy || s->op_progress.active;
+    bool has_cache = st->cache_file_count > 0 || st->cache_dir_count > 0;
+    char backup_dir[512], cache_dir[512];
     expand_path_local(s->setting_backup_dir[0] ? s->setting_backup_dir : "~/.ai-space/backups",
-                      exp_backup, sizeof(exp_backup));
+                      backup_dir, sizeof(backup_dir));
+    expand_path_local("~/.ai-space/cache", cache_dir, sizeof(cache_dir));
 
-    char exp_cache[512] = "";
-    expand_path_local("~/.ai-space/cache", exp_cache, sizeof(exp_cache));
+    char backup_size[32], cache_size[32], hub_size[32];
+    format_size((size_t)st->backup_total_bytes, backup_size, sizeof(backup_size));
+    format_size((size_t)st->cache_total_bytes, cache_size, sizeof(cache_size));
+    format_size((size_t)st->hub_total_bytes, hub_size, sizeof(hub_size));
 
-    char exp_hub[512] = "";
-    expand_path_local(s->setting_hub_dir[0] ? s->setting_hub_dir : "~/.ai-space/skills",
-                      exp_hub, sizeof(exp_hub));
-
-    char backup_size_buf[64];
-    format_size((size_t)st->backup_total_bytes, backup_size_buf, sizeof(backup_size_buf));
-
-    char cache_size_buf[64];
-    format_size((size_t)st->cache_total_bytes, cache_size_buf, sizeof(cache_size_buf));
-
-    char hub_size_buf[64];
-    format_size((size_t)st->hub_total_bytes, hub_size_buf, sizeof(hub_size_buf));
-
-    cui_column(ui, .width = CUI_FILL, .gap = 16) {
-
-        /* 1. Header Row */
-        cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-            cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
-                cui_box(ui, .width = CUI_PX(40), .height = CUI_PX(40), .radius = 8,
-                        .bg = cui_color_of(ui, CUI_COLOR_ACCENT),
-                        .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
-                    cui_icon(ui, CUI_ICON_DATABASE, 20, CUI_COLOR_BACKGROUND);
-                }
-                cui_column(ui, .gap = 2) {
-                    cui_heading(ui, "本地存储管理", 2);
-                    cui_text(ui, "监控与管理备份历史快照、运行临时缓存及技能主仓物理存储",
-                             .size = 13, .color = CUI_COLOR_TEXT_SECONDARY);
-                }
+    cui_column(ui, .width = CUI_FILL, .gap = 14) {
+        cui_row(ui, .width = CUI_FILL, .gap = 8, .align = CUI_ALIGN_CENTER) {
+            render_workspace_heading(ui, CUI_ICON_DATABASE, "本地存储", "管理临时缓存与历史快照");
+            if (cui_button(ui, "刷新统计", .variant = CUI_BUTTON_SECONDARY,
+                           .icon = CUI_ICON_REFRESH_CW, .disabled = busy)) {
+                app_refresh_storage_stats(s);
             }
-
-            cui_spacer(ui);
-
-            cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                if (cui_button(ui, "刷新统计", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_REFRESH_CW)) {
-                    app_refresh_storage_stats(s);
-                    app_set_toast(s, "存储统计数据已刷新");
-                }
-
-                if (cui_button(ui, "一键清理", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_TRASH_2)) {
-                    app_clear_storage_cache(s);
-                    app_prune_backups_keep_latest(s, 3);
-                    app_set_toast(s, "已清空临时缓存并保留最新3份快照");
+            cui_menu(ui, "更多维护操作", .icon_only = true, .variant = CUI_BUTTON_GHOST, .width = 220) {
+                if (cui_menu_item(ui, "清理缓存与旧快照", .icon = CUI_ICON_TRASH_2,
+                                  .danger = true, .disabled = busy || (!has_cache && st->snapshot_count <= 3))) {
+                    request_storage_cleanup(s, STORAGE_CLEANUP_CACHE_AND_OLD_SNAPSHOTS);
                 }
             }
         }
 
-        /* 2. Top Summary Metrics Row (3 Cards) */
         cui_row(ui, .width = CUI_FILL, .gap = 12) {
-            /* Card 1: Backups */
-            cui_card(ui, .width = CUI_GROW(1), .pad = 16, .gap = 8) {
-                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, CUI_ICON_SHIELD, 16, CUI_COLOR_ACCENT);
-                        cui_text(ui, "快照备份占用", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-                    }
-                    cui_spacer(ui);
-                    char count_sub[32];
-                    snprintf(count_sub, sizeof(count_sub), "%d 个快照", st->snapshot_count);
-                    cui_badge(ui, count_sub, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
-                }
-                cui_text(ui, backup_size_buf, .font = CUI_FONT_DISPLAY, .size = 24);
-                cui_text(ui, "覆盖分发历史物理快照", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
-            }
-
-            /* Card 2: Cache */
-            cui_card(ui, .width = CUI_GROW(1), .pad = 16, .gap = 8) {
-                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, CUI_ICON_REFRESH_CW, 16, CUI_COLOR_ACCENT);
-                        cui_text(ui, "运行缓存占用", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-                    }
-                    cui_spacer(ui);
-                    char cache_sub[32];
-                    snprintf(cache_sub, sizeof(cache_sub), "%d 个文件", st->cache_file_count);
-                    cui_badge(ui, cache_sub, .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
-                }
-                cui_text(ui, cache_size_buf, .font = CUI_FONT_DISPLAY, .size = 24);
-                cui_text(ui, "Git远端同步与网络分片临时缓存", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
-            }
-
-            /* Card 3: Master Hub */
-            cui_card(ui, .width = CUI_GROW(1), .pad = 16, .gap = 8) {
-                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, CUI_ICON_ARCHIVE, 16, CUI_COLOR_ACCENT);
-                        cui_text(ui, "技能主仓占用", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-                    }
-                    cui_spacer(ui);
-                    char hub_sub[32];
-                    snprintf(hub_sub, sizeof(hub_sub), "%d 个技能", st->hub_skill_count);
-                    cui_badge(ui, hub_sub, .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                }
-                cui_text(ui, hub_size_buf, .font = CUI_FONT_DISPLAY, .size = 24);
-                cui_text(ui, "中央基准技能库核心数据", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
-            }
+            cui_metric(ui, "快照备份", backup_size, .icon = CUI_ICON_HISTORY, .width = CUI_GROW(1));
+            cui_metric(ui, "临时缓存", cache_size, .icon = CUI_ICON_DATABASE, .width = CUI_GROW(1));
+            cui_metric(ui, "技能主仓", hub_size, .icon = ICON_MASTER_HUB, .width = CUI_GROW(1));
         }
 
-        /* 3. Section: 运行缓存清理 Card */
-        cui_box(ui, .width = CUI_FILL, .radius = 8, .pad = 16, .gap = 12,
-                .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
-                .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-
-            cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                    cui_icon(ui, CUI_ICON_REFRESH_CW, 18, CUI_COLOR_ACCENT);
-                    cui_heading(ui, "本地临时缓存清理", 4);
-                }
+        cui_card(ui, .width = CUI_FILL, .pad = 16, .gap = 8) {
+            cui_row(ui, .width = CUI_FILL, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                cui_heading(ui, "临时缓存", 4);
                 cui_spacer(ui);
-                cui_badge(ui, (st->cache_total_bytes > 0) ? "可清理" : "已清空",
-                          .tone = (st->cache_total_bytes > 0) ? CUI_TONE_INFO : CUI_TONE_SUCCESS,
-                          .size = CUI_SIZE_SM);
+                cui_push_id(ui, "storage_cache");
+                if (cui_button(ui, "打开目录", .variant = CUI_BUTTON_GHOST,
+                               .icon = CUI_ICON_FOLDER_OPEN, .size = CUI_SIZE_SM)) {
+                    open_folder_in_explorer(cache_dir);
+                }
+                if (cui_button(ui, "清理缓存", .variant = CUI_BUTTON_SECONDARY,
+                               .icon = CUI_ICON_TRASH_2, .size = CUI_SIZE_SM, .disabled = busy || !has_cache)) {
+                    request_storage_cleanup(s, STORAGE_CLEANUP_CACHE);
+                }
+                cui_pop_id(ui);
             }
-
-            cui_text(ui, "存储 Git 远端协同版本库工作副本、网络临时下载分片等数据。清理后不会影响任何本地技能，下次同步时将按需重新生成。",
-                     .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-
-            /* Path & Details Box */
-            cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 10, .gap = 6,
-                    .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_SURFACE), 0.6f),
-                    .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                    cui_icon(ui, CUI_ICON_FOLDER, 13, CUI_COLOR_TEXT_MUTED);
-                    cui_text(ui, "物理缓存目录:", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-                    cui_text(ui, exp_cache, .size = 12, .color = CUI_COLOR_FOREGROUND);
-                }
-                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                    cui_icon(ui, CUI_ICON_DATABASE, 13, CUI_COLOR_TEXT_MUTED);
-                    char cache_dtl[128];
-                    snprintf(cache_dtl, sizeof(cache_dtl), "当前占用: %s  (包含 %d 个文件，%d 个子目录)",
-                             cache_size_buf, st->cache_file_count, st->cache_dir_count);
-                    cui_text(ui, cache_dtl, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                }
-            }
-
-            /* Action Buttons */
-            cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                if (cui_button(ui, "清理缓存", .variant = CUI_BUTTON_DANGER, .icon = CUI_ICON_TRASH_2)) {
-                    app_clear_storage_cache(s);
-                    app_set_toast(s, "本地运行缓存已清理完成");
-                }
-
-                if (cui_button(ui, "打开目录", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_FOLDER)) {
-                    open_folder_in_explorer(exp_cache);
-                }
-            }
+            cui_text(ui, cache_dir, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY, .width = CUI_FILL, .nowrap = true);
+            cui_tooltip(ui, cache_dir);
+            cui_textf(ui, "%d 个文件 · %d 个目录", st->cache_file_count, st->cache_dir_count);
         }
 
-        /* 4. Section: 快照备份管理 Card */
-        cui_box(ui, .width = CUI_FILL, .radius = 8, .pad = 16, .gap = 12,
-                .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
-                .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-
-            cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                    cui_icon(ui, CUI_ICON_SHIELD, 18, CUI_COLOR_ACCENT);
-                    cui_heading(ui, "覆盖安全快照备份管理", 4);
-                }
+        cui_card(ui, .width = CUI_FILL, .pad = 16, .gap = 8) {
+            cui_row(ui, .width = CUI_FILL, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                cui_heading(ui, "历史快照", 4);
                 cui_spacer(ui);
-                char snap_badge[32];
-                snprintf(snap_badge, sizeof(snap_badge), "%d 个快照", st->snapshot_count);
-                cui_badge(ui, snap_badge,
-                          .tone = (st->snapshot_count > 0) ? CUI_TONE_ACCENT : CUI_TONE_NEUTRAL,
-                          .size = CUI_SIZE_SM);
+                cui_push_id(ui, "storage_snapshots");
+                if (cui_button(ui, "打开目录", .variant = CUI_BUTTON_GHOST,
+                               .icon = CUI_ICON_FOLDER_OPEN, .size = CUI_SIZE_SM)) {
+                    open_folder_in_explorer(backup_dir);
+                }
+                if (cui_button(ui, "清理旧快照", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_TRASH_2,
+                               .size = CUI_SIZE_SM, .disabled = busy || st->snapshot_count <= 3)) {
+                    request_storage_cleanup(s, STORAGE_CLEANUP_OLD_SNAPSHOTS);
+                }
+                cui_menu(ui, "更多快照操作", .icon_only = true, .variant = CUI_BUTTON_GHOST) {
+                    if (cui_menu_item(ui, "清空备份", .icon = CUI_ICON_TRASH_2,
+                                      .danger = true, .disabled = busy || st->snapshot_count == 0)) {
+                        request_storage_cleanup(s, STORAGE_CLEANUP_ALL_SNAPSHOTS);
+                    }
+                }
+                cui_pop_id(ui);
             }
-
-            cui_text(ui, "在对本地工具覆盖分发或从工具合入主仓前系统强制创建的历史物理快照。支持一键保留最新或批量清理，释放磁盘空间。",
-                     .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-
-            /* Path & Details Box */
-            cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 10, .gap = 6,
-                    .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_SURFACE), 0.6f),
-                    .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                    cui_icon(ui, CUI_ICON_FOLDER, 13, CUI_COLOR_TEXT_MUTED);
-                    cui_text(ui, "快照存储路径:", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-                    cui_text(ui, exp_backup, .size = 12, .color = CUI_COLOR_FOREGROUND);
-                }
-                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                    cui_icon(ui, CUI_ICON_DATABASE, 13, CUI_COLOR_TEXT_MUTED);
-                    char backup_dtl[128];
-                    snprintf(backup_dtl, sizeof(backup_dtl), "当前占用: %s  (共 %d 个快照，%d 个文件)",
-                             backup_size_buf, st->snapshot_count, st->backup_file_count);
-                    cui_text(ui, backup_dtl, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                }
-            }
-
-            /* Action Buttons */
-            cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                if (cui_button(ui, "保留最新", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_CHECK)) {
-                    app_prune_backups_keep_latest(s, 3);
-                    app_set_toast(s, "已保留最新3份快照，其余旧快照已清理");
-                }
-
-                if (cui_button(ui, "清空备份", .variant = CUI_BUTTON_DANGER, .icon = CUI_ICON_TRASH_2)) {
-                    app_clear_all_backups(s);
-                    app_set_toast(s, "所有历史备份快照已清空");
-                }
-
-                if (cui_button(ui, "打开目录", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_FOLDER)) {
-                    open_folder_in_explorer(exp_backup);
-                }
-            }
-
-            cui_separator(ui);
-
-            /* Snapshot Item List */
-            cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                cui_text(ui, "历史备份快照清单", .size = 13, .color = CUI_COLOR_TEXT_MUTED);
-                cui_spacer(ui);
-                char cnt_lbl[64];
-                snprintf(cnt_lbl, sizeof(cnt_lbl), "按时间倒序排列 (共 %d 项)", st->snapshot_count);
-                cui_text(ui, cnt_lbl, .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-            }
+            cui_text(ui, backup_dir, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY, .width = CUI_FILL, .nowrap = true);
+            cui_tooltip(ui, backup_dir);
+            cui_textf(ui, "%d 份快照 · %d 个文件", st->snapshot_count, st->backup_file_count);
 
             if (st->snapshot_count == 0) {
-                cui_column(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER, .pad = 30, .gap = 10) {
-                    cui_icon(ui, CUI_ICON_SHIELD, 36, CUI_COLOR_SUCCESS);
-                    cui_heading(ui, "暂无备份快照", 4);
-                    cui_text(ui, "当前备份目录干净，未占用多余磁盘空间。",
-                             .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                }
-            } else {
-                for (int i = 0; i < st->snapshot_count; i++) {
-                    storage_snapshot_item_t *item = &st->snapshots[i];
+                cui_separator(ui);
+                cui_text(ui, "暂无快照", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
+            }
 
-                    char sz_buf[32];
-                    format_size((size_t)item->size_bytes, sz_buf, sizeof(sz_buf));
+            for (int i = 0; i < st->snapshot_count; i++) {
+                const storage_snapshot_item_t *item = &st->snapshots[i];
+                char size[24], detail[96];
+                format_size((size_t)item->size_bytes, size, sizeof(size));
+                snprintf(detail, sizeof(detail), "%s · %s · %d 个文件", item->time_str, size, item->file_count);
 
-                    cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 10,
-                            .bg = cui_color_of(ui, CUI_COLOR_SURFACE),
-                            .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-                        cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                            /* Icon & Time */
-                            cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER, .width = CUI_PX(180)) {
-                                cui_icon(ui, CUI_ICON_CLOCK, 14, CUI_COLOR_ACCENT);
-                                cui_text(ui, item->time_str, .size = 12, .font = CUI_FONT_MONO);
-                            }
-
-                            /* Tool badge */
-                            cui_box(ui, .width = CUI_PX(120), .align = CUI_ALIGN_START) {
-                                cui_badge(ui, item->tool_name, .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
-                            }
-
-                            /* Skill Name */
-                            cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER, .width = CUI_PX(220)) {
-                                cui_icon(ui, CUI_ICON_PACKAGE, 14, CUI_COLOR_TEXT_SECONDARY);
-                                cui_text(ui, item->skill_name, .size = 13, .color = CUI_COLOR_FOREGROUND);
-                            }
-
-                            /* File size & count */
-                            char size_info[64];
-                            snprintf(size_info, sizeof(size_info), "%s (%d 个文件)", sz_buf, item->file_count);
-                            cui_text(ui, size_info, .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-
-                            cui_spacer(ui);
-
-                            /* Delete Single Item */
-                            if (cui_button(ui, "删除", .variant = CUI_BUTTON_OUTLINE, .size = CUI_SIZE_SM, .icon = CUI_ICON_TRASH_2)) {
-                                app_delete_single_snapshot(s, item->dir_name);
-                                app_set_toast(s, "快照已成功删除");
-                            }
-                        }
+                cui_push_id(ui, item->dir_name);
+                cui_separator(ui);
+                cui_row(ui, .width = CUI_FILL, .gap = 10, .align = CUI_ALIGN_CENTER) {
+                    cui_icon(ui, CUI_ICON_HISTORY, 16, CUI_COLOR_TEXT_SECONDARY);
+                    cui_column(ui, .width = CUI_FILL, .gap = 2) {
+                        cui_text(ui, item->skill_name, .font = CUI_FONT_MEDIUM, .width = CUI_FILL, .nowrap = true);
+                        cui_text(ui, detail, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                    }
+                    cui_badge(ui, item->tool_name, .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
+                    if (cui_icon_button(ui, CUI_ICON_TRASH_2, .size = CUI_SIZE_SM, .tooltip = "删除快照",
+                                        .color = CUI_COLOR_DANGER, .disabled = busy)) {
+                        snprintf(s->storage_cleanup_snapshot, sizeof(s->storage_cleanup_snapshot), "%s", item->dir_name);
+                        request_storage_cleanup(s, STORAGE_CLEANUP_SINGLE_SNAPSHOT);
                     }
                 }
+                cui_pop_id(ui);
             }
         }
     }
+
+    render_storage_cleanup_modal(ui, s, busy);
 }

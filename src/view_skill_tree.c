@@ -336,19 +336,12 @@ void render_skill_file_tree_component(cui_ctx *ui,
                                       skill_tree_on_select_fn on_select,
                                       void *user_data) {
     if (!opts) return;
-    float w = opts->width > 0 ? opts->width : 280.0f;
-
-    cui_card(ui, .width = CUI_PX(w), .height = CUI_FILL, .pad = 8, .gap = 6) {
+    cui_size width = opts->width.kind == CUI_SIZE_FIT ? CUI_PX(280) : opts->width;
+    cui_card(ui, .width = width, .height = CUI_FILL, .pad = 8, .gap = 6) {
         /* 1. Header */
-        cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-            cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                cui_icon(ui, CUI_ICON_FOLDER_OPEN, 15, CUI_COLOR_ACCENT);
-                cui_label(ui, opts->title ? opts->title : "目录结构树");
-            }
-            cui_spacer(ui);
-            if (opts->badge_label && opts->badge_label[0] != '\0') {
-                cui_text(ui, opts->badge_label, .color = CUI_COLOR_TEXT_MUTED, .size = 11);
-            }
+        cui_row(ui, .width = CUI_FILL, .gap = 6, .align = CUI_ALIGN_CENTER) {
+            cui_icon(ui, CUI_ICON_FOLDER_OPEN, 15, CUI_COLOR_ACCENT);
+            cui_label(ui, opts->title ? opts->title : "文件树");
         }
 
         /* 2. Optional Summary */

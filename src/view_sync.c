@@ -1,212 +1,156 @@
 #include "view_sync.h"
 #include "view_common.h"
-#include "sync_backend.h"
-#include "hub_manager.h"
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+
+static void render_sync_result(cui_ctx *ui, app_state_t *s, const sync_drift_item_t *item, bool busy) {
+    static const char *labels[] = {
+        [SYNC_DRIFT_IN_SYNC] = "已一致",
+        [SYNC_DRIFT_REMOTE_AHEAD] = "待拉取",
+        [SYNC_DRIFT_LOCAL_AHEAD] = "待推送",
+        [SYNC_DRIFT_REMOTE_ONLY] = "远端独有",
+        [SYNC_DRIFT_LOCAL_ONLY] = "本地独有",
+        [SYNC_DRIFT_CONFLICT] = "版本冲突",
+    };
+    static const cui_tone tones[] = {
+        [SYNC_DRIFT_IN_SYNC] = CUI_TONE_SUCCESS,
+        [SYNC_DRIFT_REMOTE_AHEAD] = CUI_TONE_INFO,
+        [SYNC_DRIFT_LOCAL_AHEAD] = CUI_TONE_WARNING,
+        [SYNC_DRIFT_REMOTE_ONLY] = CUI_TONE_INFO,
+        [SYNC_DRIFT_LOCAL_ONLY] = CUI_TONE_WARNING,
+        [SYNC_DRIFT_CONFLICT] = CUI_TONE_DANGER,
+    };
+
+    bool can_pull = item->status == SYNC_DRIFT_REMOTE_AHEAD || item->status == SYNC_DRIFT_REMOTE_ONLY;
+    bool can_push = item->status == SYNC_DRIFT_LOCAL_AHEAD || item->status == SYNC_DRIFT_LOCAL_ONLY;
+    cui_card(ui, .width = CUI_FILL, .pad = 12, .gap = 4) {
+        cui_row(ui, .width = CUI_FILL, .gap = 10, .align = CUI_ALIGN_CENTER) {
+            cui_icon(ui, ICON_SKILLS, 16, CUI_COLOR_TEXT_SECONDARY);
+            cui_column(ui, .width = CUI_FILL, .gap = 2) {
+                cui_text(ui, item->skill_name, .font = CUI_FONT_MEDIUM, .width = CUI_FILL, .nowrap = true);
+                if (item->local_hash[0] || item->remote_hash[0]) {
+                    char hashes[100];
+                    snprintf(hashes, sizeof(hashes), "主仓指纹  %s\n远端指纹  %s",
+                             item->local_hash[0] ? item->local_hash : "—",
+                             item->remote_hash[0] ? item->remote_hash : "—");
+                    cui_tooltip(ui, hashes);
+                }
+                cui_text(ui, item->status_desc, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY,
+                         .width = CUI_FILL, .nowrap = true);
+            }
+            cui_badge(ui, labels[item->status], .tone = tones[item->status], .size = CUI_SIZE_SM);
+            if (can_pull && cui_button(ui, "拉取", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM,
+                                       .icon = CUI_ICON_DOWNLOAD, .disabled = busy)) {
+                start_sync_pull_skill_thread(s, item->skill_name);
+            }
+            if (can_push && cui_button(ui, "推送", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM,
+                                       .icon = CUI_ICON_UPLOAD, .disabled = busy)) {
+                start_sync_push_skill_thread(s, item->skill_name);
+            }
+        }
+    }
+}
 
 void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
-    if (!ui || !s) return;
+    char endpoint[680];
+    switch (s->sync_cfg.type) {
+    case SYNC_BACKEND_GIT:
+        snprintf(endpoint, sizeof(endpoint), "Git · %s · %s", s->sync_cfg.git_branch, s->sync_cfg.git_repo_url);
+        break;
+    case SYNC_BACKEND_WEBDAV:
+        snprintf(endpoint, sizeof(endpoint), "WebDAV · %s", s->sync_cfg.webdav_url);
+        break;
+    case SYNC_BACKEND_NFS:
+        snprintf(endpoint, sizeof(endpoint), "NFS · %s", s->sync_cfg.nfs_mount_path);
+        break;
+    default:
+        snprintf(endpoint, sizeof(endpoint), "单机模式");
+        break;
+    }
 
-    /* 0. Global Navigation Bar */
-    render_global_navbar(ui, s);
-
-    /* 1. Page Header */
-    cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
-            cui_box(ui, .width = CUI_PX(42), .height = CUI_PX(42), .radius = 10,
-                    .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_ACCENT), 0.15f),
-                    .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
-                cui_icon(ui, CUI_ICON_GLOBE, 22, CUI_COLOR_ACCENT);
+    bool offline = s->sync_cfg.type == SYNC_BACKEND_NONE;
+    bool busy = s->sync_is_busy || s->op_progress.active;
+    cui_row(ui, .width = CUI_FILL, .gap = 12, .align = CUI_ALIGN_CENTER) {
+        render_workspace_heading(ui, ICON_SYNC, "同步管理", endpoint);
+        if (offline) {
+            if (cui_button(ui, "配置远端", .variant = CUI_BUTTON_GHOST, .icon = CUI_ICON_SETTINGS)) {
+                s->current_page = PAGE_SETTINGS;
+                s->settings_active_tab = SETTINGS_TAB_REMOTE_SYNC;
             }
-            cui_column(ui, .gap = 3) {
-                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                    cui_heading(ui, "同步管理", 3);
-                    cui_badge(ui, sync_backend_display_name(s->sync_cfg.type),
-                              .tone = (s->sync_cfg.type != SYNC_BACKEND_NONE) ? CUI_TONE_ACCENT : CUI_TONE_NEUTRAL,
-                              .size = CUI_SIZE_SM);
-                }
-                if (s->sync_cfg.type == SYNC_BACKEND_GIT) {
-                    char sub[256];
-                    snprintf(sub, sizeof(sub), "Git 远端: %s (%s 分支)",
-                             s->sync_cfg.git_repo_url[0] ? s->sync_cfg.git_repo_url : "未配置",
-                             s->sync_cfg.git_branch[0] ? s->sync_cfg.git_branch : "main");
-                    cui_text(ui, sub, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                } else if (s->sync_cfg.type == SYNC_BACKEND_WEBDAV) {
-                    char sub[256];
-                    snprintf(sub, sizeof(sub), "WebDAV 远端: %s", s->sync_cfg.webdav_url);
-                    cui_text(ui, sub, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                } else if (s->sync_cfg.type == SYNC_BACKEND_NFS) {
-                    char sub[256];
-                    snprintf(sub, sizeof(sub), "NFS 共享路径: %s", s->sync_cfg.nfs_mount_path);
-                    cui_text(ui, sub, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+        } else if (cui_button(ui, "检查远端", .variant = CUI_BUTTON_GHOST,
+                              .icon = CUI_ICON_REFRESH_CW, .disabled = busy)) {
+            start_sync_check_thread(s);
+        }
+    }
+
+    if (offline || !s->sync_drift_loaded) {
+        cui_card(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 24) {
+            cui_column(ui, .width = CUI_FILL, .height = CUI_FILL,
+                       .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
+                if (offline) {
+                    cui_empty_state(ui, "当前为单机模式", .icon = ICON_SYNC,
+                                    .description = "配置远端后可在多台设备间共享主仓技能。");
                 } else {
-                    cui_text(ui, "单机离线模式，可在设置中启用多端同步后端", .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                    cui_empty_state(ui, "等待远端检查", .icon = CUI_ICON_CLOUD,
+                                    .description = "检查后可查看哪些技能需要拉取、推送或处理冲突。");
                 }
             }
         }
+        return;
+    }
 
+    int to_pull = s->sync_drift.remote_ahead_count + s->sync_drift.remote_only_count;
+    int to_push = s->sync_drift.local_ahead_count + s->sync_drift.local_only_count;
+    int conflicts = s->sync_drift.conflict_count;
+    char pull_count[24], push_count[24], conflict_count[24], matched_count[24];
+    snprintf(pull_count, sizeof(pull_count), "%d", to_pull);
+    snprintf(push_count, sizeof(push_count), "%d", to_push);
+    snprintf(conflict_count, sizeof(conflict_count), "%d", conflicts);
+    snprintf(matched_count, sizeof(matched_count), "%d", s->sync_drift.in_sync_count);
+
+    cui_row(ui, .width = CUI_FILL, .gap = 12) {
+        cui_metric(ui, "待拉取", pull_count, .icon = CUI_ICON_DOWNLOAD, .width = CUI_GROW(1));
+        cui_metric(ui, "待推送", push_count, .icon = CUI_ICON_UPLOAD, .width = CUI_GROW(1));
+        cui_metric(ui, "版本冲突", conflict_count, .icon = CUI_ICON_TRIANGLE_ALERT, .width = CUI_GROW(1));
+        cui_metric(ui, "已一致", matched_count, .icon = CUI_ICON_CIRCLE_CHECK, .width = CUI_GROW(1));
+    }
+
+    cui_row(ui, .width = CUI_FILL, .gap = 8, .align = CUI_ALIGN_CENTER) {
+        if (s->sync_drift.last_checked_at[0]) {
+            char checked[72];
+            snprintf(checked, sizeof(checked), "上次检查  %s", s->sync_drift.last_checked_at);
+            cui_text(ui, checked, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+        }
         cui_spacer(ui);
-
-        cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-            if (s->sync_is_busy) {
-                cui_spinner(ui, 16, .style = CUI_SPINNER_COMET, .color = CUI_COLOR_ACCENT);
-                cui_text(ui, "正在与远端通信...", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-            } else if (s->sync_drift.last_checked_at[0]) {
-                cui_icon(ui, CUI_ICON_CLOCK, 13, CUI_COLOR_TEXT_MUTED);
-                cui_text(ui, s->sync_drift.last_checked_at, .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-            }
+        if (cui_button(ui, "批量拉取", .variant = CUI_BUTTON_GHOST, .icon = CUI_ICON_DOWNLOAD,
+                       .disabled = busy || to_pull == 0)) {
+            start_sync_pull_all_thread(s);
+        }
+        if (cui_button(ui, "批量推送", .variant = CUI_BUTTON_GHOST, .icon = CUI_ICON_UPLOAD,
+                       .disabled = busy || to_push == 0)) {
+            start_sync_push_all_thread(s);
         }
     }
 
-    /* 2. Metric Overview Cards */
-    cui_row(ui, .width = CUI_FILL, .gap = 14) {
-        char pull_cnt[32], push_cnt[32], sync_cnt[32];
-        int to_pull = s->sync_drift.remote_ahead_count + s->sync_drift.remote_only_count;
-        int to_push = s->sync_drift.local_ahead_count + s->sync_drift.local_only_count;
-
-        snprintf(pull_cnt, sizeof(pull_cnt), "%d 个", to_pull);
-        snprintf(push_cnt, sizeof(push_cnt), "%d 个", to_push);
-        snprintf(sync_cnt, sizeof(sync_cnt), "%d 个", s->sync_drift.in_sync_count);
-
-        cui_card(ui, .width = CUI_GROW(1), .pad = 14) {
-            cui_metric(ui, "同步后端", sync_backend_name(s->sync_cfg.type), .icon = CUI_ICON_GLOBE);
+    if (s->sync_drift.count == 0 || s->sync_drift.in_sync_count == s->sync_drift.count) {
+        cui_card(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 24) {
+            cui_column(ui, .width = CUI_FILL, .height = CUI_FILL,
+                       .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
+                cui_empty_state(ui, "两端技能库已一致", .icon = CUI_ICON_CIRCLE_CHECK);
+            }
         }
-        cui_card(ui, .width = CUI_GROW(1), .pad = 14) {
-            cui_metric(ui, "待拉取", pull_cnt, .icon = CUI_ICON_DOWNLOAD);
-        }
-        cui_card(ui, .width = CUI_GROW(1), .pad = 14) {
-            cui_metric(ui, "待推送", push_cnt, .icon = CUI_ICON_UPLOAD);
-        }
-        cui_card(ui, .width = CUI_GROW(1), .pad = 14) {
-            cui_metric(ui, "完全一致", sync_cnt, .icon = CUI_ICON_CHECK);
-        }
+        return;
     }
 
-    /* 3. Action Toolbar */
-    cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-            if (cui_button(ui, "检查", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_REFRESH_CW)) {
-                start_sync_check_thread(s);
-            }
-
-            int to_pull = s->sync_drift.remote_ahead_count + s->sync_drift.remote_only_count;
-            if (cui_button(ui, "拉取",
-                           .variant = (to_pull > 0) ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
-                           .icon = CUI_ICON_DOWNLOAD)) {
-                start_sync_pull_all_thread(s);
-            }
-
-            int to_push = s->sync_drift.local_ahead_count + s->sync_drift.local_only_count;
-            if (cui_button(ui, "推送",
-                           .variant = (to_push > 0) ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
-                           .icon = CUI_ICON_UPLOAD)) {
-                start_sync_push_all_thread(s);
-            }
-        }
-    }
-
-    /* 4. Main Content Area / Drift Table */
-    cui_box(ui, .width = CUI_FILL, .height = CUI_FILL, .radius = 8,
-            .bg = cui_color_of(ui, CUI_COLOR_SURFACE),
-            .pad = 16, .gap = 12,
-            .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER),
-            .scroll_y = true) {
-
-        if (s->sync_cfg.type == SYNC_BACKEND_NONE) {
-            cui_column(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER, .pad = 40, .gap = 14) {
-                cui_icon(ui, CUI_ICON_GLOBE, 48, CUI_COLOR_TEXT_MUTED);
-                cui_heading(ui, "当前处于单机模式", 4);
-                cui_text(ui, "若需在多台主机间协同共享技能，可在【设置】中配置并启用远端同步服务。",
-                         .size = 13, .color = CUI_COLOR_TEXT_SECONDARY);
-            }
-        } else if (!s->sync_drift_loaded) {
-            cui_column(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER, .pad = 40, .gap = 14) {
-                cui_icon(ui, CUI_ICON_REFRESH_CW, 40, CUI_COLOR_ACCENT);
-                cui_heading(ui, "尚未检测远端状态", 4);
-                cui_text(ui, "点击下方按钮检查远端与本地版本差异。",
-                         .size = 13, .color = CUI_COLOR_TEXT_SECONDARY);
-                if (cui_button(ui, "检查", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_REFRESH_CW)) {
-                    start_sync_check_thread(s);
-                }
-            }
-        } else if (s->sync_drift.count == 0) {
-            cui_column(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER, .pad = 40, .gap = 12) {
-                cui_icon(ui, CUI_ICON_CHECK, 40, CUI_COLOR_SUCCESS);
-                cui_heading(ui, "两端技能库已完全同步", 4);
-                cui_text(ui, "本地主仓与远端共享库没有任何分化或缺失。",
-                         .size = 13, .color = CUI_COLOR_TEXT_SECONDARY);
-            }
-        } else {
-            /* Drift Table */
-            cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER, .pad = 4) {
-                cui_text(ui, "技能差异清单", .size = 13, .color = CUI_COLOR_TEXT_MUTED);
-                cui_spacer(ui);
-                char count_buf[64];
-                snprintf(count_buf, sizeof(count_buf), "共对比 %d 个技能项", s->sync_drift.count);
-                cui_text(ui, count_buf, .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-            }
-
+    cui_scroll(ui, .id = "sync_result_list", .width = CUI_FILL, .height = CUI_FILL, .gap = 6) {
+        for (int group = 0; group < 3; group++) {
             for (int i = 0; i < s->sync_drift.count; i++) {
-                sync_drift_item_t *item = &s->sync_drift.items[i];
-
-                cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 12,
-                        .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
-                        .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-                    cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                        /* Skill Name & Fingerprints */
-                        cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER, .width = CUI_PX(280)) {
-                            cui_icon(ui, CUI_ICON_FOLDER, 16, CUI_COLOR_ACCENT);
-                            cui_column(ui, .gap = 2) {
-                                cui_text(ui, item->skill_name, .size = 14, .color = CUI_COLOR_FOREGROUND);
-                                char sub[64];
-                                snprintf(sub, sizeof(sub), "指纹: %s",
-                                         item->local_hash[0] ? item->local_hash : "(本地缺失)");
-                                cui_text(ui, sub, .size = 11, .color = CUI_COLOR_TEXT_MUTED);
-                            }
-                        }
-
-                        /* Status Badge */
-                        cui_box(ui, .width = CUI_PX(180), .align = CUI_ALIGN_START) {
-                            if (item->status == SYNC_DRIFT_IN_SYNC) {
-                                cui_badge(ui, "两端一致", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                            } else if (item->status == SYNC_DRIFT_REMOTE_AHEAD) {
-                                cui_badge(ui, "待拉取", .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
-                            } else if (item->status == SYNC_DRIFT_LOCAL_AHEAD) {
-                                cui_badge(ui, "待推送", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
-                            } else if (item->status == SYNC_DRIFT_REMOTE_ONLY) {
-                                cui_badge(ui, "远端独有", .tone = CUI_TONE_VIOLET, .size = CUI_SIZE_SM);
-                            } else if (item->status == SYNC_DRIFT_LOCAL_ONLY) {
-                                cui_badge(ui, "本地独有", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
-                            } else {
-                                cui_badge(ui, "版本冲突", .tone = CUI_TONE_DANGER, .size = CUI_SIZE_SM);
-                            }
-                        }
-
-                        /* Description text */
-                        cui_text(ui, item->status_desc, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-
-                        cui_spacer(ui);
-
-                        /* Action Buttons */
-                        cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                            if (item->status == SYNC_DRIFT_REMOTE_AHEAD ||
-                                item->status == SYNC_DRIFT_REMOTE_ONLY) {
-                                if (cui_button(ui, "拉取", .variant = CUI_BUTTON_PRIMARY, .size = CUI_SIZE_SM, .icon = CUI_ICON_DOWNLOAD)) {
-                                    start_sync_pull_skill_thread(s, item->skill_name);
-                                }
-                            } else if (item->status == SYNC_DRIFT_LOCAL_AHEAD ||
-                                       item->status == SYNC_DRIFT_LOCAL_ONLY) {
-                                if (cui_button(ui, "推送", .variant = CUI_BUTTON_PRIMARY, .size = CUI_SIZE_SM, .icon = CUI_ICON_UPLOAD)) {
-                                    start_sync_push_skill_thread(s, item->skill_name);
-                                }
-                            } else if (item->status == SYNC_DRIFT_IN_SYNC) {
-                                cui_badge(ui, "两端一致", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                            }
-                        }
-                    }
-                }
+                const sync_drift_item_t *item = &s->sync_drift.items[i];
+                int priority = item->status == SYNC_DRIFT_CONFLICT ? 0 :
+                               item->status == SYNC_DRIFT_IN_SYNC ? 2 : 1;
+                if (group != priority) continue;
+                cui_push_id_int(ui, i);
+                render_sync_result(ui, s, item, busy);
+                cui_pop_id(ui);
             }
         }
     }

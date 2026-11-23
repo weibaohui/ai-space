@@ -106,6 +106,7 @@ void open_tool_skills_page(app_state_t *s, const char *tool_name, const char *to
     scan_tool_skills(tool_path, &s->skill_items, &s->skill_count);
 
     s->skill_search_kw[0] = '\0';
+    s->tool_detail_tab = 0;
     s->skill_view_mode = 0;
 
     if (s->skill_count > 0) {
@@ -128,13 +129,14 @@ static void on_tool_skill_file_select(file_node_t *node, void *user_data) {
     app_state_t *s = (app_state_t *)user_data;
     if (s && node && !node->is_dir) {
         load_skill_file(s, node->abs_path, node->name);
+        s->tool_detail_tab = 0;
     }
 }
 
 void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
     /* 1. Navigation Top Bar */
     cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        if (cui_button(ui, "返回", .variant = CUI_BUTTON_SECONDARY,
+        if (cui_button(ui, "返回", .variant = CUI_BUTTON_GHOST,
                        .icon = CUI_ICON_CHEVRON_LEFT)) {
             s->current_page = (s->prev_page == PAGE_HUB_MATRIX) ? PAGE_HUB_MATRIX : PAGE_TOOL_LIST;
         }
@@ -144,10 +146,10 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
         cui_box(ui, .width = CUI_PX(36), .height = CUI_PX(36), .radius = 8,
                 .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_ACCENT), 0.15f),
                 .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
-            cui_icon(ui, CUI_ICON_FOLDER_OPEN, 18, CUI_COLOR_ACCENT);
+            cui_icon(ui, ICON_TOOLS, 18, CUI_COLOR_ACCENT);
         }
 
-        cui_column(ui, .gap = 2) {
+        cui_column(ui, .width = CUI_FILL, .gap = 2) {
             cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                 char title_buf[256];
                 snprintf(title_buf, sizeof(title_buf), "工具【%s】技能列表", s->active_tool_name);
@@ -158,13 +160,15 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
             char path_sub[600];
             snprintf(path_sub, sizeof(path_sub), "路径: %s · 发现 %d 个 Skill 目录",
                      s->active_tool_path, s->skill_count);
-            cui_text(ui, path_sub, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+            cui_text(ui, path_sub, .width = CUI_FILL, .nowrap = true,
+                     .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
         }
 
-        cui_spacer(ui);
+        cui_gap(ui, 8);
 
         if (s->active_skill_name[0] != '\0') {
-            if (cui_button(ui, "卸载", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_TRASH_2)) {
+            if (cui_button(ui, "卸载", .variant = CUI_BUTTON_GHOST,
+                           .icon = CUI_ICON_TRASH_2, .color = CUI_COLOR_DANGER)) {
                 s->show_uninstall_tool_modal = true;
                 strncpy(s->uninstall_tool_skill_name, s->active_skill_name, sizeof(s->uninstall_tool_skill_name) - 1);
                 s->uninstall_tool_skill_name[sizeof(s->uninstall_tool_skill_name) - 1] = '\0';
@@ -172,11 +176,23 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
         }
     }
 
-    /* 2. Main Content Body: Left Skills List (250px) | Middle File Tree (280px) | Right Content Viewer (Fill) */
+    float viewport_width = cui_viewport_size(ui).x;
+    bool compact = viewport_width < COMPACT_WORKSPACE_WIDTH;
+    float skill_list_width = 272 + (viewport_width - COMPACT_WORKSPACE_WIDTH) * 0.20f;
+    if (skill_list_width > 336) skill_list_width = 336;
+    if (compact) {
+        static const char *tabs[] = { "文件预览", "技能目录", "文件树" };
+        cui_tabs(ui, "tool_detail_tabs", tabs, 3, &s->tool_detail_tab);
+    }
+    int tab = s->tool_detail_tab;
+
+    /* File preview takes the full workspace when the navigation panes are hidden. */
     cui_row(ui, .width = CUI_FILL, .height = CUI_FILL, .gap = 14) {
 
+        if (!compact || tab == 1) {
             /* Left Pane: Skills List */
-            cui_card(ui, .width = CUI_PX(250), .height = CUI_FILL, .pad = 12, .gap = 10) {
+            cui_card(ui, .width = compact ? CUI_FILL : CUI_PX(skill_list_width),
+                     .height = CUI_FILL, .pad = 12, .gap = 10) {
                 cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                     cui_label(ui, "技能目录");
                     cui_spacer(ui);
@@ -200,43 +216,46 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
 
                             cui_push_id_int(ui, i);
                             bool is_sel = (strcmp(s->active_skill_name, sk->name) == 0);
-                            char fl_info[32];
-                            snprintf(fl_info, sizeof(fl_info), "%d files", sk->file_count);
-
-                            if (cui_list_item(ui, sk->name, .icon = CUI_ICON_BOX,
-                                              .trailing = fl_info, .selected = is_sel)) {
+                            bool clicked = cui_list_item(ui, sk->name, .icon = ICON_SKILLS, .selected = is_sel);
+                            char tooltip[sizeof sk->name + 40];
+                            snprintf(tooltip, sizeof(tooltip), "%s\n%d 个文件", sk->name, sk->file_count);
+                            cui_tooltip(ui, tooltip);
+                            if (clicked) {
                                 select_active_skill(s, sk->name, sk->path);
+                                s->tool_detail_tab = 0;
                             }
                             cui_pop_id(ui);
                         }
                     }
                 }
             }
+        }
 
+        if (!compact || tab == 2) {
             /* Middle Pane: 技能目录结构树 (复用统一组件) */
             skill_tree_view_opts_t tree_opts = {
-                .title = "目录结构树",
-                .badge_label = s->active_skill_name[0] ? s->active_skill_name : NULL,
-                .badge_tone = CUI_TONE_ACCENT,
+                .title = "文件树",
                 .selected_path = s->selected_file_path,
                 .match_by_rel_path = false,
                 .show_diff_badges = false,
                 .show_summary_badges = false,
-                .width = 280,
+                .width = compact ? CUI_FILL : CUI_PX(220),
             };
             render_skill_file_tree_component(ui, s->skill_file_tree, &tree_opts, on_tool_skill_file_select, s);
+        }
 
+        if (!compact || tab == 0) {
             /* Right Pane: 右具体内容 (File Content Viewer) */
             cui_card(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 14, .gap = 10) {
                 /* Top file metadata bar */
+                bool is_md = (strstr(s->selected_file_name, ".md") != NULL ||
+                              strstr(s->selected_file_name, ".markdown") != NULL);
                 cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                     cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                         cui_icon(ui, CUI_ICON_FILE_TEXT, 18, CUI_COLOR_ACCENT);
-                        cui_label(ui, s->selected_file_name[0] ? s->selected_file_name : "请在左树选择文件");
+                        cui_label(ui, s->selected_file_name[0] ? s->selected_file_name : "选择文件");
 
                         /* File kind badge */
-                        bool is_md = (strstr(s->selected_file_name, ".md") != NULL ||
-                                      strstr(s->selected_file_name, ".markdown") != NULL);
                         bool is_script = (strstr(s->selected_file_name, ".sh") != NULL ||
                                           strstr(s->selected_file_name, ".bash") != NULL ||
                                           strstr(s->selected_file_name, ".zsh") != NULL ||
@@ -258,29 +277,22 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
                             cui_textf(ui, "%s · %d 行", sz_txt, s->selected_file_lines);
                         }
                     }
+                }
 
-                    cui_spacer(ui);
-
-                    /* Toggle preview vs raw code if Markdown */
-                    bool is_md = (strstr(s->selected_file_name, ".md") != NULL ||
-                                  strstr(s->selected_file_name, ".markdown") != NULL);
-                    if (is_md) {
-                        static const char *doc_modes[] = { "富文本预览", "源码" };
-                        cui_tabs(ui, "doc_render_mode_tabs", doc_modes, 2, &s->doc_render_mode);
-                    }
+                if (is_md) {
+                    static const char *doc_modes[] = { "预览", "源码" };
+                    cui_tabs(ui, "doc_render_mode_tabs", doc_modes, 2, &s->doc_render_mode);
                 }
 
                 if (s->selected_file_path[0] != '\0') {
-                    cui_text(ui, s->selected_file_path, .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                    cui_text(ui, s->selected_file_path, .width = CUI_FILL, .nowrap = true,
+                             .size = 11, .color = CUI_COLOR_TEXT_MUTED);
                 }
 
                 cui_separator(ui);
 
                 /* Viewer body */
                 if (s->selected_file_content && s->selected_file_content[0] != '\0') {
-                    bool is_md = (strstr(s->selected_file_name, ".md") != NULL ||
-                                  strstr(s->selected_file_name, ".markdown") != NULL);
-
                     if (is_md && s->doc_render_mode == 0) {
                         cui_scroll(ui, .id = "md_preview_scroll", .width = CUI_FILL, .height = CUI_FILL) {
                             cui_markdown(ui, "md_preview", s->selected_file_content);
@@ -305,9 +317,10 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
                                .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
                         cui_icon(ui, CUI_ICON_FILE_TEXT, 36, CUI_COLOR_TEXT_MUTED);
                         cui_gap(ui, 8);
-                        cui_text(ui, "请在左侧或中间树形中选择文件查看详情", .color = CUI_COLOR_TEXT_MUTED);
+                        cui_text(ui, "从文件树选择要预览的文件", .color = CUI_COLOR_TEXT_MUTED);
                     }
                 }
             }
         }
     }
+}

@@ -429,7 +429,8 @@ void open_hub_diff_view(app_state_t *s, const char *skill_name) {
     }
     if (chosen_idx == -1 && entry->tool_count > 0) chosen_idx = 0;
 
-    s->hub_subview = 1;
+    s->hub_subview = HUB_SUBVIEW_DIFF;
+    s->diff_detail_tab = 0;
     build_skill_diff_manifest(s, skill_name, chosen_idx);
     load_hub_diff(s, skill_name, chosen_idx, s->diff_file_rel);
 }
@@ -852,34 +853,85 @@ void start_broadcast_thread(app_state_t *s, const char *skill_name, int tool_idx
     pthread_detach(s->op_progress.thread);
 }
 
+void apply_workspace_theme(cui_ctx *ui) {
+    static const struct {
+        cui_token token;
+        unsigned light, dark;
+    } palette[] = {
+        { CUI_TOKEN_BACKGROUND,      0xeff3f9, 0x0d1626 },
+        { CUI_TOKEN_SURFACE,         0xffffff, 0x152238 },
+        { CUI_TOKEN_SURFACE_RAISED,  0xf8faff, 0x1b2c46 },
+        { CUI_TOKEN_SURFACE_MUTED,   0xe8eff9, 0x111e31 },
+        { CUI_TOKEN_FOREGROUND,      0x162841, 0xf2f6fd },
+        { CUI_TOKEN_TEXT_SECONDARY,  0x3f5675, 0xb6c6de },
+        { CUI_TOKEN_TEXT_MUTED,      0x566e8c, 0x8fa6c5 },
+        { CUI_TOKEN_BORDER,          0xd3deee, 0x2d415f },
+        { CUI_TOKEN_BORDER_SUBTLE,   0xe3ebf5, 0x243753 },
+        { CUI_TOKEN_BORDER_STRONG,   0x93a9c5, 0x617998 },
+        { CUI_TOKEN_CONTROL_TRACK,   0xdbe6f5, 0x3b5374 },
+        { CUI_TOKEN_CONTROL_TRACK_HOVER, 0xcdddf2, 0x4d678a },
+    };
+    cui_theme *theme = cui_theme_get(ui);
+    bool dark = cui_get_theme_mode(ui) == CUI_THEME_DARK;
+    for (size_t i = 0; i < sizeof(palette) / sizeof(palette[0]); i++) {
+        theme->colors[palette[i].token] = CUI_RGB(dark ? palette[i].dark : palette[i].light);
+    }
+    cui_color accent = theme->colors[CUI_TOKEN_ACCENT];
+    theme->colors[CUI_TOKEN_HOVER] = cui_alpha(accent, dark ? 0.11f : 0.07f);
+    theme->colors[CUI_TOKEN_ACTIVE] = cui_alpha(accent, dark ? 0.24f : 0.15f);
+    theme->heading[2] = 24;
+}
+
+void render_workspace_heading(cui_ctx *ui, const char *icon, const char *title,
+                              const char *subtitle) {
+    cui_color accent = cui_color_of(ui, CUI_COLOR_ACCENT);
+    cui_color surface = cui_color_of(ui, CUI_COLOR_SURFACE);
+    bool dark = cui_get_theme_mode(ui) == CUI_THEME_DARK;
+    cui_row(ui, .width = CUI_FILL, .gap = 12, .align = CUI_ALIGN_CENTER) {
+        cui_box(ui, .width = CUI_PX(42), .height = CUI_PX(42), .radius = 12,
+                .bg = cui_mix(surface, accent, dark ? 0.23f : 0.11f),
+                .border = 1, .border_color = cui_mix(surface, accent, dark ? 0.42f : 0.23f),
+                .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
+            cui_icon(ui, icon, 21, CUI_COLOR_ACCENT_STRONG);
+        }
+        cui_column(ui, .width = CUI_FILL, .gap = 2) {
+            cui_heading(ui, title, 3);
+            if (subtitle && subtitle[0]) {
+                cui_text(ui, subtitle, .width = CUI_FILL, .nowrap = true,
+                         .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                cui_tooltip(ui, subtitle);
+            }
+        }
+    }
+}
+
 void render_app_sidebar(cui_ctx *ui, app_state_t *s) {
     cui_column(ui, .width = CUI_PX(220), .height = CUI_FILL,
                .bg = CUI_COLOR_SURFACE_MUTED, .pad = 12, .gap = 2) {
 
         /* Navigation items */
         cui_scroll(ui, .id = "sidebar_nav", .height = CUI_FILL, .gap = 2) {
-            cui_nav_section(ui, "工作空间");
-
             bool is_dash = (s->current_page == PAGE_DASHBOARD);
             if (cui_nav_item(ui, "首页", .icon = CUI_ICON_LAYOUT_DASHBOARD, .selected = is_dash, .group = "pages")) {
                 s->current_page = PAGE_DASHBOARD;
             }
 
             bool is_tools = (s->current_page == PAGE_TOOL_LIST || s->current_page == PAGE_TOOL_SKILLS);
-            if (cui_nav_item(ui, "工具列表", .icon = CUI_ICON_FOLDER, .selected = is_tools, .group = "pages")) {
+            if (cui_nav_item(ui, "工具列表", .icon = ICON_TOOLS, .selected = is_tools, .group = "pages")) {
                 s->current_page = PAGE_TOOL_LIST;
             }
 
             bool is_skills = (s->current_page == PAGE_ALL_SKILLS);
-            if (cui_nav_item(ui, "技能列表", .icon = CUI_ICON_PACKAGE, .selected = is_skills, .group = "pages")) {
+            if (cui_nav_item(ui, "技能列表", .icon = ICON_SKILLS, .selected = is_skills, .group = "pages")) {
                 s->current_page = PAGE_ALL_SKILLS;
+                s->hub_subview = HUB_SUBVIEW_SCAN_MATRIX;
                 if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning) {
                     start_hub_scan_thread(s);
                 }
             }
 
             bool is_hub = (s->current_page == PAGE_HUB_MATRIX);
-            if (cui_nav_item(ui, "主仓管理", .icon = CUI_ICON_ARCHIVE, .selected = is_hub, .group = "pages")) {
+            if (cui_nav_item(ui, "主仓管理", .icon = ICON_MASTER_HUB, .selected = is_hub, .group = "pages")) {
                 s->current_page = PAGE_HUB_MATRIX;
                 s->hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
                 if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning) {
@@ -888,9 +940,9 @@ void render_app_sidebar(cui_ctx *ui, app_state_t *s) {
             }
 
             bool is_sync = (s->current_page == PAGE_SYNC_MANAGER);
-            if (cui_nav_item(ui, "同步管理", .icon = CUI_ICON_GLOBE, .selected = is_sync, .group = "pages")) {
+            if (cui_nav_item(ui, "同步管理", .icon = ICON_SYNC, .selected = is_sync, .group = "pages")) {
                 s->current_page = PAGE_SYNC_MANAGER;
-                if (!s->sync_drift_loaded && !s->sync_is_busy) {
+                if (s->sync_cfg.type != SYNC_BACKEND_NONE && !s->sync_drift_loaded && !s->sync_is_busy) {
                     start_sync_check_thread(s);
                 }
             }
@@ -908,111 +960,108 @@ void render_global_nav_bar(cui_ctx *ui, app_state_t *s) {
     (void)s;
 }
 
+static void render_about_path(cui_ctx *ui, const char *label, const char *path) {
+    cui_push_id(ui, label);
+    cui_row(ui, .width = CUI_FILL, .gap = 8, .align = CUI_ALIGN_CENTER) {
+        cui_column(ui, .width = CUI_FILL, .gap = 3) {
+            cui_text(ui, label, .size = 12, .font = CUI_FONT_MEDIUM);
+            cui_text(ui, path[0] ? path : "—", .width = CUI_FILL, .nowrap = true,
+                     .font = CUI_FONT_MONO, .color = CUI_COLOR_TEXT_SECONDARY, .size = 12);
+        }
+        if (cui_icon_button(ui, CUI_ICON_COPY, .size = CUI_SIZE_SM, .tooltip = "复制路径", .disabled = !path[0])) {
+            cui_set_clipboard_text(ui, path);
+            cui_toast(ui, "路径已复制", .tone = CUI_TONE_SUCCESS);
+        }
+    }
+    cui_pop_id(ui);
+}
+
+static void render_about_value(cui_ctx *ui, const char *label, const char *value) {
+    cui_row(ui, .width = CUI_FILL, .gap = 8, .align = CUI_ALIGN_CENTER) {
+        cui_text(ui, label, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+        cui_text(ui, value, .width = CUI_FILL, .nowrap = true, .align = CUI_TEXT_END,
+                 .size = 12, .font = CUI_FONT_MEDIUM);
+    }
+}
+
 void render_about_page(cui_ctx *ui, app_state_t *s) {
-    if (!ui || !s) return;
+    cui_color accent = cui_color_of(ui, CUI_COLOR_ACCENT);
+    cui_color surface = cui_color_of(ui, CUI_COLOR_SURFACE);
+    bool dark = cui_get_theme_mode(ui) == CUI_THEME_DARK;
+    char tools[24], skills[24];
+    snprintf(tools, sizeof(tools), "%d 个", s->stats.total_tools);
+    snprintf(skills, sizeof(skills), "%d 项", s->hub_matrix.hub_managed_skills);
 
-    /* 1. Header */
-    cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
-            cui_box(ui, .width = CUI_PX(42), .height = CUI_PX(42), .radius = 10,
-                    .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_ACCENT), 0.15f),
-                    .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
-                cui_icon(ui, CUI_ICON_INFO, 22, CUI_COLOR_ACCENT);
+    cui_column(ui, .width = CUI_FILL, .gap = 14) {
+        cui_box(ui, .width = CUI_FILL, .radius = 16, .pad = 22,
+                .bg = cui_mix(surface, accent, dark ? 0.17f : 0.085f),
+                .border = 1, .border_color = cui_mix(cui_color_of(ui, CUI_COLOR_BORDER), accent, 0.48f)) {
+            cui_row(ui, .width = CUI_FILL, .gap = 16, .align = CUI_ALIGN_CENTER) {
+                cui_box(ui, .width = CUI_PX(58), .height = CUI_PX(58), .radius = 16,
+                        .bg = accent, .dir = CUI_STACK, .align = CUI_ALIGN_CENTER,
+                        .justify = CUI_JUSTIFY_CENTER) {
+                    cui_icon(ui, CUI_ICON_BOX, 31, CUI_COLOR_ACCENT_FOREGROUND);
+                }
+                cui_column(ui, .width = CUI_FILL, .gap = 4) {
+                    cui_row(ui, .width = CUI_FILL, .gap = 10, .align = CUI_ALIGN_CENTER) {
+                        cui_heading(ui, "AI-Space", 2);
+                        cui_badge(ui, g_ai_space_version, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
+                    }
+                    cui_text(ui, "在本机管理各 AI 工具的技能，并通过主仓统一分发和同步。",
+                             .width = CUI_FILL, .size = 13, .color = CUI_COLOR_TEXT_SECONDARY);
+                }
             }
-            cui_column(ui, .gap = 3) {
+        }
+
+        cui_row(ui, .width = CUI_FILL, .gap = 14, .align = CUI_ALIGN_STRETCH) {
+            cui_card(ui, .width = CUI_GROW(6), .pad = 16, .gap = 10) {
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                    cui_heading(ui, "关于系统", 3);
-                    cui_badge(ui, g_ai_space_version, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
+                    cui_icon(ui, CUI_ICON_DATABASE, 17, CUI_COLOR_ACCENT_STRONG);
+                    cui_heading(ui, "本机数据", 4);
                 }
-                cui_text(ui, "本地优先的多智能体技能与主仓集中同步管理工作台",
-                         .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                render_about_path(ui, "主仓目录", s->setting_hub_dir);
+                cui_separator(ui);
+                render_about_path(ui, "快照备份目录", s->setting_backup_dir);
+                cui_separator(ui);
+                render_about_path(ui, "数据库", s->db_path);
             }
-        }
-    }
 
-    /* 2. Overview Metrics Cards */
-    cui_row(ui, .width = CUI_FILL, .gap = 14) {
-        cui_card(ui, .width = CUI_GROW(1), .pad = 16, .gap = 6) {
-            cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                cui_icon(ui, CUI_ICON_FOLDER, 16, CUI_COLOR_ACCENT);
-                cui_text(ui, "已识别工具", .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-            }
-            cui_textf(ui, "%d 个", s->record_count);
-        }
-        cui_card(ui, .width = CUI_GROW(1), .pad = 16, .gap = 6) {
-            cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                cui_icon(ui, CUI_ICON_PACKAGE, 16, CUI_COLOR_ACCENT);
-                cui_text(ui, "主仓入库技能", .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-            }
-            cui_textf(ui, "%d 项", s->hub_matrix.hub_managed_skills);
-        }
-        cui_card(ui, .width = CUI_GROW(1), .pad = 16, .gap = 6) {
-            cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                cui_icon(ui, CUI_ICON_GLOBE, 16, CUI_COLOR_ACCENT);
-                cui_text(ui, "远端同步后端", .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-            }
-            cui_text(ui, sync_backend_display_name(s->sync_cfg.type), .size = 15, .font = CUI_FONT_MEDIUM);
-        }
-    }
-
-    /* 3. Core Architecture & Design Principles Card */
-    cui_card(ui, .width = CUI_FILL, .pad = 18, .gap = 12) {
-        cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-            cui_icon(ui, CUI_ICON_SHIELD, 18, CUI_COLOR_ACCENT);
-            cui_heading(ui, "核心架构规范与设计原则", 4);
-        }
-
-        cui_column(ui, .gap = 10) {
-            cui_row(ui, .gap = 8, .align = CUI_ALIGN_START) {
-                cui_icon(ui, CUI_ICON_CHECK, 14, CUI_COLOR_ACCENT);
-                cui_column(ui, .gap = 2) {
-                    cui_text(ui, "物理原子复制", .font = CUI_FONT_MEDIUM, .size = 13);
-                    cui_text(ui, "杜绝软链接在跨运行时与容器挂载环境中的失效风险，确保本地环境零污染与绝对独立性。",
-                             .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+            cui_card(ui, .width = CUI_GROW(4), .pad = 16, .gap = 10) {
+                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                    cui_icon(ui, CUI_ICON_ACTIVITY, 17, CUI_COLOR_ACCENT_STRONG);
+                    cui_heading(ui, "运行信息", 4);
                 }
-            }
-            cui_row(ui, .gap = 8, .align = CUI_ALIGN_START) {
-                cui_icon(ui, CUI_ICON_CHECK, 14, CUI_COLOR_ACCENT);
-                cui_column(ui, .gap = 2) {
-                    cui_text(ui, "强一致性与快照回退", .font = CUI_FONT_MEDIUM, .size = 13);
-                    cui_text(ui, "任何安装覆盖前均自动对目标目录生成时间戳快照并归档，杜绝因误操作导致的代码丢失。",
-                             .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                }
-            }
-            cui_row(ui, .gap = 8, .align = CUI_ALIGN_START) {
-                cui_icon(ui, CUI_ICON_CHECK, 14, CUI_COLOR_ACCENT);
-                cui_column(ui, .gap = 2) {
-                    cui_text(ui, "多后端跨主机协同", .font = CUI_FONT_MEDIUM, .size = 13);
-                    cui_text(ui, "支持 Git 远端版本库、WebDAV 云盘与局域网 NFS 共享，多工作站随时拉取与推送对齐最新技能。",
-                             .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                }
+                render_about_value(ui, "已识别工具", tools);
+                render_about_value(ui, "主仓技能", s->hub_matrix_loaded ? skills : "尚未扫描");
+                render_about_value(ui, "同步后端", sync_backend_display_name(s->sync_cfg.type));
+                cui_separator(ui);
+                render_about_value(ui, "核心组件", "C99 · SQLite · CUI");
             }
         }
-    }
 
-    /* 4. Runtime Environment and Paths Card */
-    cui_card(ui, .width = CUI_FILL, .pad = 18, .gap = 12) {
-        cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-            cui_icon(ui, CUI_ICON_TERMINAL, 18, CUI_COLOR_ACCENT);
-            cui_heading(ui, "运行环境与本地路径", 4);
-        }
+        static const struct {
+            const char *title;
+            const char *description;
+            const char *icon;
+        } principles[] = {
+            { "独立的本地副本", "分发时把技能复制到各工具的本地目录。", CUI_ICON_COPY },
+            { "覆盖前备份", "启用快照后，覆盖前会保存原有文件。", CUI_ICON_HISTORY },
+            { "跨设备同步", "通过 Git、WebDAV 或 NFS 共享主仓版本。", ICON_SYNC },
+        };
 
-        cui_column(ui, .gap = 8) {
-            cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                cui_text(ui, "主仓存储路径:", .size = 12, .color = CUI_COLOR_TEXT_MUTED, .width = CUI_PX(110));
-                cui_text(ui, s->setting_hub_dir, .font = CUI_FONT_MONO, .size = 12);
-            }
-            cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                cui_text(ui, "快照备份路径:", .size = 12, .color = CUI_COLOR_TEXT_MUTED, .width = CUI_PX(110));
-                cui_text(ui, s->setting_backup_dir, .font = CUI_FONT_MONO, .size = 12);
-            }
-            cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                cui_text(ui, "数据库位置:", .size = 12, .color = CUI_COLOR_TEXT_MUTED, .width = CUI_PX(110));
-                cui_text(ui, s->db_path, .font = CUI_FONT_MONO, .size = 12);
-            }
-            cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                cui_text(ui, "核心引擎:", .size = 12, .color = CUI_COLOR_TEXT_MUTED, .width = CUI_PX(110));
-                cui_text(ui, "C99 原生引擎 · SQLite3 持久化 · CUI 原生 GUI 渲染架构", .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+        cui_card(ui, .width = CUI_FILL, .pad = 16, .gap = 12) {
+            cui_heading(ui, "设计原则", 4);
+            cui_row(ui, .width = CUI_FILL, .gap = 14, .align = CUI_ALIGN_START) {
+                for (size_t i = 0; i < sizeof principles / sizeof principles[0]; ++i) {
+                    cui_column(ui, .width = CUI_GROW(1), .gap = 5) {
+                        cui_row(ui, .gap = 7, .align = CUI_ALIGN_CENTER) {
+                            cui_icon(ui, principles[i].icon, 15, CUI_COLOR_ACCENT_STRONG);
+                            cui_label(ui, principles[i].title);
+                        }
+                        cui_text(ui, principles[i].description, .width = CUI_FILL, .size = 12,
+                                 .color = CUI_COLOR_TEXT_SECONDARY);
+                    }
+                }
             }
         }
     }
@@ -1114,7 +1163,7 @@ void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
                     snprintf(sel_txt, sizeof(sel_txt), "已选 %d 个", sel_tools);
                     cui_badge(ui, sel_txt, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
 
-                    if (cui_button(ui, "批量安装", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_CHECK, .size = CUI_SIZE_SM)) {
+                    if (cui_button(ui, "批量安装", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_PLUS, .size = CUI_SIZE_SM)) {
                         for (int i = 0; i < s->hub_matrix.tool_count && i < 64; i++) {
                             if (s_dist_tool_sel[i]) {
                                 start_copy_install_thread(s, s->hub_matrix.tool_paths[i], s->distribute_skill_name, s->hub_matrix.tools[i], i);
@@ -1122,7 +1171,7 @@ void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
                             }
                         }
                     }
-                    if (cui_button(ui, "清空", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM)) {
+                    if (cui_button(ui, "取消选择", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM)) {
                         memset(s_dist_tool_sel, 0, sizeof(s_dist_tool_sel));
                     }
                 }
@@ -1181,13 +1230,13 @@ void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
                                 /* Action Buttons */
                                 cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                                     if (!exists) {
-                                        if (cui_button(ui, "安装", .variant = CUI_BUTTON_PRIMARY,
+                                        if (cui_button(ui, "安装", .variant = CUI_BUTTON_GHOST,
                                                        .icon = CUI_ICON_PLUS, .size = CUI_SIZE_SM)) {
                                             start_copy_install_thread(s, t_path, s->distribute_skill_name, t_name, t);
                                         }
                                     } else if (status == HUB_STATUS_LOCAL_MODIFIED || status == HUB_STATUS_OUTDATED) {
-                                        if (cui_button(ui, "覆盖", .variant = CUI_BUTTON_SECONDARY,
-                                                       .icon = CUI_ICON_REFRESH_CW, .size = CUI_SIZE_SM)) {
+                                        if (cui_button(ui, "覆盖", .variant = CUI_BUTTON_GHOST,
+                                                       .icon = ICON_OVERWRITE, .size = CUI_SIZE_SM)) {
                                             start_sync_master_to_tool_thread(s, t_path, s->distribute_skill_name, t_name, t);
                                         }
                                     } else {
@@ -1306,7 +1355,7 @@ void render_uninstall_all_modal(cui_ctx *ui, app_state_t *s) {
 
             /* 4. Action Buttons (<= 4 chars each) */
             cui_row(ui, .width = CUI_FILL, .justify = CUI_JUSTIFY_END, .gap = 8) {
-                if (cui_button(ui, "取消", .variant = CUI_BUTTON_OUTLINE)) {
+                if (cui_button(ui, "取消", .variant = CUI_BUTTON_SECONDARY)) {
                     s->show_uninstall_all_modal = false;
                 }
 
@@ -1377,7 +1426,7 @@ void render_uninstall_tool_modal(cui_ctx *ui, app_state_t *s) {
 
             /* 4. Action Buttons (<= 4 chars each) */
             cui_row(ui, .width = CUI_FILL, .justify = CUI_JUSTIFY_END, .gap = 8) {
-                if (cui_button(ui, "取消", .variant = CUI_BUTTON_OUTLINE)) {
+                if (cui_button(ui, "取消", .variant = CUI_BUTTON_SECONDARY)) {
                     s->show_uninstall_tool_modal = false;
                 }
 

@@ -6,6 +6,7 @@
 
 /* Render the Master Hub Skills List (subview 0) */
 void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s);
+void render_remove_master_modal(cui_ctx *ui, app_state_t *s);
 
 /* Render the Master Skill File Explorer (subview 3) */
 void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s);

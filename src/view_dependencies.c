@@ -228,243 +228,91 @@ void app_check_dependencies(app_state_t *s) {
 
 /* -------------------- Page UI Rendering -------------------- */
 
+static void render_dependency_row(cui_ctx *ui, const dep_item_t *item) {
+    bool required = item->severity == DEP_SEVERITY_REQUIRED;
+    const char *status = item->installed ? "就绪" : required ? "缺失" : "未安装";
+    cui_tone tone = item->installed ? CUI_TONE_SUCCESS : required ? CUI_TONE_DANGER : CUI_TONE_WARNING;
+    cui_color color = item->installed ? CUI_COLOR_SUCCESS : required ? CUI_COLOR_DANGER : CUI_COLOR_WARNING;
+
+    cui_card(ui, .width = CUI_FILL, .pad = 12) {
+        cui_row(ui, .width = CUI_FILL, .gap = 10, .align = CUI_ALIGN_CENTER) {
+            cui_icon(ui, item->installed ? CUI_ICON_CIRCLE_CHECK : CUI_ICON_TRIANGLE_ALERT, 17, color);
+            cui_column(ui, .width = CUI_FILL, .gap = 4) {
+                cui_row(ui, .width = CUI_FILL, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                    cui_text(ui, item->display_name, .font = CUI_FONT_MEDIUM);
+                    cui_badge(ui, required ? "必需" : "推荐", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
+                }
+                char detail[768];
+                if (item->installed && item->version[0]) {
+                    snprintf(detail, sizeof(detail), "%s · %s", item->path, item->version);
+                } else {
+                    snprintf(detail, sizeof(detail), "%s", item->installed ? item->path : item->install_hint);
+                }
+                cui_text(ui, detail, .width = CUI_FILL, .nowrap = true, .font = CUI_FONT_MONO,
+                         .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+
+                char tooltip[1280];
+                snprintf(tooltip, sizeof(tooltip), "%s\n%s", item->purpose, detail);
+                cui_tooltip(ui, tooltip);
+            }
+            cui_badge(ui, status, .tone = tone, .size = CUI_SIZE_SM);
+        }
+    }
+}
+
 void render_dependencies_page(cui_ctx *ui, app_state_t *s) {
-    if (!ui || !s) return;
+    if (!s->dep_state.loaded) app_check_dependencies(s);
+    const dep_check_state_t *st = &s->dep_state;
 
-    if (!s->dep_state.loaded) {
-        app_check_dependencies(s);
-    }
-
-    dep_check_state_t *st = &s->dep_state;
-
-    int total_req = 0;
-    int ok_req = 0;
-    int total_rec = 0;
-    int ok_rec = 0;
-
+    int required = 0, recommended = 0;
     for (int i = 0; i < st->count; i++) {
-        if (st->items[i].severity == DEP_SEVERITY_REQUIRED) {
-            total_req++;
-            if (st->items[i].installed) ok_req++;
-        } else {
-            total_rec++;
-            if (st->items[i].installed) ok_rec++;
-        }
+        if (st->items[i].severity == DEP_SEVERITY_REQUIRED) required++;
+        else recommended++;
     }
 
-    bool all_good = (st->required_missing_count == 0 && st->recommended_missing_count == 0);
-    bool req_good = (st->required_missing_count == 0);
-
-    cui_column(ui, .width = CUI_FILL, .gap = 16) {
-
-        /* 1. Header Row */
-        cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-            cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
-                cui_box(ui, .width = CUI_PX(40), .height = CUI_PX(40), .radius = 8,
-                        .bg = cui_color_of(ui, CUI_COLOR_ACCENT),
-                        .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
-                    cui_icon(ui, CUI_ICON_SHIELD, 20, CUI_COLOR_BACKGROUND);
-                }
-                cui_column(ui, .gap = 2) {
-                    cui_heading(ui, "运行环境与依赖检测", 2);
-                    cui_text(ui, "检测系统底层运行依赖与 AI 运行时环境，保障技能调度与多端同步正常运行",
-                             .size = 13, .color = CUI_COLOR_TEXT_SECONDARY);
-                }
-            }
-
-            cui_spacer(ui);
-
-            cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                if (cui_button(ui, "重新检测", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_REFRESH_CW)) {
-                    app_check_dependencies(s);
-                    app_set_toast(s, "依赖检测已更新");
-                }
-
-                if (cui_button(ui, "复制提示", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_COPY)) {
-                    cui_set_clipboard_text(ui, st->generated_prompt);
-                    app_set_toast(s, "AI 安装提示词已复制到剪贴板");
-                }
+    int missing = st->required_missing_count + st->recommended_missing_count;
+    char req_value[24], rec_value[24], health[24];
+    snprintf(req_value, sizeof(req_value), "%d / %d", required - st->required_missing_count, required);
+    snprintf(rec_value, sizeof(rec_value), "%d / %d", recommended - st->recommended_missing_count, recommended);
+    snprintf(health, sizeof(health), "%d%%", st->count ? (st->count - missing) * 100 / st->count : 0);
+    cui_column(ui, .width = CUI_FILL, .gap = 14) {
+        cui_row(ui, .width = CUI_FILL, .gap = 12, .align = CUI_ALIGN_CENTER) {
+            render_workspace_heading(ui, CUI_ICON_SHIELD, "依赖检测", "检查系统依赖和技能运行环境");
+            if (cui_button(ui, "重新检测", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_REFRESH_CW)) {
+                app_check_dependencies(s);
+                cui_toast(ui, "依赖检测已更新", .tone = CUI_TONE_SUCCESS);
             }
         }
 
-        /* 2. Top Summary Metrics Row (3 Cards) */
         cui_row(ui, .width = CUI_FILL, .gap = 12) {
-            /* Card 1: Core Required */
-            cui_card(ui, .width = CUI_GROW(1), .pad = 16, .gap = 8) {
-                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, req_good ? CUI_ICON_CHECK : CUI_ICON_TRIANGLE_ALERT,
-                                 16, req_good ? CUI_COLOR_SUCCESS : CUI_COLOR_DANGER);
-                        cui_text(ui, "核心必须依赖", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-                    }
-                    cui_spacer(ui);
-                    cui_badge(ui, req_good ? "全部就绪" : "存在缺失",
-                              .tone = req_good ? CUI_TONE_SUCCESS : CUI_TONE_DANGER,
-                              .size = CUI_SIZE_SM);
-                }
-                char req_txt[32];
-                snprintf(req_txt, sizeof(req_txt), "%d / %d 就绪", ok_req, total_req);
-                cui_text(ui, req_txt, .font = CUI_FONT_DISPLAY, .size = 24);
-                cui_text(ui, "Git、cURL 核心协同与网络通信", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
-            }
-
-            /* Card 2: Recommended Environments */
-            cui_card(ui, .width = CUI_GROW(1), .pad = 16, .gap = 8) {
-                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, CUI_ICON_PACKAGE, 16, CUI_COLOR_ACCENT);
-                        cui_text(ui, "推荐运行环境", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-                    }
-                    cui_spacer(ui);
-                    cui_badge(ui, (ok_rec == total_rec) ? "全部就绪" : "建议配置",
-                              .tone = (ok_rec == total_rec) ? CUI_TONE_SUCCESS : CUI_TONE_NEUTRAL,
-                              .size = CUI_SIZE_SM);
-                }
-                char rec_txt[32];
-                snprintf(rec_txt, sizeof(rec_txt), "%d / %d 就绪", ok_rec, total_rec);
-                cui_text(ui, rec_txt, .font = CUI_FONT_DISPLAY, .size = 24);
-                cui_text(ui, "Node.js、Python 等技能运行时", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
-            }
-
-            /* Card 3: Overall Status */
-            cui_card(ui, .width = CUI_GROW(1), .pad = 16, .gap = 8) {
-                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, CUI_ICON_ACTIVITY, 16, CUI_COLOR_ACCENT);
-                        cui_text(ui, "环境健康评估", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-                    }
-                    cui_spacer(ui);
-                    cui_badge(ui, all_good ? "优良" : (req_good ? "基本正常" : "需修复"),
-                              .tone = all_good ? CUI_TONE_SUCCESS : (req_good ? CUI_TONE_WARNING : CUI_TONE_DANGER),
-                              .size = CUI_SIZE_SM);
-                }
-                int pct = (st->count > 0) ? ((ok_req + ok_rec) * 100 / st->count) : 0;
-                char pct_txt[32];
-                snprintf(pct_txt, sizeof(pct_txt), "%d%%", pct);
-                cui_text(ui, pct_txt, .font = CUI_FONT_DISPLAY, .size = 24);
-                char time_lbl[64];
-                snprintf(time_lbl, sizeof(time_lbl), "检测于: %s", st->last_checked_at);
-                cui_text(ui, time_lbl, .size = 11, .color = CUI_COLOR_TEXT_MUTED);
-            }
+            cui_metric(ui, "必需依赖", req_value, .icon = CUI_ICON_SHIELD, .width = CUI_GROW(1));
+            cui_metric(ui, "推荐环境", rec_value, .icon = CUI_ICON_PACKAGE, .width = CUI_GROW(1));
+            cui_metric(ui, "就绪比例", health, .icon = CUI_ICON_ACTIVITY, .width = CUI_GROW(1));
         }
 
-        /* 3. Section: AI Installation Prompt Card */
-        cui_box(ui, .width = CUI_FILL, .radius = 8, .pad = 16, .gap = 12,
-                .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
-                .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-
-            cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                    cui_icon(ui, CUI_ICON_SPARKLES, 18, CUI_COLOR_ACCENT);
-                    cui_heading(ui, "AI 工具安装提示词", 4);
-                }
-                cui_spacer(ui);
-                cui_badge(ui, (st->required_missing_count > 0 || st->recommended_missing_count > 0)
-                                  ? "一键修复提示词已生成" : "依赖已就绪",
-                          .tone = (st->required_missing_count > 0) ? CUI_TONE_DANGER : CUI_TONE_SUCCESS,
-                          .size = CUI_SIZE_SM);
-            }
-
-            cui_text(ui, "当检测到依赖缺失时，系统已自动组装好针对当前操作系统的配置安装提示词。点击下方按钮一键复制，直接发送给 AI 助手（如 Claude Code、Cursor、ChatGPT 等）即可自动完成配置安装。",
-                     .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-
-            /* Action row */
-            cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                if (cui_button(ui, "复制提示", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_COPY)) {
+        static bool report_open;
+        cui_accordion(ui, "诊断报告与安装提示", &report_open) {
+            cui_column(ui, .width = CUI_FILL, .gap = 8, .pad = 12) {
+                if (cui_button(ui, "复制报告", .variant = CUI_BUTTON_SECONDARY,
+                               .icon = CUI_ICON_COPY, .size = CUI_SIZE_SM)) {
                     cui_set_clipboard_text(ui, st->generated_prompt);
-                    app_set_toast(s, "AI 安装提示词已成功复制到剪贴板！");
+                    cui_toast(ui, "诊断报告已复制", .tone = CUI_TONE_SUCCESS);
                 }
-            }
-
-            /* Prompt Text Box Preview */
-            cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 12, .gap = 6,
-                    .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_SURFACE), 0.7f),
-                    .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-                cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                    cui_icon(ui, CUI_ICON_TERMINAL, 13, CUI_COLOR_TEXT_MUTED);
-                    cui_text(ui, "生成的提示词内容预览 (可直接点击上方按钮复制):",
-                             .size = 11, .color = CUI_COLOR_TEXT_MUTED);
-                }
-                cui_text(ui, st->generated_prompt,
-                         .font = CUI_FONT_MONO, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                cui_code_block(ui, "dependency_report", st->generated_prompt, .lang = "text");
             }
         }
 
-        /* 4. Section: Dependency Items Detailed Table */
-        cui_box(ui, .width = CUI_FILL, .radius = 8, .pad = 16, .gap = 12,
-                .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
-                .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-
-            cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                    cui_icon(ui, CUI_ICON_TERMINAL, 18, CUI_COLOR_ACCENT);
-                    cui_heading(ui, "底层依赖项状态明细", 4);
-                }
-                cui_spacer(ui);
-                char cnt_lbl[64];
-                snprintf(cnt_lbl, sizeof(cnt_lbl), "共检测 %d 项软件", st->count);
-                cui_text(ui, cnt_lbl, .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-            }
-
+        cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+            cui_heading(ui, "依赖项", 4);
+            cui_spacer(ui);
+            char time[64];
+            snprintf(time, sizeof(time), "上次检测  %s", st->last_checked_at);
+            cui_text(ui, time, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+        }
+        for (int group = 0; group < 2; group++) {
             for (int i = 0; i < st->count; i++) {
-                dep_item_t *item = &st->items[i];
-
-                cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 12,
-                        .bg = cui_color_of(ui, CUI_COLOR_SURFACE),
-                        .border = 1,
-                        .border_color = item->installed ? cui_color_of(ui, CUI_COLOR_BORDER)
-                                                        : cui_alpha(cui_color_of(ui, CUI_COLOR_DANGER), 0.4f)) {
-
-                    cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                        /* Status Icon */
-                        cui_icon(ui, item->installed ? CUI_ICON_CHECK : CUI_ICON_TRIANGLE_ALERT,
-                                 18, item->installed ? CUI_COLOR_SUCCESS : CUI_COLOR_DANGER);
-
-                        /* Name & Tag */
-                        cui_column(ui, .gap = 3, .width = CUI_PX(240)) {
-                            cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                                cui_text(ui, item->display_name, .size = 14, .font = CUI_FONT_MEDIUM);
-                                cui_badge(ui, (item->severity == DEP_SEVERITY_REQUIRED) ? "必须" : "推荐",
-                                          .tone = (item->severity == DEP_SEVERITY_REQUIRED) ? CUI_TONE_ACCENT : CUI_TONE_NEUTRAL,
-                                          .size = CUI_SIZE_SM);
-                            }
-                            cui_text(ui, item->purpose, .size = 11, .color = CUI_COLOR_TEXT_MUTED);
-                        }
-
-                        /* Path / Version / Hint */
-                        cui_column(ui, .gap = 3, .width = CUI_GROW(1)) {
-                            if (item->installed) {
-                                cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                                    cui_text(ui, "路径:", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
-                                    cui_text(ui, item->path, .size = 12, .font = CUI_FONT_MONO, .color = CUI_COLOR_FOREGROUND);
-                                }
-                                if (item->version[0] != '\0') {
-                                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                                        cui_text(ui, "版本:", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
-                                        cui_text(ui, item->version, .size = 11, .color = CUI_COLOR_TEXT_SECONDARY);
-                                    }
-                                }
-                            } else {
-                                cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                                    cui_text(ui, "未检测到此软件，安装建议:", .size = 11, .color = CUI_COLOR_DANGER);
-                                    cui_text(ui, item->install_hint, .size = 12, .font = CUI_FONT_MONO, .color = CUI_COLOR_FOREGROUND);
-                                }
-                            }
-                        }
-
-                        cui_spacer(ui);
-
-                        /* Right Status Badge & Copy Hint */
-                        cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                            if (item->installed) {
-                                cui_badge(ui, "已就绪", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                            } else {
-                                cui_badge(ui, (item->severity == DEP_SEVERITY_REQUIRED) ? "缺失 (必须)" : "未安装",
-                                          .tone = (item->severity == DEP_SEVERITY_REQUIRED) ? CUI_TONE_DANGER : CUI_TONE_WARNING,
-                                          .size = CUI_SIZE_SM);
-                            }
-                        }
-                    }
+                if (st->items[i].installed == (group == 1)) {
+                    render_dependency_row(ui, &st->items[i]);
                 }
             }
         }

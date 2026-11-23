@@ -111,7 +111,7 @@ void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s) {
 
     /* Header & Breadcrumb */
     cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        if (cui_button(ui, "返回", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_CHEVRON_LEFT)) {
+        if (cui_button(ui, "返回", .variant = CUI_BUTTON_GHOST, .icon = CUI_ICON_CHEVRON_LEFT)) {
             s->hub_subview = s->prev_hub_subview;
         }
 
@@ -128,7 +128,7 @@ void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s) {
         if (!is_in_hub) {
             cui_gap(ui, 8);
             if (cui_button(ui, "收录", .variant = CUI_BUTTON_PRIMARY,
-                           .icon = CUI_ICON_CHECK, .size = CUI_SIZE_SM)) {
+                           .icon = ICON_COLLECT, .size = CUI_SIZE_SM)) {
                 for (int i = 0; i < s->hub_matrix.skill_count; i++) {
                     if (strcmp(s->hub_matrix.skills[i].skill_name, s->active_skill_name) == 0) {
                         for (int t = 0; t < s->hub_matrix.skills[i].tool_count; t++) {
@@ -152,25 +152,23 @@ void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s) {
     cui_row(ui, .width = CUI_FILL, .height = CUI_FILL, .gap = 12) {
         skill_tree_view_opts_t tree_opts = {
             .title = is_in_hub ? "主仓目录结构" : "技能目录结构",
-            .badge_label = s->active_skill_name,
-            .badge_tone = is_in_hub ? CUI_TONE_ACCENT : CUI_TONE_VIOLET,
             .selected_path = s->selected_file_path,
             .match_by_rel_path = false,
             .show_diff_badges = false,
             .show_summary_badges = false,
-            .width = 280,
+            .width = CUI_PX(220),
         };
         render_skill_file_tree_component(ui, s->master_skill_file_tree, &tree_opts, on_master_file_select, s);
 
         /* Content Viewer */
         cui_card(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 14, .gap = 10) {
+            bool is_md = (strstr(s->selected_file_name, ".md") != NULL ||
+                          strstr(s->selected_file_name, ".markdown") != NULL);
             cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_FILE_TEXT, 18, CUI_COLOR_ACCENT);
                     cui_label(ui, s->selected_file_name[0] ? s->selected_file_name : "请在左侧选择文件");
 
-                    bool is_md = (strstr(s->selected_file_name, ".md") != NULL ||
-                                  strstr(s->selected_file_name, ".markdown") != NULL);
                     if (is_md) {
                         cui_badge(ui, "Markdown", .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
                     }
@@ -181,15 +179,11 @@ void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s) {
                         cui_textf(ui, "%s · %d 行", sz_txt, s->selected_file_lines);
                     }
                 }
+            }
 
-                cui_spacer(ui);
-
-                bool is_md = (strstr(s->selected_file_name, ".md") != NULL ||
-                              strstr(s->selected_file_name, ".markdown") != NULL);
-                if (is_md) {
-                    static const char *doc_modes[] = { "富文本预览", "源码" };
-                    cui_tabs(ui, "master_doc_render_mode_tabs", doc_modes, 2, &s->doc_render_mode);
-                }
+            if (is_md) {
+                static const char *doc_modes[] = { "预览", "源码" };
+                cui_tabs(ui, "master_doc_render_mode_tabs", doc_modes, 2, &s->doc_render_mode);
             }
 
             if (s->selected_file_path[0] != '\0') {
@@ -199,8 +193,6 @@ void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s) {
             cui_separator(ui);
 
             if (s->selected_file_content && s->selected_file_content[0] != '\0') {
-                bool is_md = (strstr(s->selected_file_name, ".md") != NULL ||
-                              strstr(s->selected_file_name, ".markdown") != NULL);
                 if (is_md && s->doc_render_mode == 0) {
                     cui_scroll(ui, .id = "master_md_preview_scroll", .width = CUI_FILL, .height = CUI_FILL) {
                         cui_markdown(ui, "master_md_preview", s->selected_file_content);
@@ -230,6 +222,12 @@ void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s) {
         }
     }
 }
+
+typedef enum {
+    MASTER_FILTER_ALL,
+    MASTER_FILTER_CHANGED,
+    MASTER_FILTER_UNDISTRIBUTED,
+} master_skill_filter_t;
 
 void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
     /* 1. Metric Cards (3 Core Metrics) */
@@ -261,56 +259,37 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
         }
         snprintf(buf_drift, sizeof(buf_drift), "%d 处", master_drift_copies);
 
-        cui_card(ui, .width = CUI_GROW(1), .pad = 16) {
-            cui_metric(ui, "主仓基准技能", buf_hub, .icon = CUI_ICON_ARCHIVE);
-        }
-        cui_card(ui, .width = CUI_GROW(1), .pad = 16) {
-            cui_metric(ui, "分发覆盖工具", buf_tool, .icon = CUI_ICON_BOX);
-        }
-        cui_card(ui, .width = CUI_GROW(1), .pad = 16) {
-            cui_metric(ui, "待同步副本变动", buf_drift, .icon = CUI_ICON_TRIANGLE_ALERT);
-        }
+        cui_metric(ui, "主仓技能", buf_hub, .icon = ICON_MASTER_HUB, .width = CUI_GROW(1));
+        cui_metric(ui, "覆盖工具", buf_tool, .icon = ICON_TOOLS, .width = CUI_GROW(1));
+        cui_metric(ui, "副本差异", buf_drift, .icon = ICON_COMPARE, .width = CUI_GROW(1));
     }
 
-    /* 2. Search & Action Toolbar */
-    cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        cui_input(ui, "search_master_skills", s->master_skill_search_kw, sizeof(s->master_skill_search_kw),
-                  .placeholder = "搜索主仓技能名、描述...",
-                  .icon = CUI_ICON_SEARCH,
-                  .width = CUI_PX(320));
+    cui_row(ui, .width = CUI_FILL, .gap = 12, .align = CUI_ALIGN_CENTER) {
+        static const char *filters[] = { "全部", "有差异", "未分发" };
+        cui_search(ui, "search_master_skills", s->master_skill_search_kw, sizeof(s->master_skill_search_kw),
+                   .placeholder = "搜索主仓技能名称或描述", .width = CUI_FILL);
+        cui_segmented(ui, "master_skill_filter", filters, 3, &s->master_skill_filter, .size = CUI_SIZE_SM);
+    }
 
-        cui_spacer(ui);
-
-        /* Multi-selection info & Action Buttons */
-        int sel_master = 0;
-        for (int i = 0; i < s->hub_matrix.skill_count; i++) {
-            hub_skill_entry_t *e = &s->hub_matrix.skills[i];
-            if (e->in_hub && e->selected) sel_master++;
-        }
-
-        cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-            if (sel_master > 0) {
-                char sel_lbl[32];
-                snprintf(sel_lbl, sizeof(sel_lbl), "已选 %d 项", sel_master);
-                cui_badge(ui, sel_lbl, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
-
-                if (cui_button(ui, "批量移出", .variant = CUI_BUTTON_SECONDARY, .icon = CUI_ICON_TRASH_2)) {
-                    for (int i = 0; i < s->hub_matrix.skill_count; i++) {
-                        hub_skill_entry_t *e = &s->hub_matrix.skills[i];
-                        if (e->in_hub && e->selected) {
-                            hub_delete_master_skill(e->skill_name);
-                            e->selected = false;
-                        }
-                    }
-                    start_hub_scan_thread(s);
-                }
-                if (cui_button(ui, "清空", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM)) {
-                    for (int i = 0; i < s->hub_matrix.skill_count; i++) s->hub_matrix.skills[i].selected = false;
-                }
+    int selected = 0;
+    for (int i = 0; i < s->hub_matrix.skill_count; i++) {
+        const hub_skill_entry_t *entry = &s->hub_matrix.skills[i];
+        if (entry->in_hub && entry->selected) selected++;
+    }
+    bool busy = s->hub_scan.is_scanning || s->sync_is_busy || s->op_progress.active;
+    if (selected > 0) {
+        cui_row(ui, .width = CUI_FILL, .gap = 8, .align = CUI_ALIGN_CENTER) {
+            char selection[32];
+            snprintf(selection, sizeof(selection), "已选 %d 项", selected);
+            cui_badge(ui, selection, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
+            if (cui_button(ui, "取消选择", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM)) {
+                for (int i = 0; i < s->hub_matrix.skill_count; i++) s->hub_matrix.skills[i].selected = false;
             }
-
-            if (cui_button(ui, "重新比对", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_REFRESH_CW)) {
-                start_hub_scan_thread(s);
+            cui_spacer(ui);
+            if (cui_button(ui, "批量移出", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM,
+                           .icon = CUI_ICON_TRASH_2, .color = CUI_COLOR_DANGER, .disabled = busy)) {
+                s->remove_master_skill[0] = '\0';
+                s->show_remove_master_modal = true;
             }
         }
     }
@@ -328,8 +307,11 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                 cui_text(ui, "可前往【技能列表】收录本机已发现的技能，或在主仓目录直接创建技能。",
                          .color = CUI_COLOR_TEXT_SECONDARY, .size = 13);
                 cui_gap(ui, 20);
-                if (cui_button(ui, "前往收录", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_PACKAGE)) {
+                if (cui_button(ui, "前往收录", .variant = CUI_BUTTON_PRIMARY, .icon = ICON_COLLECT)) {
                     s->current_page = PAGE_ALL_SKILLS;
+                    s->hub_subview = HUB_SUBVIEW_SCAN_MATRIX;
+                    s->hub_filter_mode = SKILL_FILTER_UNCOLLECTED;
+                    s->hub_search_kw[0] = '\0';
                 }
             }
         }
@@ -343,6 +325,9 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                 for (int i = 0; i < s->hub_matrix.skill_count; i++) {
                     hub_skill_entry_t *entry = &s->hub_matrix.skills[i];
                     if (!entry->in_hub) continue;
+                    if (s->master_skill_filter == MASTER_FILTER_CHANGED &&
+                        entry->modified_count == 0 && entry->outdated_count == 0) continue;
+                    if (s->master_skill_filter == MASTER_FILTER_UNDISTRIBUTED && entry->installed_count > 0) continue;
 
                     if (s->master_skill_search_kw[0] != '\0') {
                         if (!ci_contains(entry->skill_name, s->master_skill_search_kw) &&
@@ -368,110 +353,161 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                             s_last_master_time = now;
                         }
                     }
-                        /* Row 1: Title, Status, Action Buttons */
-                        cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                            cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                                cui_checkbox(ui, "", &entry->selected);
-                                cui_icon(ui, CUI_ICON_ARCHIVE, 18, CUI_COLOR_ACCENT);
-                                cui_heading(ui, entry->skill_name, 4);
-
-                                if (entry->modified_count > 0) {
-                                    char b_txt[32];
-                                    snprintf(b_txt, sizeof(b_txt), "%d 个工具副本有改动", entry->modified_count);
-                                    cui_badge(ui, b_txt, .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
-                                } else if (entry->outdated_count > 0) {
-                                    char b_txt[32];
-                                    snprintf(b_txt, sizeof(b_txt), "%d 个工具副本落后", entry->outdated_count);
-                                    cui_badge(ui, b_txt, .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
-                                } else if (entry->installed_count > 0) {
-                                    cui_badge(ui, "所有副本与主仓一致", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                                } else {
-                                    cui_badge(ui, "主仓独有 (未分发)", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
-                                }
-                            }
-
-                            cui_spacer(ui);
-
-                            cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                                if (cui_button(ui, "浏览文件", .variant = CUI_BUTTON_SECONDARY,
-                                               .icon = CUI_ICON_FOLDER_OPEN, .size = CUI_SIZE_SM)) {
-                                    open_master_skill_explorer(s, entry->skill_name);
-                                }
-
-                                if (entry->installed_count > 0) {
-                                    if (cui_button(ui, "对比", .variant = CUI_BUTTON_OUTLINE,
-                                                   .icon = CUI_ICON_GIT_BRANCH, .size = CUI_SIZE_SM)) {
-                                        s->prev_page = PAGE_HUB_MATRIX;
-                                        s->prev_hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
-                                        open_hub_diff_view(s, entry->skill_name);
-                                    }
-                                }
-
-                                /* Core Distribution Entry Point */
-                                if (cui_button(ui, "分发",
-                                               .variant = (entry->installed_count == 0) ? CUI_BUTTON_PRIMARY : CUI_BUTTON_SECONDARY,
-                                               .icon = CUI_ICON_SEND, .size = CUI_SIZE_SM)) {
-                                    s->show_distribute_modal = true;
-                                    strncpy(s->distribute_skill_name, entry->skill_name, sizeof(s->distribute_skill_name) - 1);
-                                }
-
-                                if (cui_button(ui, "移出主仓", .variant = CUI_BUTTON_GHOST,
-                                               .icon = CUI_ICON_TRASH_2, .size = CUI_SIZE_SM)) {
-                                    if (hub_delete_master_skill(entry->skill_name) == 0) {
-                                        char tmsg[128];
-                                        snprintf(tmsg, sizeof(tmsg), "已将【%s】移出主仓", entry->skill_name);
-                                        app_set_toast(s, tmsg);
-                                        start_hub_scan_thread(s);
-                                    }
-                                }
-                            }
-                        }
-
-                        /* Row 2: Description */
-                        if (entry->description[0] != '\0') {
-                            cui_text(ui, entry->description, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                        } else {
-                            cui_text(ui, "（暂无技能描述，可在 SKILL.md 的 description 中添加）",
-                                     .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-                        }
-
-                        /* Row 3: Tool Distribution Badges */
-                        cui_row(ui, .width = CUI_FILL, .gap = 6, .align = CUI_ALIGN_CENTER, .wrap = true) {
-                            cui_textf(ui, "分发覆盖 (%d/%d):", entry->installed_count, s->hub_matrix.tool_count);
-                            if (entry->installed_count == 0) {
-                                cui_text(ui, "尚未安装到任何本地工具，点击上方【分发...】开始安装",
-                                         .size = 12, .color = CUI_COLOR_TEXT_MUTED);
+                    cui_row(ui, .width = CUI_FILL, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                        cui_checkbox(ui, "", &entry->selected);
+                        cui_icon(ui, ICON_MASTER_HUB, 16, CUI_COLOR_TEXT_SECONDARY);
+                        cui_column(ui, .width = CUI_FILL, .gap = 4) {
+                            cui_text(ui, entry->skill_name, .font = CUI_FONT_MEDIUM, .size = 15,
+                                     .width = CUI_FILL, .nowrap = true);
+                            if (entry->modified_count > 0) {
+                                cui_badge(ui, "副本有改动", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
+                            } else if (entry->outdated_count > 0) {
+                                cui_badge(ui, "副本待更新", .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
+                            } else if (entry->installed_count > 0) {
+                                cui_badge(ui, "副本已一致", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
                             } else {
-                                for (int t = 0; t < entry->tool_count; t++) {
-                                    tool_copy_status_t *tc = &entry->tool_copies[t];
-                                    if (!tc->exists) continue;
+                                cui_badge(ui, "未分发", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
+                            }
+                        }
 
-                                    cui_tone tone = CUI_TONE_NEUTRAL;
-                                    char label[96];
-                                    if (tc->status == HUB_STATUS_IN_SYNC) {
-                                        tone = CUI_TONE_SUCCESS;
-                                        snprintf(label, sizeof(label), "%s (一致)", tc->tool_name);
-                                    } else if (tc->status == HUB_STATUS_LOCAL_MODIFIED) {
-                                        tone = CUI_TONE_WARNING;
-                                        snprintf(label, sizeof(label), "%s (有改动)", tc->tool_name);
-                                    } else if (tc->status == HUB_STATUS_OUTDATED) {
-                                        tone = CUI_TONE_INFO;
-                                        snprintf(label, sizeof(label), "%s (落后)", tc->tool_name);
-                                    } else {
-                                        snprintf(label, sizeof(label), "%s", tc->tool_name);
-                                    }
-                                    cui_badge(ui, label, .tone = tone, .size = CUI_SIZE_SM);
+                        cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                            if (cui_button(ui, "浏览文件", .variant = CUI_BUTTON_GHOST,
+                                           .icon = CUI_ICON_FOLDER_OPEN, .size = CUI_SIZE_SM)) {
+                                open_master_skill_explorer(s, entry->skill_name);
+                            }
+                            if (entry->installed_count > 0 &&
+                                cui_button(ui, "对比", .variant = CUI_BUTTON_GHOST,
+                                           .icon = ICON_COMPARE, .size = CUI_SIZE_SM)) {
+                                s->prev_hub_subview = HUB_SUBVIEW_MASTER_SKILLS;
+                                open_hub_diff_view(s, entry->skill_name);
+                            }
+                            if (cui_button(ui, "分发", .variant = CUI_BUTTON_GHOST,
+                                           .icon = ICON_DISTRIBUTE, .size = CUI_SIZE_SM)) {
+                                s->show_distribute_modal = true;
+                                snprintf(s->distribute_skill_name, sizeof(s->distribute_skill_name), "%s", entry->skill_name);
+                            }
+                            cui_menu(ui, "更多操作", .icon_only = true, .variant = CUI_BUTTON_GHOST) {
+                                if (cui_menu_item(ui, "移出主仓", .icon = CUI_ICON_TRASH_2,
+                                                  .danger = true, .disabled = busy)) {
+                                    snprintf(s->remove_master_skill, sizeof(s->remove_master_skill), "%s", entry->skill_name);
+                                    s->show_remove_master_modal = true;
                                 }
                             }
                         }
-                        cui_card_end(ui);
-                        cui_pop_id(ui);
                     }
+
+                    if (entry->description[0]) {
+                        cui_text(ui, entry->description, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY,
+                                 .width = CUI_FILL, .nowrap = true);
+                    }
+
+                    /* Row 3: Tool Distribution Badges */
+                    cui_row(ui, .width = CUI_FILL, .gap = 6, .align = CUI_ALIGN_CENTER, .wrap = true) {
+                        cui_textf(ui, "分发覆盖 (%d/%d):", entry->installed_count, s->hub_matrix.tool_count);
+                        if (entry->installed_count > 0) {
+                            for (int t = 0; t < entry->tool_count; t++) {
+                                tool_copy_status_t *tc = &entry->tool_copies[t];
+                                if (!tc->exists) continue;
+
+                                cui_tone tone = CUI_TONE_NEUTRAL;
+                                char label[96];
+                                if (tc->status == HUB_STATUS_IN_SYNC) {
+                                    tone = CUI_TONE_SUCCESS;
+                                    snprintf(label, sizeof(label), "%s (一致)", tc->tool_name);
+                                } else if (tc->status == HUB_STATUS_LOCAL_MODIFIED) {
+                                    tone = CUI_TONE_WARNING;
+                                    snprintf(label, sizeof(label), "%s (有改动)", tc->tool_name);
+                                } else if (tc->status == HUB_STATUS_OUTDATED) {
+                                    tone = CUI_TONE_INFO;
+                                    snprintf(label, sizeof(label), "%s (落后)", tc->tool_name);
+                                } else {
+                                    snprintf(label, sizeof(label), "%s", tc->tool_name);
+                                }
+                                cui_badge(ui, label, .tone = tone, .size = CUI_SIZE_SM);
+                            }
+                        }
+                    }
+                    cui_card_end(ui);
+                    cui_pop_id(ui);
+                }
 
                 if (matched == 0) {
                     cui_column(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER, .pad = 30) {
                         cui_muted(ui, "未找到匹配的主仓技能");
                     }
+                }
+            }
+        }
+    }
+}
+
+static bool is_master_removal_target(const app_state_t *s, const hub_skill_entry_t *entry) {
+    if (!entry->in_hub) return false;
+    if (s->remove_master_skill[0] == '\0') return entry->selected;
+    return strcmp(s->remove_master_skill, entry->skill_name) == 0;
+}
+
+void render_remove_master_modal(cui_ctx *ui, app_state_t *s) {
+    if (!s->show_remove_master_modal) return;
+
+    bool busy = s->hub_scan.is_scanning || s->sync_is_busy || s->op_progress.active;
+    int count = 0;
+    if (!busy) {
+        for (int i = 0; i < s->hub_matrix.skill_count; i++) {
+            if (is_master_removal_target(s, &s->hub_matrix.skills[i])) count++;
+        }
+    }
+
+    cui_dialog(ui, "移出主仓", &s->show_remove_master_modal, .width = 480) {
+        cui_column(ui, .width = CUI_FILL, .gap = 14) {
+            if (busy) {
+                cui_text(ui, "主仓正在更新，请稍后重试。", .width = CUI_FILL);
+            } else if (count == 0) {
+                cui_text(ui, "选中的技能已不在主仓。", .width = CUI_FILL);
+            } else if (s->remove_master_skill[0]) {
+                cui_text(ui, s->remove_master_skill, .font = CUI_FONT_MEDIUM, .width = CUI_FILL);
+            } else {
+                cui_textf(ui, "将选中的 %d 个技能移出主仓。", count);
+                cui_scroll(ui, .id = "remove_master_targets", .width = CUI_FILL,
+                           .height = CUI_PX((count < 4 ? count : 4) * 24), .gap = 4) {
+                    for (int i = 0; i < s->hub_matrix.skill_count; i++) {
+                        hub_skill_entry_t *entry = &s->hub_matrix.skills[i];
+                        if (is_master_removal_target(s, entry)) {
+                            cui_text(ui, entry->skill_name, .width = CUI_FILL);
+                        }
+                    }
+                }
+            }
+            if (count > 0) {
+                cui_text(ui, "主仓中的基准版本将被移除，已分发到本地工具的副本会保留。",
+                         .color = CUI_COLOR_TEXT_SECONDARY, .width = CUI_FILL);
+            }
+
+            cui_row(ui, .width = CUI_FILL, .gap = 8, .justify = CUI_JUSTIFY_END) {
+                if (cui_button(ui, "取消", .variant = CUI_BUTTON_OUTLINE)) {
+                    s->show_remove_master_modal = false;
+                }
+                if (cui_button(ui, "确认移出", .variant = CUI_BUTTON_DANGER,
+                               .disabled = count == 0)) {
+                    int removed = 0;
+                    for (int i = 0; i < s->hub_matrix.skill_count; i++) {
+                        hub_skill_entry_t *entry = &s->hub_matrix.skills[i];
+                        if (is_master_removal_target(s, entry) &&
+                            hub_delete_master_skill(entry->skill_name) == 0) {
+                            entry->selected = false;
+                            removed++;
+                        }
+                    }
+
+                    char result[128];
+                    if (removed == count) {
+                        snprintf(result, sizeof(result), "已移出 %d 个技能", removed);
+                    } else {
+                        snprintf(result, sizeof(result), "已移出 %d 个技能，%d 个移出失败", removed, count - removed);
+                    }
+                    cui_toast(ui, result, .tone = removed == count ? CUI_TONE_SUCCESS : CUI_TONE_WARNING);
+                    s->show_remove_master_modal = false;
+                    start_hub_scan_thread(s);
                 }
             }
         }

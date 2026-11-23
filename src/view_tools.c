@@ -48,57 +48,22 @@ void render_tools_list_page(cui_ctx *ui, app_state_t *s) {
     /* 1. Global Navigation Bar */
     render_global_navbar(ui, s);
 
-    /* 2. Top Header Area */
-    cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
-            cui_box(ui, .width = CUI_PX(40), .height = CUI_PX(40), .radius = 10,
-                    .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_ACCENT), 0.15f),
-                    .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
-                cui_icon(ui, CUI_ICON_FOLDER, 22, CUI_COLOR_ACCENT);
-            }
-            cui_column(ui, .gap = 2) {
-                cui_heading(ui, "本地工具", 3);
-                cui_text(ui, "自动识别本机支持 Skills 的 AI 编程助手与扩展工具",
-                         .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-            }
-        }
-
-        cui_spacer(ui);
-
-        /* Action Buttons: Only current page's core actions */
-        cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
-            if (cui_button(ui, "重新扫描", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_REFRESH_CW)) {
-                do_scan_sync(s);
-            }
+    cui_row(ui, .width = CUI_FILL, .gap = 12, .align = CUI_ALIGN_CENTER) {
+        char scan_status[80];
+        snprintf(scan_status, sizeof(scan_status), "上次扫描  %s",
+                 s->stats.last_scanned_at[0] ? s->stats.last_scanned_at : "尚无记录");
+        render_workspace_heading(ui, ICON_TOOLS, "工具列表", scan_status);
+        if (cui_button(ui, "重新扫描", .variant = CUI_BUTTON_GHOST, .icon = CUI_ICON_REFRESH_CW)) {
+            do_scan_sync(s);
         }
     }
 
-    /* 3. Statistical Metric Cards */
-    cui_row(ui, .width = CUI_FILL, .gap = 14) {
-        char buf_tot[32], buf_skl[32];
-        snprintf(buf_tot, sizeof(buf_tot), "%d 个", s->stats.total_tools);
-        snprintf(buf_skl, sizeof(buf_skl), "%d 项", s->stats.total_skills);
-
-        cui_card(ui, .width = CUI_GROW(1), .pad = 16) {
-            cui_metric(ui, "已识别工具", buf_tot, .icon = CUI_ICON_BOX);
-        }
-        cui_card(ui, .width = CUI_GROW(1), .pad = 16) {
-            cui_metric(ui, "关联技能总数", buf_skl, .icon = CUI_ICON_LAYERS);
-        }
-        cui_card(ui, .width = CUI_GROW(1), .pad = 16) {
-            char time_display[32];
-            if (s->stats.last_scanned_at[0]) {
-                const char *space = strchr(s->stats.last_scanned_at, ' ');
-                if (space) {
-                    snprintf(time_display, sizeof(time_display), "%s", space + 1);
-                } else {
-                    snprintf(time_display, sizeof(time_display), "%s", s->stats.last_scanned_at);
-                }
-            } else {
-                snprintf(time_display, sizeof(time_display), "刚刚");
-            }
-            cui_metric(ui, "最近扫描时间", time_display, .icon = CUI_ICON_CLOCK);
-        }
+    cui_row(ui, .width = CUI_FILL, .gap = 12) {
+        char tools[24], skills[24];
+        snprintf(tools, sizeof(tools), "%d", s->stats.total_tools);
+        snprintf(skills, sizeof(skills), "%d", s->stats.total_skills);
+        cui_metric(ui, "识别到的工具", tools, .icon = ICON_TOOLS, .width = CUI_GROW(1));
+        cui_metric(ui, "关联技能", skills, .icon = ICON_SKILLS, .width = CUI_GROW(1));
     }
 
     /* 4. Search Bar */
@@ -133,32 +98,18 @@ void render_tools_list_page(cui_ctx *ui, app_state_t *s) {
                 }
             }
         } else {
-            static int s_last_tools_row = -1;
-            static double s_last_tools_time = 0.0;
-
             cui_table(ui, "tools_grid", cols, 4,
                       .sort = &s->sort, .striped = true, .compact = true,
                       .selectable = true, .height = CUI_FILL) {
                 for (int i = 0; i < s->record_count; i++) {
                     tool_record_t *r = &s->records[i];
                     cui_push_id_int(ui, r->id);
-                    bool clicked = cui_table_row(ui, s_last_tools_row == i);
-                    if (clicked) {
-                        double now = cui_time(ui);
-                        if (s_last_tools_row == i && (now - s_last_tools_time) < 0.40) {
-                            s_last_tools_row = -1;
-                            s_last_tools_time = 0.0;
-                            open_tool_skills_page(s, r->name, r->path);
-                        } else {
-                            s_last_tools_row = i;
-                            s_last_tools_time = now;
-                        }
-                    }
+                    bool open_tool = cui_table_row(ui, false);
 
                     /* Col 0: Tool Name */
                     cui_table_cell(ui);
                     cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, CUI_ICON_FOLDER, 14, CUI_COLOR_ACCENT);
+                        cui_icon(ui, ICON_TOOLS, 14, CUI_COLOR_TEXT_SECONDARY);
                         cui_text(ui, r->name, .font = CUI_FONT_MEDIUM);
                     }
 
@@ -170,29 +121,21 @@ void render_tools_list_page(cui_ctx *ui, app_state_t *s) {
                              .color = (r->skill_count > 0) ? CUI_COLOR_FOREGROUND : CUI_COLOR_TEXT_MUTED);
 
                     /* Col 2: Path */
-                    cui_table_cell_text(ui, r->path);
+                    cui_table_cell(ui);
+                    cui_text(ui, r->path, .size = 12, .nowrap = true, .width = CUI_FILL,
+                             .color = CUI_COLOR_TEXT_SECONDARY);
+                    cui_tooltip(ui, r->path);
 
                     /* Col 3: Action Button */
                     cui_table_cell(ui);
-                    if (cui_button(ui, "查看技能", .variant = CUI_BUTTON_OUTLINE,
-                                   .size = CUI_SIZE_SM, .icon = CUI_ICON_FOLDER)) {
+                    if (cui_button(ui, "查看技能", .variant = CUI_BUTTON_GHOST,
+                                   .size = CUI_SIZE_SM, .icon_right = CUI_ICON_CHEVRON_RIGHT) || open_tool) {
                         open_tool_skills_page(s, r->name, r->path);
                     }
 
                     cui_pop_id(ui);
                 }
             }
-        }
-    }
-
-    /* 6. Bottom Status Bar */
-    cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        cui_textf(ui, "数据库: %s", s->db_path);
-
-        cui_spacer(ui);
-
-        if (s->stats.last_scanned_at[0] != '\0') {
-            cui_textf(ui, "最后扫描: %s", s->stats.last_scanned_at);
         }
     }
 }
