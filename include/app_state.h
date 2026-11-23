@@ -20,7 +20,8 @@ typedef enum {
     PAGE_TOOL_SKILLS = 4,      /* 单个工具内的技能详情 */
     PAGE_SYNC_MANAGER = 5,     /* 远端同步管理 */
     PAGE_SETTINGS = 6,         /* 设置 */
-    PAGE_ABOUT = 7,            /* 关于系统页面 */
+    PAGE_STORAGE = 7,          /* 本地存储 (备份与缓存管理) */
+    PAGE_ABOUT = 8,            /* 关于系统页面 */
 } page_view_t;
 
 typedef enum {
@@ -84,6 +85,36 @@ typedef struct {
     int total_added_lines;
     int total_removed_lines;
 } hub_skill_diff_manifest_t;
+
+/* Local Storage snapshot item */
+typedef struct {
+    char dir_name[128];
+    char full_path[1024];
+    char time_str[32];
+    char tool_name[64];
+    char skill_name[64];
+    int64_t size_bytes;
+    int file_count;
+    time_t mtime;
+} storage_snapshot_item_t;
+
+/* Local Storage stats summary */
+typedef struct {
+    bool loaded;
+    int snapshot_count;
+    int64_t backup_total_bytes;
+    int backup_file_count;
+    storage_snapshot_item_t snapshots[128];
+
+    int64_t cache_total_bytes;
+    int cache_file_count;
+    int cache_dir_count;
+
+    int64_t hub_total_bytes;
+    int hub_skill_count;
+
+    char last_checked_at[32];
+} storage_stats_t;
 
 typedef struct app_state_t {
     sqlite3 *db;
@@ -199,6 +230,9 @@ typedef struct app_state_t {
 
     bool show_uninstall_tool_modal;
     char uninstall_tool_skill_name[128];
+
+    /* Local Storage Management State */
+    storage_stats_t storage_stats;
 } app_state_t;
 
 /* Common helper functions */
