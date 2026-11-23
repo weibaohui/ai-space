@@ -91,19 +91,6 @@ void render_app_top_bar(cui_ctx *ui, app_state_t *s) {
                 cui_icon(ui, CUI_ICON_MONITOR, 13, CUI_COLOR_TEXT_MUTED);
                 cui_text(ui, host[0] ? host : "devbox", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
             }
-
-            cui_text(ui, "|", .size = 13, .color = CUI_COLOR_BORDER);
-
-            /* 4. Real-time Clock */
-            time_t now = time(NULL);
-            struct tm *tm_info = localtime(&now);
-            char time_str[64];
-            strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
-
-            cui_row(ui, .gap = 5, .align = CUI_ALIGN_CENTER) {
-                cui_icon(ui, CUI_ICON_CLOCK, 13, CUI_COLOR_TEXT_MUTED);
-                cui_text(ui, time_str, .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-            }
         }
     }
 }
