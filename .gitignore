@@ -5,6 +5,7 @@ tests/*.o
 shot*.png
 smoke.png
 assets/icon.iconset/
+third_party/
 CUI/build/
 build/
 pack/

@@ -17,8 +17,18 @@ set(CUI_BUILD_TESTS OFF)
 
 add_subdirectory(CUI)
 
-# System sqlite3 everywhere (apt/brew/MSYS2 packages it); see CI workflow
-find_package(SQLite3 REQUIRED)
+# SQLite: if a CI-vendored amalgamation exists (third_party/sqlite/), build it
+# statically -- the binary then carries no libsqlite3.so dependency, which keeps
+# the glibc baseline of the zig-built Linux binaries intact. Local dev without
+# that directory falls back to the system library.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite/sqlite3.c)
+    add_library(sqlite3_impl STATIC third_party/sqlite/sqlite3.c)
+    target_include_directories(sqlite3_impl PUBLIC third_party/sqlite)
+    set(AI_SPACE_SQLITE_LIB sqlite3_impl)
+else()
+    find_package(SQLite3 REQUIRED)
+    set(AI_SPACE_SQLITE_LIB SQLite::SQLite3)
+endif()
 
 set(AI_SPACE_SRCS
     src/main.c
@@ -52,7 +62,7 @@ endif()
 
 target_include_directories(ai_space PRIVATE include CUI/include CUI/src)
 
-target_link_libraries(ai_space PRIVATE cui::cui SQLite::SQLite3)
+target_link_libraries(ai_space PRIVATE cui::cui ${AI_SPACE_SQLITE_LIB})
 
 # Window app niceties: no console window on Windows, gc-sections/dead_strip in release
 cui_app_target(ai_space)

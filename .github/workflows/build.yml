@@ -94,12 +94,26 @@ jobs:
           if [ -n "${{ matrix.zig_target }}" ]; then
             # zig cc as compiler driver; semicolon list passes the target through
             CFG="$CFG -DCMAKE_C_COMPILER=zig;cc;-target;${{ matrix.zig_target }}"
+
+            # vendor the SQLite amalgamation: a statically built sqlite3 removes
+            # the libsqlite3.so dependency whose glibc-2.34+ symbol needs would
+            # otherwise poison the 2.17 baseline (X11/GL stay on the host)
+            mkdir -p third_party/sqlite
+            curl -fL --retry 3 -o /tmp/sqlite.zip \
+              "https://www.sqlite.org/2025/sqlite-amalgamation-3490100.zip"
+            unzip -q -o /tmp/sqlite.zip -d /tmp/sqlite-src
+            cp /tmp/sqlite-src/sqlite-amalgamation-3490100/sqlite3.{c,h} third_party/sqlite/
+
+            # runner .so files (libX11/libGL) reference newer glibc symbols; the
+            # binary only records DT_NEEDED for them and resolves them at runtime
+            # from the HOST system (AppImage semantics), so skip link-time checks
+            CFG="$CFG -DCMAKE_EXE_LINKER_FLAGS=-Wl,--allow-shlib-undefined"
+
             # zig's compiler id confuses CMake's multiarch lib discovery, so hand
-            # FindX11/FindSQLite3 the real .so paths from the multiarch dirs
+            # FindX11 the real .so path from the multiarch dir (sqlite3 is static now)
             X11LIB=$(find /usr/lib -name 'libX11.so' 2>/dev/null | head -1)
-            SQLLIB=$(find /usr/lib -name 'libsqlite3.so' 2>/dev/null | head -1)
-            echo "X11=$X11LIB sqlite3=$SQLLIB"
-            CFG="$CFG -DX11_X11_LIB=$X11LIB -DSQLite3_LIBRARY=$SQLLIB"
+            echo "X11=$X11LIB"
+            CFG="$CFG -DX11_X11_LIB=$X11LIB"
           fi
           if [ -n "${{ matrix.osx_arch }}" ]; then
             CFG="$CFG -DCMAKE_OSX_ARCHITECTURES=${{ matrix.osx_arch }} -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13"
