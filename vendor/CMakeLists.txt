@@ -21,6 +21,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+# windres is not a C compiler. Under GCC libnfs adds -Wall at directory level
+# and CMake forwards it inside <FLAGS> to the version.rc rule, which GNU
+# windres rejects ("invalid option -- W"). A resource only needs defines and
+# include paths, so drop the C flags from the rule for the vendored trees.
+if(MINGW)
+    set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> -O coff <DEFINES> <INCLUDES> <SOURCE> <OBJECT>")
+endif()
 add_subdirectory(libnfs EXCLUDE_FROM_ALL)
 # libnfs uses a cache variable with the same name as libsmb2.
 set(CORE_LIBRARIES "")
