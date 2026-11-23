@@ -44,9 +44,8 @@ static int count_snapshots(const char *backup_dir_setting) {
     return count;
 }
 
-/* Top Global Header Bar (Window Title, App Info, Node status, Clock) */
+/* Global header with app status and the settings entry point */
 void render_app_top_bar(cui_ctx *ui, app_state_t *s) {
-    (void)s;
     cui_row(ui, .width = CUI_FILL, .height = CUI_PX(42), .pad_x = 16,
             .align = CUI_ALIGN_CENTER, .bg = CUI_COLOR_SURFACE) {
 
@@ -66,7 +65,7 @@ void render_app_top_bar(cui_ctx *ui, app_state_t *s) {
 
         cui_spacer(ui);
 
-        /* Right: Running Status, Version, Hostname, Clock */
+        /* Right: Running Status, Version, Hostname, Settings */
         cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
             /* 1. Status */
             cui_row(ui, .gap = 5, .align = CUI_ALIGN_CENTER) {
@@ -90,6 +89,12 @@ void render_app_top_bar(cui_ctx *ui, app_state_t *s) {
             cui_row(ui, .gap = 5, .align = CUI_ALIGN_CENTER) {
                 cui_icon(ui, CUI_ICON_MONITOR, 13, CUI_COLOR_TEXT_MUTED);
                 cui_text(ui, host[0] ? host : "devbox", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
+            }
+
+            if (cui_icon_button(ui, CUI_ICON_SETTINGS,
+                                .variant = s->current_page == PAGE_SETTINGS ? CUI_BUTTON_SECONDARY : CUI_BUTTON_GHOST,
+                                .size = CUI_SIZE_SM, .tooltip = "系统设置")) {
+                s->current_page = PAGE_SETTINGS;
             }
         }
     }
@@ -567,7 +572,8 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
                     }
                     cui_spacer(ui);
                     if (cui_button(ui, "管理", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM)) {
-                        s->current_page = PAGE_STORAGE;
+                        s->current_page = PAGE_SETTINGS;
+                        s->settings_active_tab = SETTINGS_TAB_LOCAL_STORAGE;
                         app_refresh_storage_stats(s);
                     }
                 }

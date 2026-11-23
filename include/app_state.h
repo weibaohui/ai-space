@@ -20,10 +20,18 @@ typedef enum {
     PAGE_TOOL_SKILLS = 4,      /* 单个工具内的技能详情 */
     PAGE_SYNC_MANAGER = 5,     /* 远端同步管理 */
     PAGE_SETTINGS = 6,         /* 设置 */
-    PAGE_DEPENDENCIES = 7,     /* 依赖检测 */
-    PAGE_STORAGE = 8,          /* 本地存储 (备份与缓存管理) */
-    PAGE_ABOUT = 9,            /* 关于系统页面 */
 } page_view_t;
+
+typedef enum {
+    SETTINGS_TAB_STORAGE_PATHS,
+    SETTINGS_TAB_REMOTE_SYNC,
+    SETTINGS_TAB_SCAN,
+    SETTINGS_TAB_PREFERENCES,
+    SETTINGS_TAB_DEPENDENCIES,
+    SETTINGS_TAB_LOCAL_STORAGE,
+    SETTINGS_TAB_ABOUT,
+    SETTINGS_TAB_COUNT,
+} settings_tab_t;
 
 typedef enum {
     HUB_SUBVIEW_MASTER_SKILLS = 0, /* 主仓技能集中管理 (已入库技能) */
@@ -221,7 +229,7 @@ typedef struct app_state_t {
     int doc_render_mode;        /* 0: 预览/高亮, 1: 源码/代码 */
 
     /* Settings Page state */
-    int settings_active_tab;    /* 0: 仓储与路径, 1: 远端同步, 2: 扫描与策略, 3: 常规偏好 */
+    int settings_active_tab;
     char setting_hub_dir[512];
     char setting_backup_dir[512];
     bool setting_auto_backup;

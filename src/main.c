@@ -14,8 +14,6 @@
 #include "view_master_hub.h"
 #include "view_settings.h"
 #include "view_sync.h"
-#include "view_storage.h"
-#include "view_dependencies.h"
 #include "view_dashboard.h"
 
 /* 全局发布的统一版本变量 */
@@ -45,29 +43,25 @@ static void frame(cui_ctx *ui, void *user) {
             render_app_sidebar(ui, s);
             cui_separator(ui);
 
-            cui_scroll(ui, .id = "main_content_scroll", .width = CUI_FILL, .height = CUI_FILL) {
-                cui_column(ui, .width = CUI_FILL, .pad = (s->current_page == PAGE_DASHBOARD) ? 14 : 20,
-                           .gap = (s->current_page == PAGE_DASHBOARD) ? 12 : 14) {
-                    if (s->current_page == PAGE_DASHBOARD) {
-                        render_dashboard_page(ui, s);
-                    } else if (s->current_page == PAGE_TOOL_LIST) {
-                        render_tools_list_page(ui, s);
-                    } else if (s->current_page == PAGE_ALL_SKILLS) {
-                        render_all_skills_page(ui, s);
-                    } else if (s->current_page == PAGE_HUB_MATRIX) {
-                        render_hub_matrix_page(ui, s);
-                    } else if (s->current_page == PAGE_TOOL_SKILLS) {
-                        render_tool_skills_page(ui, s);
-                    } else if (s->current_page == PAGE_SETTINGS) {
-                        render_settings_page(ui, s);
-                    } else if (s->current_page == PAGE_DEPENDENCIES) {
-                        render_dependencies_page(ui, s);
-                    } else if (s->current_page == PAGE_STORAGE) {
-                        render_storage_page(ui, s);
-                    } else if (s->current_page == PAGE_SYNC_MANAGER) {
-                        render_sync_manager_page(ui, s);
-                    } else if (s->current_page == PAGE_ABOUT) {
-                        render_about_page(ui, s);
+            if (s->current_page == PAGE_SETTINGS) {
+                render_settings_page(ui, s);
+            } else {
+                cui_scroll(ui, .id = "main_content_scroll", .width = CUI_FILL, .height = CUI_FILL) {
+                    cui_column(ui, .width = CUI_FILL, .pad = (s->current_page == PAGE_DASHBOARD) ? 14 : 20,
+                               .gap = (s->current_page == PAGE_DASHBOARD) ? 12 : 14) {
+                        if (s->current_page == PAGE_DASHBOARD) {
+                            render_dashboard_page(ui, s);
+                        } else if (s->current_page == PAGE_TOOL_LIST) {
+                            render_tools_list_page(ui, s);
+                        } else if (s->current_page == PAGE_ALL_SKILLS) {
+                            render_all_skills_page(ui, s);
+                        } else if (s->current_page == PAGE_HUB_MATRIX) {
+                            render_hub_matrix_page(ui, s);
+                        } else if (s->current_page == PAGE_TOOL_SKILLS) {
+                            render_tool_skills_page(ui, s);
+                        } else if (s->current_page == PAGE_SYNC_MANAGER) {
+                            render_sync_manager_page(ui, s);
+                        }
                     }
                 }
             }
@@ -214,7 +208,8 @@ int main(int argc, char **argv) {
     }
 
     if (getenv("CUI_START_ABOUT")) {
-        s.current_page = PAGE_ABOUT;
+        s.current_page = PAGE_SETTINGS;
+        s.settings_active_tab = SETTINGS_TAB_ABOUT;
     }
 
     if (s.current_page == PAGE_DASHBOARD) {

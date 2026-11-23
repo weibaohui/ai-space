@@ -894,35 +894,6 @@ void render_app_sidebar(cui_ctx *ui, app_state_t *s) {
                     start_sync_check_thread(s);
                 }
             }
-
-            cui_gap(ui, 12);
-            cui_nav_section(ui, "系统配置");
-
-            bool is_settings = (s->current_page == PAGE_SETTINGS);
-            if (cui_nav_item(ui, "系统设置", .icon = CUI_ICON_SETTINGS, .selected = is_settings, .group = "pages")) {
-                s->current_page = PAGE_SETTINGS;
-            }
-
-            bool is_deps = (s->current_page == PAGE_DEPENDENCIES);
-            if (cui_nav_item(ui, "依赖检测", .icon = CUI_ICON_SHIELD, .selected = is_deps, .group = "pages")) {
-                s->current_page = PAGE_DEPENDENCIES;
-                if (!s->dep_state.loaded) {
-                    app_check_dependencies(s);
-                }
-            }
-
-            bool is_storage = (s->current_page == PAGE_STORAGE);
-            if (cui_nav_item(ui, "本地存储", .icon = CUI_ICON_DATABASE, .selected = is_storage, .group = "pages")) {
-                s->current_page = PAGE_STORAGE;
-                if (!s->storage_stats.loaded) {
-                    app_refresh_storage_stats(s);
-                }
-            }
-
-            bool is_about = (s->current_page == PAGE_ABOUT);
-            if (cui_nav_item(ui, "关于系统", .icon = CUI_ICON_INFO, .selected = is_about, .group = "pages")) {
-                s->current_page = PAGE_ABOUT;
-            }
         }
     }
 }

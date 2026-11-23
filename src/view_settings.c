@@ -1,5 +1,7 @@
 #include "view_settings.h"
 #include "view_common.h"
+#include "view_dependencies.h"
+#include "view_storage.h"
 #include "db.h"
 #include "hub_manager.h"
 #include "sync_backend.h"
@@ -625,121 +627,38 @@ static void render_tab_preferences(cui_ctx *ui, app_state_t *s) {
 }
 
 void render_settings_page(cui_ctx *ui, app_state_t *s) {
-    if (!ui || !s) return;
+    static const char *const titles[SETTINGS_TAB_COUNT] = {
+        [SETTINGS_TAB_STORAGE_PATHS] = "主库存储",
+        [SETTINGS_TAB_REMOTE_SYNC] = "远端同步",
+        [SETTINGS_TAB_SCAN] = "扫描策略",
+        [SETTINGS_TAB_PREFERENCES] = "常规偏好",
+        [SETTINGS_TAB_DEPENDENCIES] = "依赖检测",
+        [SETTINGS_TAB_LOCAL_STORAGE] = "本地存储",
+        [SETTINGS_TAB_ABOUT] = "关于系统",
+    };
+    static void (*const render_tab[SETTINGS_TAB_COUNT])(cui_ctx *, app_state_t *) = {
+        [SETTINGS_TAB_STORAGE_PATHS] = render_tab_storage,
+        [SETTINGS_TAB_REMOTE_SYNC] = render_tab_remote_sync,
+        [SETTINGS_TAB_SCAN] = render_tab_scan,
+        [SETTINGS_TAB_PREFERENCES] = render_tab_preferences,
+        [SETTINGS_TAB_DEPENDENCIES] = render_dependencies_page,
+        [SETTINGS_TAB_LOCAL_STORAGE] = render_storage_page,
+        [SETTINGS_TAB_ABOUT] = render_about_page,
+    };
 
-    /* 1. Global Navigation Bar */
-    render_global_navbar(ui, s);
-
-    /* 2. Top Header */
-    cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        cui_column(ui, .gap = 2) {
-            cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                cui_icon(ui, CUI_ICON_SETTINGS, 20, CUI_COLOR_ACCENT);
-                cui_heading(ui, "系统设置", 2);
-            }
-            cui_text(ui, "配置中心主库基准路径、跨主机远端同步后端及系统常规偏好",
-                     .size = 13, .color = CUI_COLOR_TEXT_SECONDARY);
-        }
+    if (s->settings_active_tab < 0 || s->settings_active_tab >= SETTINGS_TAB_COUNT) {
+        s->settings_active_tab = SETTINGS_TAB_STORAGE_PATHS;
     }
 
-    /* 3. Main Web-style Tabbed Settings Layout */
-    cui_row(ui, .width = CUI_FILL, .height = CUI_FILL, .gap = 16) {
-        /* Left Category Navigation Sidebar */
-        cui_box(ui, .width = CUI_PX(210), .height = CUI_FILL, .radius = 8,
-                .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
-                .pad = 10, .gap = 6,
-                .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-            cui_text(ui, "配置分类", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
+    cui_column(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 20, .gap = 14) {
+        cui_heading(ui, "系统设置", 2);
+        cui_tabs(ui, "settings_tabs", titles, SETTINGS_TAB_COUNT, &s->settings_active_tab);
 
-            /* Tab 0: 主库存储 */
-            bool tab0_active = (s->settings_active_tab == 0);
-            if (cui_button(ui, "主库存储",
-                           .variant = tab0_active ? CUI_BUTTON_PRIMARY : CUI_BUTTON_GHOST,
-                           .width = CUI_FILL,
-                           .size = CUI_SIZE_MD,
-                           .icon = CUI_ICON_FOLDER)) {
-                s->settings_active_tab = 0;
-            }
-
-            /* Tab 1: 远端同步 */
-            bool tab1_active = (s->settings_active_tab == 1);
-            if (cui_button(ui, "远端同步",
-                           .variant = tab1_active ? CUI_BUTTON_PRIMARY : CUI_BUTTON_GHOST,
-                           .width = CUI_FILL,
-                           .size = CUI_SIZE_MD,
-                           .icon = CUI_ICON_GLOBE)) {
-                s->settings_active_tab = 1;
-            }
-
-            /* Tab 2: 扫描策略 */
-            bool tab2_active = (s->settings_active_tab == 2);
-            if (cui_button(ui, "扫描策略",
-                           .variant = tab2_active ? CUI_BUTTON_PRIMARY : CUI_BUTTON_GHOST,
-                           .width = CUI_FILL,
-                           .size = CUI_SIZE_MD,
-                           .icon = CUI_ICON_REFRESH_CW)) {
-                s->settings_active_tab = 2;
-            }
-
-            /* Tab 3: 常规偏好 */
-            bool tab3_active = (s->settings_active_tab == 3);
-            if (cui_button(ui, "常规偏好",
-                           .variant = tab3_active ? CUI_BUTTON_PRIMARY : CUI_BUTTON_GHOST,
-                           .width = CUI_FILL,
-                           .size = CUI_SIZE_MD,
-                           .icon = CUI_ICON_SLIDERS_HORIZONTAL)) {
-                s->settings_active_tab = 3;
-            }
-
-            cui_separator(ui);
-            cui_text(ui, "诊断与维护", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-            if (cui_button(ui, "依赖检测",
-                           .variant = CUI_BUTTON_GHOST,
-                           .width = CUI_FILL,
-                           .size = CUI_SIZE_MD,
-                           .icon = CUI_ICON_SHIELD)) {
-                s->current_page = PAGE_DEPENDENCIES;
-                if (!s->dep_state.loaded) {
-                    app_check_dependencies(s);
-                }
-            }
-            if (cui_button(ui, "存储管理",
-                           .variant = CUI_BUTTON_GHOST,
-                           .width = CUI_FILL,
-                           .size = CUI_SIZE_MD,
-                           .icon = CUI_ICON_DATABASE)) {
-                s->current_page = PAGE_STORAGE;
-                if (!s->storage_stats.loaded) {
-                    app_refresh_storage_stats(s);
-                }
-            }
-
-            cui_spacer(ui);
-
-            cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 8, .gap = 4,
-                    .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_SURFACE), 0.5f),
-                    .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-                cui_text(ui, "当前激活后端", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
-                cui_text(ui, sync_backend_display_name(s->sync_cfg.type),
-                         .size = 11, .color = CUI_COLOR_ACCENT);
-            }
+        int tab = s->settings_active_tab;
+        cui_push_id_int(ui, tab);
+        cui_scroll(ui, .id = "settings_content", .width = CUI_FILL, .height = CUI_FILL) {
+            render_tab[tab](ui, s);
         }
-
-        /* Right Content Panel */
-        cui_box(ui, .width = CUI_FILL, .height = CUI_FILL, .radius = 8,
-                .bg = cui_color_of(ui, CUI_COLOR_SURFACE),
-                .pad = 20, .gap = 16,
-                .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER),
-                .scroll_y = true) {
-            if (s->settings_active_tab == 0) {
-                render_tab_storage(ui, s);
-            } else if (s->settings_active_tab == 1) {
-                render_tab_remote_sync(ui, s);
-            } else if (s->settings_active_tab == 2) {
-                render_tab_scan(ui, s);
-            } else if (s->settings_active_tab == 3) {
-                render_tab_preferences(ui, s);
-            }
-        }
+        cui_pop_id(ui);
     }
 }
