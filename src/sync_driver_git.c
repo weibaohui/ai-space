@@ -159,6 +159,34 @@ static int git_test_connection(sync_backend_t *self, char *err_buf, size_t err_c
     return 0;
 }
 
+static void normalize_git_url(const char *in, char *out, size_t cap) {
+    if (!in || !out || cap == 0) return;
+    out[0] = '\0';
+    const char *p = in;
+    if (strncmp(p, "https://", 8) == 0) p += 8;
+    else if (strncmp(p, "http://", 7) == 0) p += 7;
+    else if (strncmp(p, "git@", 4) == 0) p += 4;
+
+    const char *at = strchr(p, '@');
+    if (at && (at - p < 128)) {
+        p = at + 1;
+    }
+    char tmp[512];
+    snprintf(tmp, sizeof(tmp), "%s", p);
+    for (char *c = tmp; *c; c++) {
+        if (*c == ':') *c = '/';
+    }
+    size_t len = strlen(tmp);
+    while (len > 0 && (tmp[len - 1] == '/' || tmp[len - 1] == ' ' || tmp[len - 1] == '\r' || tmp[len - 1] == '\n')) {
+        tmp[--len] = '\0';
+    }
+    if (len > 4 && strcmp(tmp + len - 4, ".git") == 0) {
+        tmp[len - 4] = '\0';
+    }
+    strncpy(out, tmp, cap - 1);
+    out[cap - 1] = '\0';
+}
+
 static int ensure_git_cache_ready(git_priv_t *priv, char *err_buf, size_t err_cap) {
     if (!priv || priv->git_cache_dir[0] == '\0') {
         if (err_buf) snprintf(err_buf, err_cap, "Git 缓存路径未初始化");
@@ -172,8 +200,50 @@ static int ensure_git_cache_ready(git_priv_t *priv, char *err_buf, size_t err_ca
     char auth_url[768];
     git_build_auth_url(priv, auth_url, sizeof(auth_url));
 
+    bool need_clone = false;
+
     if (stat(git_dir, &st) != 0) {
-        /* Local clone does not exist: clone from remote */
+        need_clone = true;
+    } else {
+        /* Check current remote URL of origin */
+        char check_url_cmd[1024];
+        snprintf(check_url_cmd, sizeof(check_url_cmd),
+                 "cd \"%s\" && git config --get remote.origin.url",
+                 priv->git_cache_dir);
+        FILE *fp = AI_POPEN(check_url_cmd, "r");
+        char current_url[768] = "";
+        if (fp) {
+            if (fgets(current_url, sizeof(current_url), fp)) {
+                size_t l = strlen(current_url);
+                while (l > 0 && (current_url[l - 1] == '\n' || current_url[l - 1] == '\r')) {
+                    current_url[--l] = '\0';
+                }
+            }
+            AI_PCLOSE(fp);
+        }
+
+        char norm_cur[512] = "";
+        char norm_new[512] = "";
+        normalize_git_url(current_url, norm_cur, sizeof(norm_cur));
+        normalize_git_url(priv->repo_url, norm_new, sizeof(norm_new));
+
+        if (norm_cur[0] == '\0' || strcmp(norm_cur, norm_new) != 0) {
+            /* Remote repository changed! Wipe stale cache completely to prevent mixing old repo files */
+            char rm_cmd[1024];
+            snprintf(rm_cmd, sizeof(rm_cmd), "rm -rf \"%s\"", priv->git_cache_dir);
+            system(rm_cmd);
+            need_clone = true;
+        } else {
+            /* Same repo, update origin URL in case credentials/token changed */
+            char set_url_cmd[1024];
+            snprintf(set_url_cmd, sizeof(set_url_cmd),
+                     "cd \"%s\" && git remote set-url origin \"%s\" 2>&1",
+                     priv->git_cache_dir, auth_url);
+            system(set_url_cmd);
+        }
+    }
+
+    if (need_clone) {
         ai_mkdir_p(priv->git_cache_dir);
 
         char clone_cmd[2048];
@@ -182,29 +252,32 @@ static int ensure_git_cache_ready(git_priv_t *priv, char *err_buf, size_t err_ca
                  priv->branch, auth_url, priv->git_cache_dir);
 
         FILE *pipe = AI_POPEN(clone_cmd, "r");
-        char out[512] = "";
+        bool cloned_ok = false;
         if (pipe) {
-            char line[256];
-            while (fgets(line, sizeof(line), pipe)) {
-                if (out[0] == '\0') strncpy(out, line, sizeof(out) - 1);
-            }
             int rc = AI_PCLOSE(pipe);
-            if (rc != 0) {
-                /* Branch might not exist yet, try cloning default branch */
+            if (rc == 0) {
+                cloned_ok = true;
+            } else {
+                /* Branch might not exist yet, try cloning default/unborn branch */
                 snprintf(clone_cmd, sizeof(clone_cmd),
                          "git clone \"%s\" \"%s\" 2>&1",
                          auth_url, priv->git_cache_dir);
                 FILE *p2 = AI_POPEN(clone_cmd, "r");
-                if (p2) AI_PCLOSE(p2);
+                if (p2) {
+                    int rc2 = AI_PCLOSE(p2);
+                    if (rc2 == 0) cloned_ok = true;
+                }
             }
         }
-    } else {
-        /* Already cloned: ensure remote URL is updated */
-        char set_url_cmd[1024];
-        snprintf(set_url_cmd, sizeof(set_url_cmd),
-                 "cd \"%s\" && git remote set-url origin \"%s\" 2>&1",
-                 priv->git_cache_dir, auth_url);
-        system(set_url_cmd);
+
+        /* If cloning failed (e.g. freshly created empty repository without commits) */
+        if (!cloned_ok) {
+            char init_cmd[2048];
+            snprintf(init_cmd, sizeof(init_cmd),
+                     "cd \"%s\" && git init 2>&1 && git remote add origin \"%s\" 2>&1 && git checkout -B \"%s\" 2>&1",
+                     priv->git_cache_dir, auth_url, priv->branch);
+            system(init_cmd);
+        }
     }
 
     /* Configure user identity inside this cache repo */
@@ -236,10 +309,10 @@ static int git_fetch_remote_manifest(sync_backend_t *self, sync_remote_manifest_
         return -1;
     }
 
-    /* Fetch from remote and update tracking branch */
+    /* Fetch from remote and update tracking branch if remote has commits */
     char fetch_cmd[1024];
     snprintf(fetch_cmd, sizeof(fetch_cmd),
-             "cd \"%s\" && git fetch origin \"%s\" 2>&1 && git checkout -B \"%s\" \"origin/%s\" 2>&1",
+             "cd \"%s\" && if git fetch origin \"%s\" 2>/dev/null; then git reset --hard \"origin/%s\" 2>/dev/null; else git checkout -B \"%s\" 2>/dev/null; fi",
              priv->git_cache_dir, priv->branch, priv->branch, priv->branch);
     system(fetch_cmd);
 
