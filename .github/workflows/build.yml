@@ -94,6 +94,12 @@ jobs:
           if [ -n "${{ matrix.zig_target }}" ]; then
             # zig cc as compiler driver; semicolon list passes the target through
             CFG="$CFG -DCMAKE_C_COMPILER=zig;cc;-target;${{ matrix.zig_target }}"
+            # zig's compiler id confuses CMake's multiarch lib discovery, so hand
+            # FindX11/FindSQLite3 the real .so paths from the multiarch dirs
+            X11LIB=$(find /usr/lib -name 'libX11.so' 2>/dev/null | head -1)
+            SQLLIB=$(find /usr/lib -name 'libsqlite3.so' 2>/dev/null | head -1)
+            echo "X11=$X11LIB sqlite3=$SQLLIB"
+            CFG="$CFG -DX11_X11_LIB=$X11LIB -DSQLite3_LIBRARY=$SQLLIB"
           fi
           if [ -n "${{ matrix.osx_arch }}" ]; then
             CFG="$CFG -DCMAKE_OSX_ARCHITECTURES=${{ matrix.osx_arch }} -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13"

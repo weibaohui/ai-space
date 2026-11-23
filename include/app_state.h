@@ -20,8 +20,9 @@ typedef enum {
     PAGE_TOOL_SKILLS = 4,      /* 单个工具内的技能详情 */
     PAGE_SYNC_MANAGER = 5,     /* 远端同步管理 */
     PAGE_SETTINGS = 6,         /* 设置 */
-    PAGE_STORAGE = 7,          /* 本地存储 (备份与缓存管理) */
-    PAGE_ABOUT = 8,            /* 关于系统页面 */
+    PAGE_DEPENDENCIES = 7,     /* 依赖检测 */
+    PAGE_STORAGE = 8,          /* 本地存储 (备份与缓存管理) */
+    PAGE_ABOUT = 9,            /* 关于系统页面 */
 } page_view_t;
 
 typedef enum {
@@ -115,6 +116,36 @@ typedef struct {
 
     char last_checked_at[32];
 } storage_stats_t;
+
+/* Dependency severity levels */
+typedef enum {
+    DEP_SEVERITY_REQUIRED = 0,    /* 核心必须 */
+    DEP_SEVERITY_RECOMMENDED = 1  /* 推荐环境 */
+} dep_severity_t;
+
+/* Single dependency item */
+typedef struct {
+    char binary_name[32];         /* e.g. "git" */
+    char display_name[64];        /* e.g. "Git 版本控制工具" */
+    char category[32];            /* e.g. "核心协同" */
+    char purpose[128];            /* e.g. "用于技能版本管理、主仓同步及远端拉取推送" */
+    dep_severity_t severity;
+    bool installed;
+    char path[256];
+    char version[128];
+    char install_hint[128];
+} dep_item_t;
+
+/* Overall dependency check state */
+typedef struct {
+    bool loaded;
+    dep_item_t items[16];
+    int count;
+    int required_missing_count;
+    int recommended_missing_count;
+    char generated_prompt[2048];
+    char last_checked_at[32];
+} dep_check_state_t;
 
 typedef struct app_state_t {
     sqlite3 *db;
@@ -233,6 +264,9 @@ typedef struct app_state_t {
 
     /* Local Storage Management State */
     storage_stats_t storage_stats;
+
+    /* Dependency Check State */
+    dep_check_state_t dep_state;
 } app_state_t;
 
 /* Common helper functions */
@@ -266,5 +300,8 @@ void app_clear_storage_cache(app_state_t *s);
 void app_clear_all_backups(app_state_t *s);
 void app_prune_backups_keep_latest(app_state_t *s, int keep_count);
 void app_delete_single_snapshot(app_state_t *s, const char *snapshot_name);
+
+/* Dependency check helpers */
+void app_check_dependencies(app_state_t *s);
 
 #endif /* APP_STATE_H */
