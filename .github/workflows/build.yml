@@ -127,13 +127,15 @@ jobs:
           chmod +x linuxdeploy.AppImage
 
           APPDIR=AI-Space.AppDir
-          mkdir -p "$APPDIR/usr/bin"
+          mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
           cp build/ai_space "$APPDIR/usr/bin/"
           strip "$APPDIR/usr/bin/ai_space" || true
           cp -r fonts "$APPDIR/usr/bin/fonts"   # CJK font, resolved beside the exe
+          # icon placed manually to match the desktop Icon= entry exactly
+          cp assets/icon_256.png \
+            "$APPDIR/usr/share/icons/hicolor/256x256/apps/com.weibaohui.ai-space.png"
           ./linuxdeploy.AppImage --appdir "$APPDIR" \
             -e "$APPDIR/usr/bin/ai_space" \
-            -i assets/icon_256.png \
             -d assets/com.weibaohui.ai-space.desktop \
             --output appimage
           mv AI-Space-*.AppImage "pack/${NAME}.AppImage"
