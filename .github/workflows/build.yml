@@ -72,7 +72,8 @@ jobs:
           sudo mkdir -p /usr/local/zig
           sudo tar xf /tmp/zig.tar.xz -C /usr/local/zig --strip-components=1
           echo "/usr/local/zig" >> "$GITHUB_PATH"
-          zig version
+          # GITHUB_PATH only takes effect on the NEXT step; verify via absolute path
+          /usr/local/zig/zig version
 
       - name: Set up MSYS2 (Windows)
         if: runner.os == 'Windows'
