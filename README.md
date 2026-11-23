@@ -28,10 +28,10 @@ AI-Space 是一款专为 AI 编码助手（如 Claude、Gemini CLI、Cursor、Co
 - **主机无关的远端多后端同步管理 (Host-Agnostic Multi-Backend Sync)**
   - 抽象出不变的同步原语（`test_connection`、`fetch_remote_manifest`、`check_drift`、`pull_skill`、`push_skill` 等）。
   - 支持多种云端/局域网共享后端：
-    - **WebDAV**（坚果云、Nextcloud、自建 WebDAV）
-    - **NFS / 局域网共享挂载目录**（NAS、SMB、网络共享存储）
+    - **WebDAV**（支持匿名和账号认证）
+    - **SMB / NFS 共享目录**（使用操作系统已经挂载的目录）
     - **Git 远端版本库**（GitHub、GitLab、Gitea）
-  - 多台主机只需配置相同的后端，即可跨主机无缝共享技能版本，一台变更、多台即时同步。
+  - 多台主机配置同一个远端目标后，可在「同步管理」检查差异，再按项或批量拉取和推送。
 
 - **现代化系统设置 (Tabbed Web-Style Settings)**
   - 类别涵盖：仓储与主库路径、远端同步后端激活与连通性测试、扫描策略与安全规则、常规界面偏好。
@@ -60,6 +60,22 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ./build/ai_space
 ```
+
+### 配置远端同步
+
+在「系统设置 → 远端同步」选择后端，填好参数后点击「测试并启用」。
+
+- **WebDAV** 使用包含服务路径的 HTTP(S) 地址。匿名模式留空账号和密码，认证模式填写账号和密码或应用授权码。同步子目录相对于服务地址填写，留空则使用该地址对应的目录。连接测试会创建缺失的同步子目录，并用临时文件验证读写与目录移动。运行时需要 `curl`。
+- **SMB / NFS** 先在操作系统中挂载共享，再填写挂载点或其中已存在的同步目录。SMB 的访客登录或账号认证由操作系统处理，NFS 按服务端导出权限访问。
+
+可在 macOS 上用 `make test_sync_backends` 构建实测程序。它会在指定测试目录写入样本，请为远端和两个本地主仓分别准备空的测试目录。
+
+```bash
+./test_sync_backends shared /path/to/remote-fixture /tmp/hub-a /tmp/hub-b
+./test_sync_backends webdav https://example.test/dav isolated-fixture /tmp/hub-a /tmp/hub-b
+```
+
+测试认证 WebDAV 时，可通过 `AI_SPACE_TEST_WEBDAV_USER` 和 `AI_SPACE_TEST_WEBDAV_PASSWORD` 提供凭据。
 
 ### 自动化构建（GitHub Actions）
 推送 / 打 tag 后，[build workflow](.github/workflows/build.yml) 会自动为以下平台矩阵编译并打包

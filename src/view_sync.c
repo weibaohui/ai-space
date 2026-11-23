@@ -82,6 +82,16 @@ void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
         }
     }
 
+    if (!offline && !busy && s->sync_status_msg[0]) {
+        cui_box(ui, .width = CUI_FILL, .pad = 12, .radius = 8,
+                .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_DANGER), 0.12f)) {
+            cui_row(ui, .width = CUI_FILL, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                cui_icon(ui, CUI_ICON_TRIANGLE_ALERT, 16, CUI_COLOR_DANGER);
+                cui_text(ui, s->sync_status_msg, .width = CUI_FILL, .color = CUI_COLOR_DANGER);
+            }
+        }
+    }
+
     if (offline || !s->sync_drift_loaded) {
         cui_card(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 24) {
             cui_column(ui, .width = CUI_FILL, .height = CUI_FILL,
@@ -90,7 +100,8 @@ void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
                     cui_empty_state(ui, "当前为单机模式", .icon = ICON_SYNC,
                                     .description = "配置远端后可在多台设备间共享主仓技能。");
                 } else {
-                    cui_empty_state(ui, "等待远端检查", .icon = CUI_ICON_CLOUD,
+                    cui_empty_state(ui, s->sync_status_msg[0] ? "远端状态不可用" : "等待远端检查",
+                                    .icon = CUI_ICON_CLOUD,
                                     .description = "检查后可查看哪些技能需要拉取、推送或处理冲突。");
                 }
             }

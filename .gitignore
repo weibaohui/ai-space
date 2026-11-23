@@ -13,3 +13,4 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 .DS_Store
+/test_sync_backends

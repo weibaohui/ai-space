@@ -223,7 +223,7 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
 }
 
 static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
-    static const char *backends[] = { "单机模式", "WebDAV", "局域共享", "Git 仓库" };
+    static const char *backends[] = { "单机模式", "WebDAV", "SMB / NFS", "Git 仓库" };
     static const char *backend_icons[] = { CUI_ICON_MONITOR, CUI_ICON_CLOUD, CUI_ICON_SERVER, CUI_ICON_GIT_BRANCH };
     sync_backend_type_t active = s->sync_cfg.type;
     const char *active_icon = (active >= SYNC_BACKEND_NONE && active <= SYNC_BACKEND_GIT)
@@ -293,6 +293,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                         s->sync_cfg.type = SYNC_BACKEND_NONE;
                         app_save_settings(s);
                         s->sync_drift_loaded = false;
+                        s->sync_status_msg[0] = '\0';
                         app_set_toast(s, "已成功激活单机本地模式");
                     }
                 }
@@ -306,46 +307,46 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                               .size = CUI_SIZE_SM);
                 }
 
-                cui_text(ui, "支持坚果云、Nextcloud、ownCloud 等 WebDAV 网盘",
-                         .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                cui_text(ui, "匿名服务可留空账号和密码。认证服务请填写账号和密码或应用授权码。",
+                         .width = CUI_FILL, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
 
-                cui_input(ui, "webdav_url_input", s->sync_cfg.webdav_url, sizeof(s->sync_cfg.webdav_url),
-                          .label = "WebDAV 服务器 URL (含根路径):",
+                cui_input(ui, "webdav_url_input", s->sync_pending_cfg.webdav_url, sizeof(s->sync_pending_cfg.webdav_url),
+                          .label = "WebDAV 服务地址（含服务路径）",
                           .placeholder = "https://dav.jianguoyun.com/dav/ai-space/",
                           .width = CUI_FILL);
 
                 cui_row(ui, .width = CUI_FILL, .gap = 12) {
-                    cui_input(ui, "webdav_user_input", s->sync_cfg.webdav_user, sizeof(s->sync_cfg.webdav_user),
+                    cui_input(ui, "webdav_user_input", s->sync_pending_cfg.webdav_user, sizeof(s->sync_pending_cfg.webdav_user),
                               .label = "用户名 / 账号:",
                               .placeholder = "username@example.com",
                               .width = CUI_GROW(1));
 
-                    cui_input(ui, "webdav_pass_input", s->sync_cfg.webdav_pass, sizeof(s->sync_cfg.webdav_pass),
+                    cui_input(ui, "webdav_pass_input", s->sync_pending_cfg.webdav_pass, sizeof(s->sync_pending_cfg.webdav_pass),
                               .label = "密码 / 应用专用授权码:",
                               .placeholder = "••••••••",
                               .password = true,
                               .width = CUI_GROW(1));
                 }
 
-                cui_input(ui, "webdav_path_input", s->sync_cfg.webdav_remote_path, sizeof(s->sync_cfg.webdav_remote_path),
-                          .label = "网盘远端相对子目录:",
+                cui_input(ui, "webdav_path_input", s->sync_pending_cfg.webdav_remote_path, sizeof(s->sync_pending_cfg.webdav_remote_path),
+                          .label = "同步子目录（留空使用服务地址对应目录）",
                           .placeholder = "/ai-space/skills",
                           .width = CUI_FILL);
 
             } else if (s->setting_sync_candidate_type == SYNC_BACKEND_NFS) {
                 cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_heading(ui, "局域网共享挂载目录", 4);
+                    cui_heading(ui, "SMB / NFS 共享目录", 4);
                     cui_spacer(ui);
                     cui_badge(ui, is_active ? "已生效" : "未激活",
                               .tone = is_active ? CUI_TONE_SUCCESS : CUI_TONE_WARNING,
                               .size = CUI_SIZE_SM);
                 }
 
-                cui_text(ui, "支持挂载在各主机的 NAS、SMB 共享文件夹或网络文件系统",
+                cui_text(ui, "先在操作系统中挂载 SMB 或 NFS 共享，再填写本机可访问的目录路径。",
                          .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
 
-                cui_input(ui, "nfs_path_input", s->sync_cfg.nfs_mount_path, sizeof(s->sync_cfg.nfs_mount_path),
-                          .label = "共享目录绝对路径 / 挂载点:",
+                cui_input(ui, "nfs_path_input", s->sync_pending_cfg.nfs_mount_path, sizeof(s->sync_pending_cfg.nfs_mount_path),
+                          .label = "本机挂载点或挂载点下的同步目录",
                           .placeholder = "~/.ai-space/remote-share 或 /Volumes/nas/ai-space/skills",
                           .icon = CUI_ICON_FOLDER,
                           .width = CUI_FILL);
@@ -353,13 +354,14 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                 char nfs_exp[512] = "";
                 char nfs_stat[256] = "";
                 bool nfs_ex = false;
-                get_dir_stat_info(s->sync_cfg.nfs_mount_path, nfs_exp, sizeof(nfs_exp),
+                get_dir_stat_info(s->sync_pending_cfg.nfs_mount_path, nfs_exp, sizeof(nfs_exp),
                                   nfs_stat, sizeof(nfs_stat), &nfs_ex, NULL);
 
                 cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 8, .gap = 4,
                         .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_SURFACE), 0.6f),
                         .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-                    cui_text(ui, nfs_stat, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                    cui_text(ui, nfs_ex ? nfs_stat : "目录尚不可访问，请先挂载共享并创建所需子目录。",
+                             .width = CUI_FILL, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
                 }
 
             } else if (s->setting_sync_candidate_type == SYNC_BACKEND_GIT) {
@@ -374,18 +376,18 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                 cui_text(ui, "以 Git 仓库作为共享源，支持 GitHub、GitLab、Gitea 等托管平台",
                          .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
 
-                cui_input(ui, "git_url_input", s->sync_cfg.git_repo_url, sizeof(s->sync_cfg.git_repo_url),
+                cui_input(ui, "git_url_input", s->sync_pending_cfg.git_repo_url, sizeof(s->sync_pending_cfg.git_repo_url),
                           .label = "Git 远端仓库地址 (HTTPS 或 SSH):",
                           .placeholder = "https://github.com/myteam/ai-skills.git",
                           .width = CUI_FILL);
 
                 cui_row(ui, .width = CUI_FILL, .gap = 12) {
-                    cui_input(ui, "git_branch_input", s->sync_cfg.git_branch, sizeof(s->sync_cfg.git_branch),
+                    cui_input(ui, "git_branch_input", s->sync_pending_cfg.git_branch, sizeof(s->sync_pending_cfg.git_branch),
                               .label = "目标分支:",
                               .placeholder = "main",
                               .width = CUI_PX(180));
 
-                    cui_input(ui, "git_token_input", s->sync_cfg.git_auth_token, sizeof(s->sync_cfg.git_auth_token),
+                    cui_input(ui, "git_token_input", s->sync_pending_cfg.git_auth_token, sizeof(s->sync_pending_cfg.git_auth_token),
                               .label = "访问令牌:",
                               .placeholder = "ghp_xxxxxxxxxxxx",
                               .password = true,
@@ -393,12 +395,12 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                 }
 
                 cui_row(ui, .width = CUI_FILL, .gap = 12) {
-                    cui_input(ui, "git_user_input", s->sync_cfg.git_user_name, sizeof(s->sync_cfg.git_user_name),
+                    cui_input(ui, "git_user_input", s->sync_pending_cfg.git_user_name, sizeof(s->sync_pending_cfg.git_user_name),
                               .label = "提交者姓名:",
                               .placeholder = "AI-Space User",
                               .width = CUI_GROW(1));
 
-                    cui_input(ui, "git_email_input", s->sync_cfg.git_user_email, sizeof(s->sync_cfg.git_user_email),
+                    cui_input(ui, "git_email_input", s->sync_pending_cfg.git_user_email, sizeof(s->sync_pending_cfg.git_user_email),
                               .label = "提交者邮箱:",
                               .placeholder = "user@example.com",
                               .width = CUI_GROW(1));

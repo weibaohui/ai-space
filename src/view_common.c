@@ -1476,10 +1476,6 @@ void app_init_sync_backend(app_state_t *s) {
         s->sync_backend = NULL;
     }
     sync_backend_create(&s->sync_cfg, &s->sync_backend);
-    if (s->sync_backend && s->sync_backend->ops->test_connection) {
-        char err[256] = "";
-        s->sync_backend->ops->test_connection(s->sync_backend, err, sizeof(err));
-    }
 }
 
 void app_init_settings(app_state_t *s) {
@@ -1533,6 +1529,7 @@ void app_init_settings(app_state_t *s) {
     db_get_setting(s->db, "sync_git_email", s->sync_cfg.git_user_email, sizeof(s->sync_cfg.git_user_email), "");
 
     s->setting_sync_candidate_type = s->sync_cfg.type;
+    s->sync_pending_cfg = s->sync_cfg;
     app_init_sync_backend(s);
 }
 
@@ -1581,32 +1578,36 @@ void app_save_settings(app_state_t *s) {
 
 /* -------------------- Sync Background Workers -------------------- */
 
-static void *sync_check_worker_thread(void *arg) {
-    app_state_t *s = (app_state_t *)arg;
-    if (!s) return NULL;
-    if (!s->sync_backend) app_init_sync_backend(s);
-    if (!s->sync_backend || !s->sync_backend->ops->check_drift) {
-        s->sync_is_busy = false;
-        s->op_progress.active = false;
-        s->op_progress.thread_running = false;
-        return NULL;
+static int refresh_sync_drift(app_state_t *s, char *error, size_t cap) {
+    sync_drift_summary_t diff = {0};
+    int rc = -1;
+    if (s->sync_backend && s->sync_backend->ops->check_drift) {
+        rc = s->sync_backend->ops->check_drift(s->sync_backend, s->setting_hub_dir,
+                                               &diff, error, cap);
     }
-
-    s->sync_is_busy = true;
-    s->op_progress.percent = 0.5f;
-    char err_buf[256] = "";
-    sync_drift_summary_t new_diff = {0};
-
-    int rc = s->sync_backend->ops->check_drift(s->sync_backend, s->setting_hub_dir, &new_diff, err_buf, sizeof(err_buf));
+    sync_free_drift_summary(&s->sync_drift);
+    s->sync_drift_loaded = rc == 0;
     if (rc == 0) {
-        sync_free_drift_summary(&s->sync_drift);
-        s->sync_drift = new_diff;
-        s->sync_drift_loaded = true;
+        s->sync_drift = diff;
     } else {
-        sync_free_drift_summary(&new_diff);
+        sync_free_drift_summary(&diff);
+        if (!error[0]) snprintf(error, cap, "无法检查远端同步状态");
     }
+    return rc;
+}
 
-    s->op_progress.percent = 1.0f;
+static void *sync_check_worker_thread(void *arg) {
+    app_state_t *s = arg;
+    if (!s->sync_backend) app_init_sync_backend(s);
+
+    s->op_progress.percent = 0.5f;
+    char error[256] = "";
+    int rc = refresh_sync_drift(s, error, sizeof(error));
+    snprintf(s->sync_status_msg, sizeof(s->sync_status_msg), "%s", rc == 0 ? "" : error);
+    snprintf(s->op_progress.message, sizeof(s->op_progress.message), "%s",
+             rc == 0 ? "远端检查完成" : error);
+    if (rc == 0) s->op_progress.percent = 1.0f;
+
     usleep(150000);
     s->op_progress.active = false;
     s->op_progress.thread_running = false;
@@ -1653,9 +1654,10 @@ static void *sync_check_avail_worker_thread(void *arg) {
 
     if (ca->activate_on_success) {
         if (rc == 0) {
-            s->sync_cfg.type = ca->cand_cfg.type;
+            s->sync_cfg = ca->cand_cfg;
             app_save_settings(s);
             s->sync_drift_loaded = false;
+            s->sync_status_msg[0] = '\0';
             char toast[256];
             snprintf(toast, sizeof(toast), "检测通过！已成功激活后端: %s",
                      sync_backend_display_name(s->sync_cfg.type));
@@ -1694,7 +1696,7 @@ void start_sync_check_available_thread(app_state_t *s, bool activate_on_success)
     sync_check_avail_arg_t *arg = (sync_check_avail_arg_t *)malloc(sizeof(sync_check_avail_arg_t));
     if (!arg) return;
     arg->s = s;
-    arg->cand_cfg = s->sync_cfg;
+    arg->cand_cfg = s->sync_pending_cfg;
     arg->cand_cfg.type = s->setting_sync_candidate_type;
     arg->activate_on_success = activate_on_success;
 
@@ -1733,48 +1735,50 @@ static void *sync_op_worker_thread(void *arg) {
 
     if (!s->sync_backend) app_init_sync_backend(s);
 
+    const char *action = op->is_push ? "推送" : "拉取";
+    int rc = -1;
+    s->op_progress.message[0] = '\0';
     if (s->sync_backend) {
+        sync_backend_t *backend = s->sync_backend;
         if (op->is_all) {
-            if (op->is_push) {
-                if (s->sync_backend->ops->push_all) {
-                    s->sync_backend->ops->push_all(s->sync_backend, s->setting_hub_dir, sync_transfer_progress_cb, s);
-                }
-            } else {
-                if (s->sync_backend->ops->pull_all) {
-                    s->sync_backend->ops->pull_all(s->sync_backend, s->setting_hub_dir, sync_transfer_progress_cb, s);
-                }
+            if (op->is_push && backend->ops->push_all) {
+                rc = backend->ops->push_all(backend, s->setting_hub_dir, sync_transfer_progress_cb, s);
+            } else if (!op->is_push && backend->ops->pull_all) {
+                rc = backend->ops->pull_all(backend, s->setting_hub_dir, sync_transfer_progress_cb, s);
             }
-        } else {
-            if (op->is_push) {
-                if (s->sync_backend->ops->push_skill) {
-                    s->sync_backend->ops->push_skill(s->sync_backend, op->skill_name, s->setting_hub_dir, sync_transfer_progress_cb, s);
-                }
-            } else {
-                if (s->sync_backend->ops->pull_skill) {
-                    s->sync_backend->ops->pull_skill(s->sync_backend, op->skill_name, s->setting_hub_dir, sync_transfer_progress_cb, s);
-                }
-            }
+        } else if (op->is_push && backend->ops->push_skill) {
+            rc = backend->ops->push_skill(backend, op->skill_name, s->setting_hub_dir, sync_transfer_progress_cb, s);
+        } else if (!op->is_push && backend->ops->pull_skill) {
+            rc = backend->ops->pull_skill(backend, op->skill_name, s->setting_hub_dir, sync_transfer_progress_cb, s);
         }
-
-        /* Refresh drift status */
-        sync_drift_summary_t new_diff = {0};
-        if (s->sync_backend->ops->check_drift) {
-            s->sync_backend->ops->check_drift(s->sync_backend, s->setting_hub_dir, &new_diff, NULL, 0);
-            sync_free_drift_summary(&s->sync_drift);
-            s->sync_drift = new_diff;
-            s->sync_drift_loaded = true;
-        }
-
-        /* Rescan local master hub matrix */
-        hub_matrix_t new_matrix;
-        hub_scan_matrix(s->db, &new_matrix);
-        hub_free_matrix(&s->hub_matrix);
-        s->hub_matrix = new_matrix;
-        s->hub_matrix_loaded = true;
     }
 
-    s->op_progress.percent = 1.0f;
-    snprintf(s->op_progress.message, sizeof(s->op_progress.message), "%s完成！", op->is_push ? "推送" : "拉取");
+    char error[256] = "";
+    int refreshed = refresh_sync_drift(s, error, sizeof(error));
+    if (!op->is_push) {
+        hub_matrix_t new_matrix;
+        if (hub_scan_matrix(s->db, &new_matrix) == 0) {
+            hub_free_matrix(&s->hub_matrix);
+            s->hub_matrix = new_matrix;
+            s->hub_matrix_loaded = true;
+        }
+    }
+
+    if (rc != 0) {
+        const char *detail = s->op_progress.message;
+        snprintf(s->sync_status_msg, sizeof(s->sync_status_msg), "%s未完成%s%.215s",
+                 action, detail[0] ? " · " : "", detail);
+    } else if (refreshed != 0) {
+        snprintf(s->sync_status_msg, sizeof(s->sync_status_msg), "%s完成，未能刷新状态 · %.205s", action, error);
+    } else {
+        s->sync_status_msg[0] = '\0';
+        s->op_progress.percent = 1.0f;
+    }
+    if (s->sync_status_msg[0]) {
+        snprintf(s->op_progress.message, sizeof(s->op_progress.message), "%s", s->sync_status_msg);
+    } else {
+        snprintf(s->op_progress.message, sizeof(s->op_progress.message), "%s完成", action);
+    }
     usleep(150000);
 
     s->op_progress.active = false;

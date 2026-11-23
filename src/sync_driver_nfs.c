@@ -1,382 +1,136 @@
-#include "sync_backend.h"
-#include "hub_manager.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <dirent.h>
+#include "sync_directory.h"
 #include "portability.h"
 
+#include <string.h>
+#include <sys/stat.h>
+
 typedef struct {
-    char expanded_path[512];
-} nfs_priv_t;
+    char path[SYNC_PATH_CAP];
+} shared_dir_t;
 
-static void expand_path_local(const char *in, char *out, size_t cap) {
-    if (!in || in[0] == '\0') {
-        if (out && cap > 0) out[0] = '\0';
-        return;
-    }
-    if (in[0] == '~' && (in[1] == '/' || in[1] == '\0')) {
-        const char *h = ai_home_dir();
-        if (h && h[0]) {
-            snprintf(out, cap, "%s%s", h, in + 1);
-            return;
-        }
-    }
-    strncpy(out, in, cap - 1);
-    out[cap - 1] = '\0';
-}
-
-static int nfs_init(sync_backend_t *self, const sync_config_t *cfg) {
-    nfs_priv_t *priv = (nfs_priv_t *)calloc(1, sizeof(nfs_priv_t));
+static int shared_init(sync_backend_t *self, const sync_config_t *cfg) {
+    shared_dir_t *priv = calloc(1, sizeof(*priv));
     if (!priv) return -1;
-    expand_path_local(cfg->nfs_mount_path, priv->expanded_path, sizeof(priv->expanded_path));
+    if (cfg->nfs_mount_path[0] && sync_expand(cfg->nfs_mount_path, priv->path, sizeof(priv->path)) != 0) {
+        free(priv);
+        return -1;
+    }
     self->priv_data = priv;
     return 0;
 }
 
-static void nfs_destroy(sync_backend_t *self) {
-    if (self->priv_data) {
-        free(self->priv_data);
-        self->priv_data = NULL;
-    }
+static void shared_destroy(sync_backend_t *self) {
+    free(self->priv_data);
+    self->priv_data = NULL;
 }
 
-static int nfs_check_available(sync_backend_t *self, char *err_buf, size_t err_cap) {
-    nfs_priv_t *priv = (nfs_priv_t *)self->priv_data;
-    if (!priv || priv->expanded_path[0] == '\0') {
-        if (err_buf) snprintf(err_buf, err_cap, "未配置 NFS / 局域网共享目录路径");
+static int shared_check_available(sync_backend_t *self, char *error, size_t cap) {
+    shared_dir_t *priv = self->priv_data;
+    self->is_connected = false;
+    char stage[SYNC_PATH_CAP], probe[SYNC_PATH_CAP];
+    if (!priv->path[0] || sync_make_stage(priv->path, stage, sizeof(stage)) != 0) {
+        if (error) snprintf(error, cap, "请选择已挂载且可写的共享目录：%.180s", priv->path);
         return -1;
     }
 
-    struct stat st;
-    if (stat(priv->expanded_path, &st) != 0) {
-        if (AI_MKDIR(priv->expanded_path) != 0) {
-            if (err_buf) snprintf(err_buf, err_cap, "共享目录不存在且无法自动创建: %s", priv->expanded_path);
-            return -1;
-        }
-    } else if (!S_ISDIR(st.st_mode)) {
-        if (err_buf) snprintf(err_buf, err_cap, "指定路径非有效物理目录: %s", priv->expanded_path);
-        return -1;
-    }
-
-    /* Perform a real filesystem read/write/delete probe test */
-    char probe_file[1024];
-    snprintf(probe_file, sizeof(probe_file), "%s/.probe_ai_space_%d", priv->expanded_path, (int)getpid());
-
-    FILE *fp = fopen(probe_file, "w");
-    if (!fp) {
-        if (err_buf) snprintf(err_buf, err_cap, "共享目录写入测试失败 (只读或无写权限): %s", priv->expanded_path);
-        return -1;
-    }
-    const char *test_token = "ai-space-probe-availability-ok";
-    fputs(test_token, fp);
-    fclose(fp);
-
-    /* Read test */
-    fp = fopen(probe_file, "r");
-    if (!fp) {
-        unlink(probe_file);
-        if (err_buf) snprintf(err_buf, err_cap, "共享目录读取测试失败: %s", priv->expanded_path);
-        return -1;
-    }
-    char buf[64] = {0};
-    if (!fgets(buf, sizeof(buf), fp) || strcmp(buf, test_token) != 0) {
-        fclose(fp);
-        unlink(probe_file);
-        if (err_buf) snprintf(err_buf, err_cap, "共享目录数据完整性校验失败: %s", priv->expanded_path);
-        return -1;
-    }
-    fclose(fp);
-    unlink(probe_file);
-
-    self->is_connected = true;
-    if (err_buf) snprintf(err_buf, err_cap, "NFS 共享目录可用性检测通过，读写正常 (路径: %s)", priv->expanded_path);
-    snprintf(self->status_msg, sizeof(self->status_msg), "共享目录连接就绪: %s", priv->expanded_path);
-    return 0;
-}
-
-static int nfs_test_connection(sync_backend_t *self, char *err_buf, size_t err_cap) {
-    return nfs_check_available(self, err_buf, err_cap);
-}
-
-static int nfs_fetch_remote_manifest(sync_backend_t *self, sync_remote_manifest_t *out_manifest,
-                                     char *err_buf, size_t err_cap) {
-    nfs_priv_t *priv = (nfs_priv_t *)self->priv_data;
-    if (!priv || priv->expanded_path[0] == '\0') {
-        if (err_buf) snprintf(err_buf, err_cap, "NFS 路径未初始化");
-        return -1;
-    }
-
-    DIR *d = opendir(priv->expanded_path);
-    if (!d) {
-        if (err_buf) snprintf(err_buf, err_cap, "无法打开共享目录: %s", priv->expanded_path);
-        return -1;
-    }
-
-    int cap = 32;
-    out_manifest->items = (sync_remote_skill_item_t *)calloc(cap, sizeof(sync_remote_skill_item_t));
-    out_manifest->count = 0;
-    strncpy(out_manifest->remote_root, priv->expanded_path, sizeof(out_manifest->remote_root) - 1);
-    out_manifest->fetched_at = time(NULL);
-
-    struct dirent *ent;
-    while ((ent = readdir(d)) != NULL) {
-        if (ent->d_name[0] == '.') continue;
-
-        char skill_dir[1024];
-        snprintf(skill_dir, sizeof(skill_dir), "%s/%s", priv->expanded_path, ent->d_name);
-
-        struct stat st;
-        if (stat(skill_dir, &st) == 0 && S_ISDIR(st.st_mode)) {
-            char skill_md[1024];
-            snprintf(skill_md, sizeof(skill_md), "%s/SKILL.md", skill_dir);
-            struct stat md_st;
-            if (stat(skill_md, &md_st) == 0) {
-                if (out_manifest->count >= cap) {
-                    cap *= 2;
-                    out_manifest->items = (sync_remote_skill_item_t *)realloc(
-                        out_manifest->items, sizeof(sync_remote_skill_item_t) * cap);
-                }
-                sync_remote_skill_item_t *item = &out_manifest->items[out_manifest->count];
-                strncpy(item->skill_name, ent->d_name, sizeof(item->skill_name) - 1);
-                item->mtime = st.st_mtime;
-
-                time_t dir_mtime = 0;
-                hub_compute_skill_hash(skill_dir, item->hash, sizeof(item->hash), &dir_mtime);
-                if (dir_mtime > item->mtime) item->mtime = dir_mtime;
-
-                out_manifest->count++;
-            }
-        }
-    }
-    closedir(d);
-    return 0;
-}
-
-static int nfs_check_drift(sync_backend_t *self, const char *local_hub_dir,
-                           sync_drift_summary_t *out_diff, char *err_buf, size_t err_cap) {
-    sync_remote_manifest_t manifest = {0};
-    if (nfs_fetch_remote_manifest(self, &manifest, err_buf, err_cap) != 0) {
-        return -1;
-    }
-
-    char exp_local[512];
-    expand_path_local(local_hub_dir ? local_hub_dir : "~/.ai-space/skills", exp_local, sizeof(exp_local));
-
-    int cap = manifest.count + 32;
-    out_diff->items = (sync_drift_item_t *)calloc(cap, sizeof(sync_drift_item_t));
-    out_diff->count = 0;
-    out_diff->in_sync_count = 0;
-    out_diff->remote_ahead_count = 0;
-    out_diff->local_ahead_count = 0;
-    out_diff->remote_only_count = 0;
-    out_diff->local_only_count = 0;
-    out_diff->conflict_count = 0;
-
-    time_t now = time(NULL);
-    struct tm tm_info;
-    ai_localtime(&now, &tm_info);
-    strftime(out_diff->last_checked_at, sizeof(out_diff->last_checked_at), "%Y-%m-%d %H:%M:%S", &tm_info);
-
-    /* 1. Compare remote items with local */
-    for (int i = 0; i < manifest.count; i++) {
-        sync_remote_skill_item_t *rm = &manifest.items[i];
-        sync_drift_item_t *item = &out_diff->items[out_diff->count++];
-        strncpy(item->skill_name, rm->skill_name, sizeof(item->skill_name) - 1);
-        strncpy(item->remote_hash, rm->hash, sizeof(item->remote_hash) - 1);
-        item->remote_mtime = rm->mtime;
-
-        char local_skill_dir[1024];
-        snprintf(local_skill_dir, sizeof(local_skill_dir), "%s/%s", exp_local, rm->skill_name);
-
-        struct stat st;
-        if (stat(local_skill_dir, &st) == 0 && S_ISDIR(st.st_mode)) {
-            time_t l_mtime = 0;
-            hub_compute_skill_hash(local_skill_dir, item->local_hash, sizeof(item->local_hash), &l_mtime);
-            item->local_mtime = l_mtime;
-
-            if (strcmp(item->local_hash, item->remote_hash) == 0) {
-                item->status = SYNC_DRIFT_IN_SYNC;
-                snprintf(item->status_desc, sizeof(item->status_desc), "两端完全一致");
-                out_diff->in_sync_count++;
-            } else if (item->remote_mtime > item->local_mtime) {
-                item->status = SYNC_DRIFT_REMOTE_AHEAD;
-                snprintf(item->status_desc, sizeof(item->status_desc), "远端已更新 (需拉取)");
-                out_diff->remote_ahead_count++;
-            } else {
-                item->status = SYNC_DRIFT_LOCAL_AHEAD;
-                snprintf(item->status_desc, sizeof(item->status_desc), "本地有新改动 (需推送)");
-                out_diff->local_ahead_count++;
-            }
-        } else {
-            item->status = SYNC_DRIFT_REMOTE_ONLY;
-            item->local_hash[0] = '\0';
-            snprintf(item->status_desc, sizeof(item->status_desc), "远端独有 (待拉取)");
-            out_diff->remote_only_count++;
-        }
-    }
-
-    /* 2. Check local items missing on remote */
-    DIR *ld = opendir(exp_local);
-    if (ld) {
-        struct dirent *ent;
-        while ((ent = readdir(ld)) != NULL) {
-            if (ent->d_name[0] == '.') continue;
-            char ldir[1024];
-            snprintf(ldir, sizeof(ldir), "%s/%s", exp_local, ent->d_name);
-            struct stat lst;
-            if (stat(ldir, &lst) == 0 && S_ISDIR(lst.st_mode)) {
-                /* Check if already processed */
-                bool found = false;
-                for (int i = 0; i < out_diff->count; i++) {
-                    if (strcmp(out_diff->items[i].skill_name, ent->d_name) == 0) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    if (out_diff->count >= cap) {
-                        cap *= 2;
-                        out_diff->items = (sync_drift_item_t *)realloc(
-                            out_diff->items, sizeof(sync_drift_item_t) * cap);
-                    }
-                    sync_drift_item_t *item = &out_diff->items[out_diff->count++];
-                    strncpy(item->skill_name, ent->d_name, sizeof(item->skill_name) - 1);
-                    item->status = SYNC_DRIFT_LOCAL_ONLY;
-                    time_t lm = 0;
-                    hub_compute_skill_hash(ldir, item->local_hash, sizeof(item->local_hash), &lm);
-                    item->local_mtime = lm;
-                    item->remote_hash[0] = '\0';
-                    snprintf(item->status_desc, sizeof(item->status_desc), "本地主仓独有 (待推送)");
-                    out_diff->local_only_count++;
+    int rc = -1;
+    if (sync_join(probe, sizeof(probe), stage, "probe") == 0) {
+        const char *value = "ai-space";
+        FILE *fp = fopen(probe, "wb");
+        if (fp) {
+            bool written = fputs(value, fp) >= 0;
+            bool closed = fclose(fp) == 0;
+            if (written && closed) {
+                fp = fopen(probe, "rb");
+                if (fp) {
+                    char buf[32];
+                    if (fgets(buf, sizeof(buf), fp) && strcmp(buf, value) == 0) rc = 0;
+                    fclose(fp);
                 }
             }
         }
-        closedir(ld);
     }
-
-    sync_free_manifest(&manifest);
-    return 0;
-}
-
-static int nfs_pull_skill(sync_backend_t *self, const char *skill_name, const char *target_local_hub,
-                          sync_progress_cb cb, void *user_data) {
-    nfs_priv_t *priv = (nfs_priv_t *)self->priv_data;
-    if (!priv || !skill_name) return -1;
-
-    char exp_local[512];
-    expand_path_local(target_local_hub ? target_local_hub : "~/.ai-space/skills", exp_local, sizeof(exp_local));
-    AI_MKDIR(exp_local);
-
-    char src_dir[1024];
-    snprintf(src_dir, sizeof(src_dir), "%s/%s", priv->expanded_path, skill_name);
-
-    char dst_dir[1024];
-    snprintf(dst_dir, sizeof(dst_dir), "%s/%s", exp_local, skill_name);
-
-    if (cb) cb(0.3f, "正在从远端共享拉取目录文件...", user_data);
-    int rc = hub_copy_dir_recursive(src_dir, dst_dir);
-    if (cb) cb(1.0f, "拉取完成", user_data);
+    if (sync_remove_tree(stage) != 0) rc = -1;
+    self->is_connected = rc == 0;
+    if (error) snprintf(error, cap, "%s：%.180s", rc == 0 ? "已验证共享目录读写" : "共享目录读写测试失败", priv->path);
     return rc;
 }
 
-static int nfs_push_skill(sync_backend_t *self, const char *skill_name, const char *source_local_hub,
-                          sync_progress_cb cb, void *user_data) {
-    nfs_priv_t *priv = (nfs_priv_t *)self->priv_data;
-    if (!priv || !skill_name) return -1;
+static int shared_fetch(sync_backend_t *self, sync_remote_manifest_t *manifest, char *error, size_t cap) {
+    shared_dir_t *priv = self->priv_data;
+    if (!priv->path[0]) {
+        if (error) snprintf(error, cap, "未配置共享目录");
+        return -1;
+    }
+    return sync_scan_directory(priv->path, false, manifest, error, cap);
+}
 
-    char exp_local[512];
-    expand_path_local(source_local_hub ? source_local_hub : "~/.ai-space/skills", exp_local, sizeof(exp_local));
-
-    char src_dir[1024];
-    snprintf(src_dir, sizeof(src_dir), "%s/%s", exp_local, skill_name);
-
-    char dst_dir[1024];
-    snprintf(dst_dir, sizeof(dst_dir), "%s/%s", priv->expanded_path, skill_name);
-
-    if (cb) cb(0.3f, "正在物理推送到远端共享目录...", user_data);
-    int rc = hub_copy_dir_recursive(src_dir, dst_dir);
-    if (cb) cb(1.0f, "推送完成", user_data);
+static int shared_drift(sync_backend_t *self, const char *local, sync_drift_summary_t *out,
+                        char *error, size_t cap) {
+    sync_remote_manifest_t remote = {0};
+    if (shared_fetch(self, &remote, error, cap) != 0) return -1;
+    int rc = sync_compare_directory(&remote, local, out, error, cap);
+    sync_free_manifest(&remote);
     return rc;
 }
 
-static int nfs_pull_all(sync_backend_t *self, const char *target_local_hub,
-                        sync_progress_cb cb, void *user_data) {
-    sync_drift_summary_t diff = {0};
-    if (nfs_check_drift(self, target_local_hub, &diff, NULL, 0) != 0) {
-        return -1;
-    }
+static int shared_transfer(sync_backend_t *self, const char *name, const char *local,
+                           bool pull, sync_progress_cb cb, void *user) {
+    shared_dir_t *priv = self->priv_data;
+    if (!priv->path[0] || !sync_valid_component(name) || sync_skip_name(name)) return -1;
 
-    int total = diff.remote_ahead_count + diff.remote_only_count;
-    if (total == 0) {
-        if (cb) cb(1.0f, "本地已与远端完全一致，无需拉取", user_data);
-        sync_free_drift_summary(&diff);
-        return 0;
-    }
+    char local_root[SYNC_PATH_CAP];
+    if (sync_expand(local ? local : "~/.ai-space/skills", local_root, sizeof(local_root)) != 0) return -1;
+    const char *src_root = pull ? priv->path : local_root;
+    const char *dst_root = pull ? local_root : priv->path;
+    char src[SYNC_PATH_CAP], dst[SYNC_PATH_CAP], stage[SYNC_PATH_CAP], replacement[SYNC_PATH_CAP];
+    if (sync_join(src, sizeof(src), src_root, name) != 0 || !sync_is_skill(src) ||
+        sync_join(dst, sizeof(dst), dst_root, name) != 0) return -1;
 
-    int current = 0;
-    for (int i = 0; i < diff.count; i++) {
-        if (diff.items[i].status == SYNC_DRIFT_REMOTE_AHEAD ||
-            diff.items[i].status == SYNC_DRIFT_REMOTE_ONLY) {
-            current++;
-            char msg[256];
-            snprintf(msg, sizeof(msg), "正在拉取技能 [%s] (%d/%d)...",
-                     diff.items[i].skill_name, current, total);
-            float pct = (float)current / (float)total;
-            if (cb) cb(pct, msg, user_data);
-            nfs_pull_skill(self, diff.items[i].skill_name, target_local_hub, NULL, NULL);
-        }
+    if (pull) ai_mkdir_p(local_root);
+    if (sync_make_stage(dst_root, stage, sizeof(stage)) != 0) return -1;
+
+    if (cb) cb(0.2f, pull ? "正在读取共享目录" : "正在写入共享目录", user);
+    int rc = -1;
+    if (sync_join(replacement, sizeof(replacement), stage, "new") == 0 &&
+        sync_copy_tree(src, replacement, 0) == 0) {
+        rc = sync_replace_tree(stage, replacement, dst);
     }
-    if (cb) cb(1.0f, "所有远端技能已成功拉取至本地主仓！", user_data);
-    sync_free_drift_summary(&diff);
-    return 0;
+    if (rc != -2) sync_remove_tree(stage);
+    if (cb) cb(rc == 0 ? 1.0f : 0.2f, rc == 0 ? "共享目录同步完成" : "共享目录传输失败", user);
+    return rc;
 }
 
-static int nfs_push_all(sync_backend_t *self, const char *source_local_hub,
-                        sync_progress_cb cb, void *user_data) {
-    sync_drift_summary_t diff = {0};
-    if (nfs_check_drift(self, source_local_hub, &diff, NULL, 0) != 0) {
-        return -1;
-    }
+static int shared_pull(sync_backend_t *self, const char *name, const char *local,
+                       sync_progress_cb cb, void *user) {
+    return shared_transfer(self, name, local, true, cb, user);
+}
 
-    int total = diff.local_ahead_count + diff.local_only_count;
-    if (total == 0) {
-        if (cb) cb(1.0f, "本地没有需推送的新增或改动技能", user_data);
-        sync_free_drift_summary(&diff);
-        return 0;
-    }
+static int shared_push(sync_backend_t *self, const char *name, const char *local,
+                       sync_progress_cb cb, void *user) {
+    return shared_transfer(self, name, local, false, cb, user);
+}
 
-    int current = 0;
-    for (int i = 0; i < diff.count; i++) {
-        if (diff.items[i].status == SYNC_DRIFT_LOCAL_AHEAD ||
-            diff.items[i].status == SYNC_DRIFT_LOCAL_ONLY) {
-            current++;
-            char msg[256];
-            snprintf(msg, sizeof(msg), "正在推送技能 [%s] 到远端共享 (%d/%d)...",
-                     diff.items[i].skill_name, current, total);
-            float pct = (float)current / (float)total;
-            if (cb) cb(pct, msg, user_data);
-            nfs_push_skill(self, diff.items[i].skill_name, source_local_hub, NULL, NULL);
-        }
-    }
-    if (cb) cb(1.0f, "所有本地技能已成功推送至远端共享！", user_data);
-    sync_free_drift_summary(&diff);
-    return 0;
+static int shared_pull_all(sync_backend_t *self, const char *local, sync_progress_cb cb, void *user) {
+    return sync_transfer_batch(self, local, true, cb, user);
+}
+
+static int shared_push_all(sync_backend_t *self, const char *local, sync_progress_cb cb, void *user) {
+    return sync_transfer_batch(self, local, false, cb, user);
 }
 
 const sync_driver_ops_t g_nfs_driver_ops = {
     .type = SYNC_BACKEND_NFS,
     .name = "nfs",
-    .display_name = "NFS / 局域网共享目录",
-    .init = nfs_init,
-    .destroy = nfs_destroy,
-    .test_connection = nfs_test_connection,
-    .check_available = nfs_check_available,
-    .fetch_remote_manifest = nfs_fetch_remote_manifest,
-    .check_drift = nfs_check_drift,
-    .pull_skill = nfs_pull_skill,
-    .push_skill = nfs_push_skill,
-    .pull_all = nfs_pull_all,
-    .push_all = nfs_push_all,
+    .display_name = "SMB / NFS 共享目录",
+    .init = shared_init,
+    .destroy = shared_destroy,
+    .test_connection = shared_check_available,
+    .check_available = shared_check_available,
+    .fetch_remote_manifest = shared_fetch,
+    .check_drift = shared_drift,
+    .pull_skill = shared_pull,
+    .push_skill = shared_push,
+    .pull_all = shared_pull_all,
+    .push_all = shared_push_all,
 };

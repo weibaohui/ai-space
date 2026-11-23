@@ -163,8 +163,10 @@ int main(int argc, char **argv) {
         s.current_page = PAGE_SYNC_MANAGER;
         if (getenv("CUI_SYNC_CHECK")) {
             if (s.sync_backend && s.sync_backend->ops->check_drift) {
-                s.sync_backend->ops->check_drift(s.sync_backend, s.setting_hub_dir, &s.sync_drift, NULL, 0);
-                s.sync_drift_loaded = true;
+                s.sync_drift_loaded = s.sync_backend->ops->check_drift(
+                    s.sync_backend, s.setting_hub_dir, &s.sync_drift,
+                    s.sync_status_msg, sizeof(s.sync_status_msg)) == 0;
+                if (s.sync_drift_loaded) s.sync_status_msg[0] = '\0';
             }
         }
     } else if (start_page && strcmp(start_page, "settings") == 0) {

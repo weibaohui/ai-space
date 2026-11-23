@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include "portability.h"
 #include <time.h>
@@ -207,97 +208,94 @@ static int compare_file_items(const void *a, const void *b) {
     return strcmp(ia->rel_path, ib->rel_path);
 }
 
-static void collect_files_recursive(const char *root_dir, const char *rel_dir,
-                                    file_hash_item_t **items, int *count, int *cap) {
-    char cur_dir[1024];
-    if (rel_dir && rel_dir[0] != '\0') {
-        snprintf(cur_dir, sizeof(cur_dir), "%s/%s", root_dir, rel_dir);
-    } else {
-        snprintf(cur_dir, sizeof(cur_dir), "%s", root_dir);
-    }
+static int collect_files_recursive(const char *dir_path, const char *rel_dir,
+                                   file_hash_item_t **items, size_t *count, size_t *cap,
+                                   time_t *latest_mtime) {
+    DIR *dir = opendir(dir_path);
+    if (!dir) return -1;
 
-    DIR *d = opendir(cur_dir);
-    if (!d) return;
-
-    struct dirent *ent;
-    while ((ent = readdir(d)) != NULL) {
-        if (ent->d_name[0] == '.') continue;
-        if (strcmp(ent->d_name, "__pycache__") == 0) continue;
-
-        char sub_abs[1024];
-        char sub_rel[512];
-        snprintf(sub_abs, sizeof(sub_abs), "%s/%s", cur_dir, ent->d_name);
-        if (rel_dir && rel_dir[0] != '\0') {
-            snprintf(sub_rel, sizeof(sub_rel), "%s/%s", rel_dir, ent->d_name);
-        } else {
-            snprintf(sub_rel, sizeof(sub_rel), "%s", ent->d_name);
+    int rc = 0;
+    while (rc == 0) {
+        errno = 0;
+        struct dirent *ent = readdir(dir);
+        if (!ent) {
+            if (errno) rc = -1;
+            break;
         }
+        if (ent->d_name[0] == '.' || strcmp(ent->d_name, "__pycache__") == 0) continue;
 
+        file_hash_item_t child;
+        int absolute_len = snprintf(child.abs_path, sizeof(child.abs_path), "%s/%s", dir_path, ent->d_name);
+        int relative_len = snprintf(child.rel_path, sizeof(child.rel_path), "%s%s%s",
+                                    rel_dir, rel_dir[0] ? "/" : "", ent->d_name);
         struct stat st;
-        if (stat(sub_abs, &st) == 0) {
-            if (S_ISDIR(st.st_mode)) {
-                collect_files_recursive(root_dir, sub_rel, items, count, cap);
-            } else {
-                if (*count >= *cap) {
-                    *cap *= 2;
-                    *items = (file_hash_item_t *)realloc(*items, sizeof(file_hash_item_t) * (*cap));
+        if (absolute_len < 0 || (size_t)absolute_len >= sizeof(child.abs_path) ||
+            relative_len < 0 || (size_t)relative_len >= sizeof(child.rel_path) ||
+            lstat(child.abs_path, &st) != 0) {
+            rc = -1;
+            break;
+        }
+
+        if (S_ISDIR(st.st_mode)) {
+            if (st.st_mtime > *latest_mtime) *latest_mtime = st.st_mtime;
+            rc = collect_files_recursive(child.abs_path, child.rel_path, items, count, cap, latest_mtime);
+        } else if (S_ISREG(st.st_mode)) {
+            if (*count == *cap) {
+                size_t capacity = *cap ? *cap * 2 : 32;
+                file_hash_item_t *grown = realloc(*items, capacity * sizeof(**items));
+                if (!grown) {
+                    rc = -1;
+                    break;
                 }
-                file_hash_item_t *it = &(*items)[*count];
-                strncpy(it->rel_path, sub_rel, sizeof(it->rel_path) - 1);
-                it->rel_path[sizeof(it->rel_path) - 1] = '\0';
-                strncpy(it->abs_path, sub_abs, sizeof(it->abs_path) - 1);
-                it->abs_path[sizeof(it->abs_path) - 1] = '\0';
-                (*count)++;
+                *items = grown;
+                *cap = capacity;
             }
+            (*items)[(*count)++] = child;
         }
     }
-    closedir(d);
+    closedir(dir);
+    return rc;
 }
 
 int hub_compute_skill_hash(const char *dir_path, char *out_hash_hex, size_t max_len, time_t *out_mtime) {
-    if (!dir_path || !out_hash_hex) return -1;
+    if (!dir_path || !out_hash_hex || max_len == 0) return -1;
+    out_hash_hex[0] = '\0';
 
     struct stat root_st;
-    if (stat(dir_path, &root_st) != 0 || !S_ISDIR(root_st.st_mode)) {
-        return -1;
-    }
+    if (stat(dir_path, &root_st) != 0 || !S_ISDIR(root_st.st_mode)) return -1;
 
-    int cap = 32;
-    int count = 0;
-    file_hash_item_t *items = (file_hash_item_t *)malloc(sizeof(file_hash_item_t) * cap);
-    collect_files_recursive(dir_path, "", &items, &count, &cap);
-
-    if (count > 1) {
-        qsort(items, count, sizeof(file_hash_item_t), compare_file_items);
-    }
+    size_t capacity = 0, count = 0;
+    file_hash_item_t *items = NULL;
+    time_t latest_mtime = root_st.st_mtime;
+    int rc = collect_files_recursive(dir_path, "", &items, &count, &capacity, &latest_mtime);
+    if (rc == 0 && count > 1) qsort(items, count, sizeof(*items), compare_file_items);
 
     uint64_t hash = FNV_OFFSET;
-    time_t latest_mtime = root_st.st_mtime;
-
-    for (int i = 0; i < count; i++) {
-        file_hash_item_t *it = &items[i];
-        hash = fnv1a_update(hash, it->rel_path, strlen(it->rel_path));
-
+    for (size_t i = 0; rc == 0 && i < count; i++) {
+        file_hash_item_t *item = &items[i];
         struct stat st;
-        if (stat(it->abs_path, &st) == 0) {
-            hash = fnv1a_update(hash, &st.st_size, sizeof(st.st_size));
-            if (st.st_mtime > latest_mtime) {
-                latest_mtime = st.st_mtime;
-            }
-
-            /* Read file bytes to hash contents */
-            FILE *f = fopen(it->abs_path, "rb");
-            if (f) {
-                char buf[4096];
-                size_t n;
-                while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
-                    hash = fnv1a_update(hash, buf, n);
-                }
-                fclose(f);
-            }
+        if (lstat(item->abs_path, &st) != 0 || !S_ISREG(st.st_mode)) {
+            rc = -1;
+            break;
         }
+        FILE *file = fopen(item->abs_path, "rb");
+        if (!file) {
+            rc = -1;
+            break;
+        }
+
+        hash = fnv1a_update(hash, item->rel_path, strlen(item->rel_path));
+        hash = fnv1a_update(hash, &st.st_size, sizeof(st.st_size));
+        if (st.st_mtime > latest_mtime) latest_mtime = st.st_mtime;
+
+        char buf[4096];
+        size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), file)) > 0) hash = fnv1a_update(hash, buf, n);
+        if (ferror(file)) rc = -1;
+        fclose(file);
     }
     free(items);
+    if (rc != 0) return rc;
 
     snprintf(out_hash_hex, max_len, "%016llx", (unsigned long long)hash);
     if (out_mtime) *out_mtime = latest_mtime;

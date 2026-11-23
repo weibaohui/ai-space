@@ -269,6 +269,7 @@ typedef struct app_state_t {
 
     /* Pre-activation Availability Check State */
     sync_backend_type_t setting_sync_candidate_type;
+    sync_config_t sync_pending_cfg;
     char sync_candidate_check_msg[256];
     bool sync_candidate_checked_ok;
     bool sync_has_checked_candidate;
