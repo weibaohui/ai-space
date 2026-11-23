@@ -65,12 +65,14 @@ cmake --build build --parallel
 推送 / 打 tag 后，[build workflow](.github/workflows/build.yml) 会自动为以下平台矩阵编译并打包
 （归档内含可执行文件与 CJK 字体 `fonts/`）：
 
-| 平台 | 架构 | Runner |
-|---|---|---|
-| Linux | x86_64 / arm64 | ubuntu-22.04 / ubuntu-22.04-arm |
-| macOS | arm64 / x86_64 / Universal2 | macos-14 / macos-13 |
-| Windows | x86_64 / arm64 | MSYS2 MinGW64 / CLANGARM64 |
+| 平台 | 架构 | 产物形态 | 兼容下限 |
+|---|---|---|---|
+| Linux | x86_64 / arm64 | tar.gz + AppImage（内嵌 libsqlite3 等依赖） | **glibc 2.17**（zig cc 锁定符号基线，CentOS 7 / RHEL7 / Debian 7 / Ubuntu 12.04+ 均可运行） |
+| macOS | arm64 / x86_64 / Universal2 | AI-Space.app Bundle | macOS 10.13+（deployment target 与 Info.plist 对齐） |
+| Windows | x86_64 / arm64 | zip | Windows 7+（win32 ABI 向后兼容） |
 
+- Linux 二进制用 `zig cc -target <arch>-linux-gnu.2.17` 构建，glibc 符号版本与 runner 无关；
+  CI 里还有一步 `objdump` 断言，防止基线意外上浮。X11/libGL 依赖目标系统的桌面栈（桌面发行版均自带）。
 - 每次推送：产物上传为 workflow artifact（Actions 页面下载）；
 - 推送 `v*` tag：产物自动附加到 GitHub Release。
 

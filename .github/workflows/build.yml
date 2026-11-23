@@ -28,11 +28,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # glibc 2.35 base so binaries run on most distros from 2022 on
-          - { name: linux-x64,       os: ubuntu-22.04 }
-          - { name: linux-arm64,     os: ubuntu-22.04-arm }
+          # zig cc pins the glibc symbol baseline to 2.17 (CentOS 7 / RHEL7 era,
+          # 2012+), so the produced binaries run on virtually every distro still
+          # in service regardless of the (much newer) runner they were built on
+          - { name: linux-x64,   os: ubuntu-24.04,     zig_target: x86_64-linux-gnu.2.17 }
+          - { name: linux-arm64, os: ubuntu-24.04-arm, zig_target: aarch64-linux-gnu.2.17 }
           # macos-14/13 pools proved unreliable (jobs cancelled at scheduling);
-          # macos-15 host cross-builds every macOS slice via CMAKE_OSX_ARCHITECTURES
+          # macos-15 host cross-builds every macOS slice via CMAKE_OSX_ARCHITECTURES.
+          # DEPLOYMENT_TARGET 10.13 matches Info.plist LSMinimumSystemVersion
           - { name: macos-arm64,     os: macos-15 }
           - { name: macos-x64,       os: macos-15, osx_arch: x86_64 }
           - { name: macos-universal, os: macos-15, osx_arch: "arm64;x86_64" }
@@ -49,12 +52,18 @@ jobs:
         run: >
           sudo apt-get update -q &&
           sudo apt-get install -y -q
-          libx11-dev libsqlite3-dev ninja-build
+          libx11-dev libsqlite3-dev ninja-build binutils
           xvfb libgl1 libgl1-mesa-dri
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: brew install ninja
+
+      - name: Set up zig (Linux glibc baseline)
+        if: matrix.zig_target != ''
+        uses: mlugg/setup-zig@v1
+        with:
+          version: latest
 
       - name: Set up MSYS2 (Windows)
         if: runner.os == 'Windows'
@@ -72,10 +81,24 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           CFG="-S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release"
+          if [ -n "${{ matrix.zig_target }}" ]; then
+            # zig cc as compiler driver; semicolon list passes the target through
+            CFG="$CFG -DCMAKE_C_COMPILER=zig;cc;-target;${{ matrix.zig_target }}"
+          fi
           if [ -n "${{ matrix.osx_arch }}" ]; then
-            CFG="$CFG -DCMAKE_OSX_ARCHITECTURES=${{ matrix.osx_arch }}"
+            CFG="$CFG -DCMAKE_OSX_ARCHITECTURES=${{ matrix.osx_arch }} -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13"
           fi
           cmake $CFG
+
+      - name: Assert glibc baseline (Linux)
+        if: matrix.zig_target != ''
+        run: |
+          MAX=$(objdump -T build/ai_space | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+          echo "highest glibc symbol version: $MAX"
+          if [ "$(printf 'GLIBC_2.17\n%s\n' "$MAX" | sort -V | tail -1)" != "GLIBC_2.17" ]; then
+            echo "::error::binary requires glibc newer than 2.17 ($MAX)"
+            exit 1
+          fi
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
