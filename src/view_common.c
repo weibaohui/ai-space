@@ -903,6 +903,14 @@ void render_app_sidebar(cui_ctx *ui, app_state_t *s) {
                 s->current_page = PAGE_SETTINGS;
             }
 
+            bool is_storage = (s->current_page == PAGE_STORAGE);
+            if (cui_nav_item(ui, "本地存储", .icon = CUI_ICON_HARD_DRIVE, .selected = is_storage, .group = "pages")) {
+                s->current_page = PAGE_STORAGE;
+                if (!s->storage_stats.loaded) {
+                    app_refresh_storage_stats(s);
+                }
+            }
+
             bool is_about = (s->current_page == PAGE_ABOUT);
             if (cui_nav_item(ui, "关于系统", .icon = CUI_ICON_INFO, .selected = is_about, .group = "pages")) {
                 s->current_page = PAGE_ABOUT;

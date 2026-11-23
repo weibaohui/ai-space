@@ -14,6 +14,7 @@
 #include "view_master_hub.h"
 #include "view_settings.h"
 #include "view_sync.h"
+#include "view_storage.h"
 #include "view_dashboard.h"
 
 /* 全局发布的统一版本变量 */
@@ -58,6 +59,8 @@ static void frame(cui_ctx *ui, void *user) {
                         render_tool_skills_page(ui, s);
                     } else if (s->current_page == PAGE_SETTINGS) {
                         render_settings_page(ui, s);
+                    } else if (s->current_page == PAGE_STORAGE) {
+                        render_storage_page(ui, s);
                     } else if (s->current_page == PAGE_SYNC_MANAGER) {
                         render_sync_manager_page(ui, s);
                     } else if (s->current_page == PAGE_ABOUT) {

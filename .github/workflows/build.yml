@@ -61,9 +61,19 @@ jobs:
 
       - name: Set up zig (Linux glibc baseline)
         if: matrix.zig_target != ''
-        uses: mlugg/setup-zig@v1
-        with:
-          version: 0.14.1   # pinned: 'latest' index resolution proved flaky in CI
+        run: |
+          ZIG_VER=0.14.1
+          case "$(uname -m)" in
+            x86_64)  ZIG_ARCH=x86_64 ;;
+            aarch64) ZIG_ARCH=aarch64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          curl -sL -o /tmp/zig.tar.xz \
+            "https://ziglang.org/download/${ZIG_VER}/zig-linux-${ZIG_ARCH}-${ZIG_VER}.tar.xz"
+          sudo mkdir -p /usr/local/zig
+          sudo tar xf /tmp/zig.tar.xz -C /usr/local/zig --strip-components=1
+          echo "/usr/local/zig" >> "$GITHUB_PATH"
+          zig version
 
       - name: Set up MSYS2 (Windows)
         if: runner.os == 'Windows'

@@ -260,4 +260,11 @@ void start_sync_push_skill_thread(app_state_t *s, const char *skill_name);
 void start_sync_pull_all_thread(app_state_t *s);
 void start_sync_push_all_thread(app_state_t *s);
 
+/* Storage & Backup management helpers */
+void app_refresh_storage_stats(app_state_t *s);
+void app_clear_storage_cache(app_state_t *s);
+void app_clear_all_backups(app_state_t *s);
+void app_prune_backups_keep_latest(app_state_t *s, int keep_count);
+void app_delete_single_snapshot(app_state_t *s, const char *snapshot_name);
+
 #endif /* APP_STATE_H */
