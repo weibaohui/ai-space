@@ -115,6 +115,33 @@ jobs:
           cp assets/icon_256.png pack/ai_space/com.weibaohui.ai-space.png
           cp assets/com.weibaohui.ai-space.desktop pack/ai_space/
           tar czf "pack/${NAME}.tar.gz" -C pack ai_space
+
+          # ---- AppImage: self-contained bundle for any distro -------------------
+          # linuxdeploy scans the binary's ELF deps and bundles the app-level
+          # ones (libsqlite3.so.0 ...) into AppDir/usr/lib with an $ORIGIN rpath.
+          # glibc/libGL/X11 stay on the host per the official excludelist.
+          export APPIMAGE_EXTRACT_AND_RUN=1   # run AppImage tools without FUSE
+          ARCH=$(uname -m)                    # x86_64 | aarch64
+          curl -sL -o linuxdeploy.AppImage \
+            "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${ARCH}.AppImage"
+          chmod +x linuxdeploy.AppImage
+
+          APPDIR=AI-Space.AppDir
+          mkdir -p "$APPDIR/usr/bin"
+          cp build/ai_space "$APPDIR/usr/bin/"
+          strip "$APPDIR/usr/bin/ai_space" || true
+          cp -r fonts "$APPDIR/usr/bin/fonts"   # CJK font, resolved beside the exe
+          ./linuxdeploy.AppImage --appdir "$APPDIR" \
+            -e "$APPDIR/usr/bin/ai_space" \
+            -i assets/icon_256.png \
+            -d assets/com.weibaohui.ai-space.desktop \
+            --output appimage
+          mv AI-Space-*.AppImage "pack/${NAME}.AppImage"
+
+          # smoke test: the AppImage itself must run under Xvfb and render
+          env CUI_SCREENSHOT=appimage_smoke.png CUI_SCREENSHOT_FRAMES=30 \
+            xvfb-run -a -s "-screen 0 1400x1000x24" "./pack/${NAME}.AppImage" --appimage-extract-and-run
+          test -s appimage_smoke.png
           ls -l pack
 
       - name: Package (macOS .app bundle)
