@@ -120,16 +120,6 @@ jobs:
           fi
           cmake $CFG
 
-      - name: Assert glibc baseline (Linux)
-        if: matrix.zig_target != ''
-        run: |
-          MAX=$(objdump -T build/ai_space | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
-          echo "highest glibc symbol version: $MAX"
-          if [ "$(printf 'GLIBC_2.17\n%s\n' "$MAX" | sort -V | tail -1)" != "GLIBC_2.17" ]; then
-            echo "::error::binary requires glibc newer than 2.17 ($MAX)"
-            exit 1
-          fi
-
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
@@ -147,6 +137,18 @@ jobs:
         shell: msys2 {0}
         run: cmake --build build --parallel
 
+      - name: Assert glibc baseline (Linux)
+        if: matrix.zig_target != ''
+        run: |
+          for binary in build/ai_space build/libnfs.so build/libsmb2.so; do
+            MAX=$(objdump -T "$binary" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+            echo "$binary highest glibc symbol version: $MAX"
+            if [ "$(printf 'GLIBC_2.17\n%s\n' "$MAX" | sort -V | tail -1)" != "GLIBC_2.17" ]; then
+              echo "::error::$binary requires glibc newer than 2.17 ($MAX)"
+              exit 1
+            fi
+          done
+
       - name: Smoke test under Xvfb (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -160,10 +162,11 @@ jobs:
         run: |
           NAME="ai_space-${{ github.ref_name }}-${{ matrix.name }}"
           mkdir -p pack/ai_space
-          cp build/ai_space pack/ai_space/
+          cmake --install build --component ai_space_runtime --prefix "$PWD/pack/ai_space"
           strip pack/ai_space/ai_space || true
           cp -r fonts pack/ai_space/fonts
           cp README.md pack/ai_space/README.md
+          cmake --install build --component ai_space_licenses --prefix "$PWD/pack/ai_space"
           # desktop integration: icon + .desktop file, see README for install paths
           cp assets/icon_256.png pack/ai_space/com.weibaohui.ai-space.png
           cp assets/com.weibaohui.ai-space.desktop pack/ai_space/
@@ -181,7 +184,8 @@ jobs:
 
           APPDIR=AI-Space.AppDir
           mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
-          cp build/ai_space "$APPDIR/usr/bin/"
+          cmake --install build --component ai_space_runtime --prefix "$PWD/$APPDIR/usr/bin"
+          cmake --install build --component ai_space_licenses --prefix "$PWD/$APPDIR/usr/share/doc/ai_space"
           strip "$APPDIR/usr/bin/ai_space" || true
           cp -r fonts "$APPDIR/usr/bin/fonts"   # CJK font, resolved beside the exe
           # icon placed manually to match the desktop Icon= entry exactly
@@ -208,7 +212,7 @@ jobs:
           STAGE="pack/${NAME}"
           APP="$STAGE/AI-Space.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-          cp build/ai_space "$APP/Contents/MacOS/ai_space"
+          cmake --install build --component ai_space_runtime --prefix "$PWD/$APP/Contents/MacOS"
           strip "$APP/Contents/MacOS/ai_space" || true
           cp assets/icon.icns "$APP/Contents/Resources/AppIcon.icns"
           # CJK font travels inside the bundle as a resource (MacOS/ must hold code
@@ -218,6 +222,7 @@ jobs:
           # ad-hoc signature: required for local arm64 execution, not a notarized identity
           codesign --force --sign - "$APP"
           cp README.md "$STAGE/README.md"
+          cmake --install build --component ai_space_licenses --prefix "$PWD/$STAGE"
           ditto -c -k --sequesterRsrc "$STAGE" "pack/${NAME}.zip"
           ls -l pack
 
@@ -227,9 +232,10 @@ jobs:
         run: |
           NAME="ai_space-${{ github.ref_name }}-${{ matrix.name }}"
           mkdir -p pack/ai_space
-          cp build/ai_space.exe pack/ai_space/
+          cmake --install build --component ai_space_runtime --prefix "$PWD/pack/ai_space"
           cp -r fonts pack/ai_space/fonts
           cp README.md pack/ai_space/README.md
+          cmake --install build --component ai_space_licenses --prefix "$PWD/pack/ai_space"
           cd pack
           powershell -NoProfile -Command "Compress-Archive -Path ai_space -DestinationPath '${NAME}.zip' -Force"
           ls -l

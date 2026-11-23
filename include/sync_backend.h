@@ -74,6 +74,12 @@ typedef struct {
     char last_checked_at[32];
 } sync_drift_summary_t;
 
+typedef enum {
+    SYNC_SHARE_MOUNTED = 0,
+    SYNC_SHARE_NFS,
+    SYNC_SHARE_SMB,
+} sync_share_mode_t;
+
 /* Unified configuration for any synchronization backend */
 typedef struct {
     sync_backend_type_t type;
@@ -85,6 +91,12 @@ typedef struct {
     char webdav_remote_path[256];
 
     /* NFS / Shared Folder options */
+    sync_share_mode_t share_mode;
+    char share_server[256];
+    char share_export[512];
+    char share_subdir[256];
+    char smb_user[128];
+    char smb_pass[128];
     char nfs_mount_path[512];       /* e.g. "/Volumes/nas/ai-space/skills" */
 
     /* Git Remote Repo options */

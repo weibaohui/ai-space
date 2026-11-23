@@ -51,7 +51,7 @@ static void render_sync_result(cui_ctx *ui, app_state_t *s, const sync_drift_ite
 }
 
 void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
-    char endpoint[680];
+    char endpoint[1060];
     switch (s->sync_cfg.type) {
     case SYNC_BACKEND_GIT:
         snprintf(endpoint, sizeof(endpoint), "Git · %s · %s", s->sync_cfg.git_branch, s->sync_cfg.git_repo_url);
@@ -60,7 +60,14 @@ void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
         snprintf(endpoint, sizeof(endpoint), "WebDAV · %s", s->sync_cfg.webdav_url);
         break;
     case SYNC_BACKEND_NFS:
-        snprintf(endpoint, sizeof(endpoint), "NFS · %s", s->sync_cfg.nfs_mount_path);
+        if (s->sync_cfg.share_mode == SYNC_SHARE_MOUNTED) {
+            snprintf(endpoint, sizeof(endpoint), "共享目录 · %s", s->sync_cfg.nfs_mount_path);
+        } else {
+            bool nfs = s->sync_cfg.share_mode == SYNC_SHARE_NFS;
+            snprintf(endpoint, sizeof(endpoint), "%s · %s%s%s%s%.180s", nfs ? "NFS" : "SMB",
+                     s->sync_cfg.share_server, nfs ? ":" : "/", s->sync_cfg.share_export,
+                     s->sync_cfg.share_subdir[0] ? "/" : "", s->sync_cfg.share_subdir);
+        }
         break;
     default:
         snprintf(endpoint, sizeof(endpoint), "单机模式");

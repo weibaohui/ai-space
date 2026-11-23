@@ -226,6 +226,11 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
     static const char *backends[] = { "单机模式", "WebDAV", "SMB / NFS", "Git 仓库" };
     static const char *backend_icons[] = { CUI_ICON_MONITOR, CUI_ICON_CLOUD, CUI_ICON_SERVER, CUI_ICON_GIT_BRANCH };
     sync_backend_type_t active = s->sync_cfg.type;
+    const char *active_name = sync_backend_display_name(active);
+    if (active == SYNC_BACKEND_NFS) {
+        if (s->sync_cfg.share_mode == SYNC_SHARE_NFS) active_name = "NFS 直连";
+        if (s->sync_cfg.share_mode == SYNC_SHARE_SMB) active_name = "SMB 直连";
+    }
     const char *active_icon = (active >= SYNC_BACKEND_NONE && active <= SYNC_BACKEND_GIT)
                               ? backend_icons[active] : ICON_SYNC;
     cui_color accent = cui_color_of(ui, CUI_COLOR_ACCENT);
@@ -244,7 +249,7 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                 }
                 cui_column(ui, .width = CUI_FILL, .gap = 2) {
                     cui_text(ui, "当前生效的后端", .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                    cui_heading(ui, sync_backend_display_name(active), 3);
+                    cui_heading(ui, active_name, 3);
                 }
             }
         }
@@ -334,6 +339,8 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                           .width = CUI_FILL);
 
             } else if (s->setting_sync_candidate_type == SYNC_BACKEND_NFS) {
+                sync_config_t *cfg = &s->sync_pending_cfg;
+                is_active = is_active && cfg->share_mode == s->sync_cfg.share_mode;
                 cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                     cui_heading(ui, "SMB / NFS 共享目录", 4);
                     cui_spacer(ui);
@@ -342,26 +349,43 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                               .size = CUI_SIZE_SM);
                 }
 
-                cui_text(ui, "先在操作系统中挂载 SMB 或 NFS 共享，再填写本机可访问的目录路径。",
-                         .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                const char *modes[] = {"NFS 直连", "SMB 直连", "已有挂载目录"};
+                int mode = cfg->share_mode == SYNC_SHARE_MOUNTED ? 2 : cfg->share_mode - 1;
+                if (cui_segmented(ui, "sync_share_mode", modes, 3, &mode, .size = CUI_SIZE_MD)) {
+                    cfg->share_mode = mode == 2 ? SYNC_SHARE_MOUNTED : (sync_share_mode_t)(mode + 1);
+                    s->sync_has_checked_candidate = false;
+                }
 
-                cui_input(ui, "nfs_path_input", s->sync_pending_cfg.nfs_mount_path, sizeof(s->sync_pending_cfg.nfs_mount_path),
-                          .label = "本机挂载点或挂载点下的同步目录",
-                          .placeholder = "~/.ai-space/remote-share 或 /Volumes/nas/ai-space/skills",
-                          .icon = CUI_ICON_FOLDER,
-                          .width = CUI_FILL);
-
-                char nfs_exp[512] = "";
-                char nfs_stat[256] = "";
-                bool nfs_ex = false;
-                get_dir_stat_info(s->sync_pending_cfg.nfs_mount_path, nfs_exp, sizeof(nfs_exp),
-                                  nfs_stat, sizeof(nfs_stat), &nfs_ex, NULL);
-
-                cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 8, .gap = 4,
-                        .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_SURFACE), 0.6f),
-                        .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-                    cui_text(ui, nfs_ex ? nfs_stat : "目录尚不可访问，请先挂载共享并创建所需子目录。",
-                             .width = CUI_FILL, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                if (cfg->share_mode == SYNC_SHARE_MOUNTED) {
+                    cui_input(ui, "nfs_path_input", cfg->nfs_mount_path, sizeof(cfg->nfs_mount_path),
+                              .label = "本机挂载点或挂载点下的同步目录",
+                              .placeholder = "/Volumes/nas/ai-space/skills",
+                              .icon = CUI_ICON_FOLDER, .width = CUI_FILL);
+                } else {
+                    bool nfs = cfg->share_mode == SYNC_SHARE_NFS;
+                    cui_row(ui, .width = CUI_FILL, .gap = 12) {
+                        cui_input(ui, "share_server", cfg->share_server, sizeof(cfg->share_server),
+                                  .label = "服务器 IP 或主机名", .placeholder = "192.168.0.211",
+                                  .width = CUI_GROW(1));
+                        cui_input(ui, "share_export", cfg->share_export, sizeof(cfg->share_export),
+                                  .label = nfs ? "NFS 导出路径" : "SMB 共享名",
+                                  .placeholder = nfs ? "/srv/share" : "share", .width = CUI_GROW(1));
+                    }
+                    cui_input(ui, "share_subdir", cfg->share_subdir, sizeof(cfg->share_subdir),
+                              .label = "同步子目录（选填，填写共享中已有的目录）",
+                              .placeholder = "ai-space-skills", .width = CUI_FILL);
+                    if (nfs) {
+                        cui_text(ui, "使用 NFSv3，访问权限由服务端控制。", .width = CUI_FILL,
+                                 .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                    } else {
+                        cui_row(ui, .width = CUI_FILL, .gap = 12) {
+                            cui_input(ui, "share_smb_user", cfg->smb_user, sizeof(cfg->smb_user),
+                                      .label = "用户名", .placeholder = "留空使用访客",
+                                      .width = CUI_GROW(1));
+                            cui_input(ui, "share_smb_pass", cfg->smb_pass, sizeof(cfg->smb_pass),
+                                      .label = "密码", .password = true, .width = CUI_GROW(1));
+                        }
+                    }
                 }
 
             } else if (s->setting_sync_candidate_type == SYNC_BACKEND_GIT) {

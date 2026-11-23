@@ -18,10 +18,21 @@ static void write_file(const char *path, const char *content, time_t modified) {
 }
 
 static void config_from_args(sync_config_t *cfg, int argc, char **argv) {
-    assert(argc == 5 || argc == 6);
+    assert(argc >= 5 && argc <= 7);
     if (strcmp(argv[1], "shared") == 0) {
         cfg->type = SYNC_BACKEND_NFS;
         snprintf(cfg->nfs_mount_path, sizeof(cfg->nfs_mount_path), "%s", argv[2]);
+    } else if (strcmp(argv[1], "nfs") == 0 || strcmp(argv[1], "smb") == 0) {
+        assert(argc == 7);
+        cfg->type = SYNC_BACKEND_NFS;
+        cfg->share_mode = strcmp(argv[1], "nfs") == 0 ? SYNC_SHARE_NFS : SYNC_SHARE_SMB;
+        snprintf(cfg->share_server, sizeof(cfg->share_server), "%s", argv[2]);
+        snprintf(cfg->share_export, sizeof(cfg->share_export), "%s", argv[3]);
+        snprintf(cfg->share_subdir, sizeof(cfg->share_subdir), "%s", argv[4]);
+        const char *user = getenv("AI_SPACE_TEST_SMB_USER");
+        const char *pass = getenv("AI_SPACE_TEST_SMB_PASSWORD");
+        if (user) snprintf(cfg->smb_user, sizeof(cfg->smb_user), "%s", user);
+        if (pass) snprintf(cfg->smb_pass, sizeof(cfg->smb_pass), "%s", pass);
     } else {
         assert(argc == 6 && strcmp(argv[1], "webdav") == 0);
         cfg->type = SYNC_BACKEND_WEBDAV;
@@ -55,9 +66,10 @@ static void check_drift(sync_backend_t *backend, const char *local, int expected
 
 /* Supply an isolated remote directory and two empty, disposable local roots. */
 int main(int argc, char **argv) {
-    if (argc < 5 || argc > 6) {
+    if (argc < 5 || argc > 7) {
         fprintf(stderr, "Usage: %s shared REMOTE_ROOT LOCAL_A LOCAL_B\n", argv[0]);
         fprintf(stderr, "       %s webdav BASE_URL REMOTE_SUBDIR LOCAL_A LOCAL_B\n", argv[0]);
+        fprintf(stderr, "       %s nfs|smb SERVER EXPORT_OR_SHARE REMOTE_SUBDIR LOCAL_A LOCAL_B\n", argv[0]);
         return 1;
     }
     sync_config_t cfg = {0};
@@ -86,6 +98,14 @@ int main(int argc, char **argv) {
     write_file(doc, "original\n", old);
     write_file(extra, "nested contents\n", old);
     assert(sync_set_mtime(skill_path, old) == 0);
+    if (cfg.share_mode != SYNC_SHARE_MOUNTED) {
+        char binary_path[SYNC_PATH_CAP];
+        path_join(binary_path, refs, "binary.dat");
+        FILE *binary = fopen(binary_path, "wb");
+        assert(binary);
+        for (unsigned i = 0; i < 170000; i++) assert(fputc(i % 251, binary) != EOF);
+        assert(fclose(binary) == 0);
+    }
 
     check_drift(backend, a, 0, 0, 1, 0, 0);
     assert(backend->ops->push_skill(backend, name, a, progress, NULL) == 0);

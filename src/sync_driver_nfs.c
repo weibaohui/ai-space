@@ -1,4 +1,5 @@
 #include "sync_directory.h"
+#include "sync_network_share.h"
 #include "portability.h"
 
 #include <string.h>
@@ -11,7 +12,8 @@ typedef struct {
 static int shared_init(sync_backend_t *self, const sync_config_t *cfg) {
     shared_dir_t *priv = calloc(1, sizeof(*priv));
     if (!priv) return -1;
-    if (cfg->nfs_mount_path[0] && sync_expand(cfg->nfs_mount_path, priv->path, sizeof(priv->path)) != 0) {
+    if (cfg->share_mode == SYNC_SHARE_MOUNTED && cfg->nfs_mount_path[0] &&
+        sync_expand(cfg->nfs_mount_path, priv->path, sizeof(priv->path)) != 0) {
         free(priv);
         return -1;
     }
@@ -25,6 +27,11 @@ static void shared_destroy(sync_backend_t *self) {
 }
 
 static int shared_check_available(sync_backend_t *self, char *error, size_t cap) {
+    if (self->cfg.share_mode != SYNC_SHARE_MOUNTED) {
+        int rc = sync_network_check(&self->cfg, error, cap);
+        self->is_connected = rc == 0;
+        return rc;
+    }
     shared_dir_t *priv = self->priv_data;
     self->is_connected = false;
     char stage[SYNC_PATH_CAP], probe[SYNC_PATH_CAP];
@@ -57,6 +64,8 @@ static int shared_check_available(sync_backend_t *self, char *error, size_t cap)
 }
 
 static int shared_fetch(sync_backend_t *self, sync_remote_manifest_t *manifest, char *error, size_t cap) {
+    if (self->cfg.share_mode != SYNC_SHARE_MOUNTED)
+        return sync_network_fetch(&self->cfg, manifest, error, cap);
     shared_dir_t *priv = self->priv_data;
     if (!priv->path[0]) {
         if (error) snprintf(error, cap, "未配置共享目录");
@@ -76,6 +85,8 @@ static int shared_drift(sync_backend_t *self, const char *local, sync_drift_summ
 
 static int shared_transfer(sync_backend_t *self, const char *name, const char *local,
                            bool pull, sync_progress_cb cb, void *user) {
+    if (self->cfg.share_mode != SYNC_SHARE_MOUNTED)
+        return sync_network_transfer(&self->cfg, name, local, pull, cb, user);
     shared_dir_t *priv = self->priv_data;
     if (!priv->path[0] || !sync_valid_component(name) || sync_skip_name(name)) return -1;
 

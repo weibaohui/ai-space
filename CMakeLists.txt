@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.16)
 
 # Cross-platform build used by GitHub Actions (Linux/macOS/Windows, x64 & arm64).
 # Local macOS development can keep using the Makefile; this file mirrors it.
@@ -16,6 +16,7 @@ set(CUI_BUILD_EXAMPLES OFF)
 set(CUI_BUILD_TESTS OFF)
 
 add_subdirectory(CUI)
+add_subdirectory(vendor)
 
 # SQLite: if a CI-vendored amalgamation exists (third_party/sqlite/), build it
 # statically -- the binary then carries no libsqlite3.so dependency, which keeps
@@ -47,6 +48,7 @@ set(AI_SPACE_SRCS
     src/sync_manager.c
     src/sync_directory.c
     src/sync_driver_nfs.c
+    src/sync_network_share.c
     src/sync_driver_webdav.c
     src/sync_driver_git.c
     src/db.c
@@ -63,7 +65,13 @@ endif()
 
 target_include_directories(ai_space PRIVATE include CUI/include CUI/src)
 
-target_link_libraries(ai_space PRIVATE cui::cui ${AI_SPACE_SQLITE_LIB})
+target_link_libraries(ai_space PRIVATE cui::cui ${AI_SPACE_SQLITE_LIB} nfs smb2)
+
+if(APPLE)
+    set_target_properties(ai_space PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "@executable_path")
+elseif(UNIX)
+    set_target_properties(ai_space PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "$ORIGIN")
+endif()
 
 # Window app niceties: no console window on Windows, gc-sections/dead_strip in release
 cui_app_target(ai_space)
@@ -73,3 +81,13 @@ if(MSVC)
 else()
     target_compile_options(ai_space PRIVATE -Wall -Wextra)
 endif()
+
+install(TARGETS ai_space nfs smb2
+    RUNTIME DESTINATION . COMPONENT ai_space_runtime
+    LIBRARY DESTINATION . COMPONENT ai_space_runtime)
+install(FILES vendor/README.md DESTINATION licenses COMPONENT ai_space_licenses)
+install(FILES vendor/libnfs/COPYING vendor/libnfs/LICENCE-LGPL-2.1.txt
+              vendor/libnfs/LICENCE-BSD.txt
+        DESTINATION licenses/libnfs COMPONENT ai_space_licenses)
+install(FILES vendor/libsmb2/COPYING vendor/libsmb2/LICENCE-LGPL-2.1.txt
+        DESTINATION licenses/libsmb2 COMPONENT ai_space_licenses)

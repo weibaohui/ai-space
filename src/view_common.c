@@ -1521,6 +1521,17 @@ void app_init_settings(app_state_t *s) {
     db_get_setting(s->db, "sync_webdav_path", s->sync_cfg.webdav_remote_path, sizeof(s->sync_cfg.webdav_remote_path), "/ai-space/skills");
 
     db_get_setting(s->db, "sync_nfs_path", s->sync_cfg.nfs_mount_path, sizeof(s->sync_cfg.nfs_mount_path), "~/.ai-space/remote-share");
+    char share_mode[16];
+    db_get_setting(s->db, "sync_share_mode", share_mode, sizeof(share_mode),
+                   s->sync_cfg.type == SYNC_BACKEND_NFS ? "0" : "1");
+    int mode = atoi(share_mode);
+    s->sync_cfg.share_mode = mode >= SYNC_SHARE_MOUNTED && mode <= SYNC_SHARE_SMB
+                             ? (sync_share_mode_t)mode : SYNC_SHARE_MOUNTED;
+    db_get_setting(s->db, "sync_share_server", s->sync_cfg.share_server, sizeof(s->sync_cfg.share_server), "");
+    db_get_setting(s->db, "sync_share_export", s->sync_cfg.share_export, sizeof(s->sync_cfg.share_export), "");
+    db_get_setting(s->db, "sync_share_subdir", s->sync_cfg.share_subdir, sizeof(s->sync_cfg.share_subdir), "");
+    db_get_setting(s->db, "sync_smb_user", s->sync_cfg.smb_user, sizeof(s->sync_cfg.smb_user), "");
+    db_get_setting(s->db, "sync_smb_pass", s->sync_cfg.smb_pass, sizeof(s->sync_cfg.smb_pass), "");
 
     db_get_setting(s->db, "sync_git_url", s->sync_cfg.git_repo_url, sizeof(s->sync_cfg.git_repo_url), "");
     db_get_setting(s->db, "sync_git_branch", s->sync_cfg.git_branch, sizeof(s->sync_cfg.git_branch), "main");
@@ -1562,6 +1573,13 @@ void app_save_settings(app_state_t *s) {
     db_set_setting(s->db, "sync_webdav_path", s->sync_cfg.webdav_remote_path);
 
     db_set_setting(s->db, "sync_nfs_path", s->sync_cfg.nfs_mount_path);
+    snprintf(s_type, sizeof(s_type), "%d", s->sync_cfg.share_mode);
+    db_set_setting(s->db, "sync_share_mode", s_type);
+    db_set_setting(s->db, "sync_share_server", s->sync_cfg.share_server);
+    db_set_setting(s->db, "sync_share_export", s->sync_cfg.share_export);
+    db_set_setting(s->db, "sync_share_subdir", s->sync_cfg.share_subdir);
+    db_set_setting(s->db, "sync_smb_user", s->sync_cfg.smb_user);
+    db_set_setting(s->db, "sync_smb_pass", s->sync_cfg.smb_pass);
 
     db_set_setting(s->db, "sync_git_url", s->sync_cfg.git_repo_url);
     db_set_setting(s->db, "sync_git_branch", s->sync_cfg.git_branch);

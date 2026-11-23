@@ -66,13 +66,18 @@ cmake --build build --parallel
 在「系统设置 → 远端同步」选择后端，填好参数后点击「测试并启用」。
 
 - **WebDAV** 使用包含服务路径的 HTTP(S) 地址。匿名模式留空账号和密码，认证模式填写账号和密码或应用授权码。同步子目录相对于服务地址填写，留空则使用该地址对应的目录。连接测试会创建缺失的同步子目录，并用临时文件验证读写与目录移动。运行时需要 `curl`。
-- **SMB / NFS** 先在操作系统中挂载共享，再填写挂载点或其中已存在的同步目录。SMB 的访客登录或账号认证由操作系统处理，NFS 按服务端导出权限访问。
+- **NFS 直连** 填服务器 IP 或主机名和导出路径，例如 `nas.local`、`/srv/share`。使用 NFSv3，访问权限由服务端控制。
+- **SMB 直连** 填服务器 IP 或主机名和共享名，例如 `nas.local`、`share`。访客模式留空用户名和密码，认证模式填写用户名和密码。客户端使用 SMB 2/3。
+- 两种直连模式均可选填共享中已有的同步子目录，留空则使用共享根目录。AI-Space 使用随包提供的 C 客户端库，直接通过网络收发文件。
+- 已有 SMB / NFS 挂载目录仍可通过「已有挂载目录」使用。
 
 可在 macOS 上用 `make test_sync_backends` 构建实测程序。它会在指定测试目录写入样本，请为远端和两个本地主仓分别准备空的测试目录。
 
 ```bash
 ./test_sync_backends shared /path/to/remote-fixture /tmp/hub-a /tmp/hub-b
 ./test_sync_backends webdav https://example.test/dav isolated-fixture /tmp/hub-a /tmp/hub-b
+./test_sync_backends nfs nas.local /srv/share isolated-fixture /tmp/hub-a /tmp/hub-b
+./test_sync_backends smb nas.local share isolated-fixture /tmp/hub-a /tmp/hub-b
 ```
 
 测试认证 WebDAV 时，可通过 `AI_SPACE_TEST_WEBDAV_USER` 和 `AI_SPACE_TEST_WEBDAV_PASSWORD` 提供凭据。
@@ -157,4 +162,4 @@ ai-space/
 
 ## 📄 开源许可证
 
-MIT License.
+AI-Space 使用 MIT License。随包分发的 [libnfs](https://github.com/sahlberg/libnfs) 和 [libsmb2](https://github.com/sahlberg/libsmb2) 使用各自的开源许可证。源代码及许可证位于 [vendor](vendor)。
