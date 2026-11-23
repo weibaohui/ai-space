@@ -219,7 +219,10 @@ jobs:
           # only, or codesign rejects the bundle); resolved via ../Resources fallback
           cp -R fonts "$APP/Contents/Resources/fonts"
           sed "s/__VERSION__/${VER#v}/" assets/Info.plist > "$APP/Contents/Info.plist"
-          # ad-hoc signature: required for local arm64 execution, not a notarized identity
+          # ad-hoc signature: required for local arm64 execution, not a notarized
+          # identity. Nested dylibs (libnfs/libsmb2 ship in MacOS/) must be signed
+          # before the outer bundle or codesign rejects them as unsigned subcomponents
+          find "$APP/Contents/MacOS" -name '*.dylib' -exec codesign --force --sign - {} +
           codesign --force --sign - "$APP"
           cp README.md "$STAGE/README.md"
           cmake --install build --component ai_space_licenses --prefix "$PWD/$STAGE"
