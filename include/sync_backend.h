@@ -164,6 +164,9 @@ void sync_backend_destroy(sync_backend_t *backend);
  */
 int sync_backend_check_available(const sync_config_t *cfg, char *err_buf, size_t err_cap);
 
+bool sync_git_uses_ssh(const char *url);
+bool sync_git_uses_token(const char *url);
+
 const char *sync_backend_name(sync_backend_type_t type);
 const char *sync_backend_display_name(sync_backend_type_t type);
 

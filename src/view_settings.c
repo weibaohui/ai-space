@@ -400,34 +400,37 @@ static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
                 cui_text(ui, "以 Git 仓库作为共享源，支持 GitHub、GitLab、Gitea 等托管平台",
                          .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
 
-                cui_input(ui, "git_url_input", s->sync_pending_cfg.git_repo_url, sizeof(s->sync_pending_cfg.git_repo_url),
-                          .label = "Git 远端仓库地址 (HTTPS 或 SSH):",
-                          .placeholder = "https://github.com/myteam/ai-skills.git",
+                sync_config_t *cfg = &s->sync_pending_cfg;
+                cui_input(ui, "git_url_input", cfg->git_repo_url, sizeof(cfg->git_repo_url),
+                          .label = "Git 远端仓库地址",
+                          .placeholder = "https://github.com/team/skills.git 或 git@github.com:team/skills.git",
                           .width = CUI_FILL);
 
                 cui_row(ui, .width = CUI_FILL, .gap = 12) {
-                    cui_input(ui, "git_branch_input", s->sync_pending_cfg.git_branch, sizeof(s->sync_pending_cfg.git_branch),
-                              .label = "目标分支:",
-                              .placeholder = "main",
-                              .width = CUI_PX(180));
+                    cui_input(ui, "git_branch_input", cfg->git_branch, sizeof(cfg->git_branch),
+                              .label = "目标分支", .placeholder = "main", .width = CUI_PX(180));
 
-                    cui_input(ui, "git_token_input", s->sync_pending_cfg.git_auth_token, sizeof(s->sync_pending_cfg.git_auth_token),
-                              .label = "访问令牌:",
-                              .placeholder = "ghp_xxxxxxxxxxxx",
-                              .password = true,
-                              .width = CUI_GROW(1));
+                    if (sync_git_uses_token(cfg->git_repo_url)) {
+                        cui_input(ui, "git_token_input", cfg->git_auth_token, sizeof(cfg->git_auth_token),
+                                  .label = "HTTPS 访问令牌", .password = true, .width = CUI_GROW(1));
+                    }
                 }
 
-                cui_row(ui, .width = CUI_FILL, .gap = 12) {
-                    cui_input(ui, "git_user_input", s->sync_pending_cfg.git_user_name, sizeof(s->sync_pending_cfg.git_user_name),
-                              .label = "提交者姓名:",
-                              .placeholder = "AI-Space User",
-                              .width = CUI_GROW(1));
+                if (sync_git_uses_ssh(cfg->git_repo_url)) {
+                    cui_text(ui, "SSH 使用本机配置的密钥，可在仓库地址中指定登录用户名。",
+                             .width = CUI_FILL, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                }
 
-                    cui_input(ui, "git_email_input", s->sync_pending_cfg.git_user_email, sizeof(s->sync_pending_cfg.git_user_email),
-                              .label = "提交者邮箱:",
-                              .placeholder = "user@example.com",
-                              .width = CUI_GROW(1));
+                static bool git_author_open = false;
+                cui_accordion(ui, "提交者信息（选填）", &git_author_open) {
+                    cui_text(ui, "填写后用于 AI-Space 推送时生成的 Git 提交记录。",
+                             .width = CUI_FILL, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
+                    cui_row(ui, .width = CUI_FILL, .gap = 12) {
+                        cui_input(ui, "git_user_input", cfg->git_user_name, sizeof(cfg->git_user_name),
+                                  .label = "提交者姓名", .placeholder = "AI-Space User", .width = CUI_GROW(1));
+                        cui_input(ui, "git_email_input", cfg->git_user_email, sizeof(cfg->git_user_email),
+                                  .label = "提交者邮箱", .placeholder = "user@example.com", .width = CUI_GROW(1));
+                    }
                 }
             }
 

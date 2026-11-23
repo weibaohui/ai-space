@@ -34,8 +34,16 @@ static void expand_path_local(const char *in, char *out, size_t cap) {
     out[cap - 1] = '\0';
 }
 
+bool sync_git_uses_ssh(const char *url) {
+    return strncmp(url, "ssh://", 6) == 0 || strncmp(url, "git@", 4) == 0;
+}
+
+bool sync_git_uses_token(const char *url) {
+    return strncmp(url, "https://", 8) == 0;
+}
+
 static void git_build_auth_url(const git_priv_t *priv, char *out_url, size_t cap) {
-    if (priv->auth_token[0] != '\0' && strncmp(priv->repo_url, "https://", 8) == 0) {
+    if (priv->auth_token[0] != '\0' && sync_git_uses_token(priv->repo_url)) {
         snprintf(out_url, cap, "https://oauth2:%s@%s", priv->auth_token, priv->repo_url + 8);
     } else {
         strncpy(out_url, priv->repo_url, cap - 1);
@@ -97,9 +105,8 @@ static int git_check_available(sync_backend_t *self, char *err_buf, size_t err_c
     }
 
     if (strncmp(priv->repo_url, "http://", 7) != 0 &&
-        strncmp(priv->repo_url, "https://", 8) != 0 &&
-        strncmp(priv->repo_url, "git@", 4) != 0) {
-        if (err_buf) snprintf(err_buf, err_cap, "Git 仓库地址格式不正确 (必须以 https://、http:// 或 git@ 开头)");
+        !sync_git_uses_token(priv->repo_url) && !sync_git_uses_ssh(priv->repo_url)) {
+        if (err_buf) snprintf(err_buf, err_cap, "请输入以 https://、http://、ssh:// 或 git@ 开头的仓库地址");
         return -1;
     }
 
@@ -165,6 +172,7 @@ static void normalize_git_url(const char *in, char *out, size_t cap) {
     const char *p = in;
     if (strncmp(p, "https://", 8) == 0) p += 8;
     else if (strncmp(p, "http://", 7) == 0) p += 7;
+    else if (strncmp(p, "ssh://", 6) == 0) p += 6;
     else if (strncmp(p, "git@", 4) == 0) p += 4;
 
     const char *at = strchr(p, '@');
