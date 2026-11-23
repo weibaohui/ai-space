@@ -129,8 +129,9 @@ jobs:
           cp build/ai_space "$APP/Contents/MacOS/ai_space"
           strip "$APP/Contents/MacOS/ai_space" || true
           cp assets/icon.icns "$APP/Contents/Resources/AppIcon.icns"
-          # CJK font travels inside the bundle; the app resolves it beside the executable
-          cp -R fonts "$APP/Contents/MacOS/fonts"
+          # CJK font travels inside the bundle as a resource (MacOS/ must hold code
+          # only, or codesign rejects the bundle); resolved via ../Resources fallback
+          cp -R fonts "$APP/Contents/Resources/fonts"
           sed "s/__VERSION__/${VER#v}/" assets/Info.plist > "$APP/Contents/Info.plist"
           # ad-hoc signature: required for local arm64 execution, not a notarized identity
           codesign --force --sign - "$APP"

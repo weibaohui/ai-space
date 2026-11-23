@@ -262,7 +262,7 @@ int main(int argc, char **argv) {
     }
 
     /* Resolve the CJK fallback font: working directory first (dev layout), then
-     * beside the executable (.app bundle / installed layout), then ~/.ai-space */
+     * beside the executable, then .app-bundle Resources/, then ~/.ai-space */
     char font_file[1024] = "";
     if (AI_ACCESS("fonts/NotoSansSC-Regular.otf", R_OK) == 0) {
         strncpy(font_file, "fonts/NotoSansSC-Regular.otf", sizeof(font_file) - 1);
@@ -270,6 +270,10 @@ int main(int argc, char **argv) {
         char exe_dir[1024];
         if (ai_exe_dir(exe_dir, sizeof(exe_dir)) == 0) {
             snprintf(font_file, sizeof(font_file), "%s/fonts/NotoSansSC-Regular.otf", exe_dir);
+            if (AI_ACCESS(font_file, R_OK) != 0) {
+                snprintf(font_file, sizeof(font_file),
+                         "%s/../Resources/fonts/NotoSansSC-Regular.otf", exe_dir);
+            }
         }
         if (AI_ACCESS(font_file, R_OK) != 0) {
             snprintf(font_file, sizeof(font_file),
