@@ -111,7 +111,7 @@ static int git_check_available(sync_backend_t *self, char *err_buf, size_t err_c
     ai_setenv("GIT_TERMINAL_PROMPT", "0");
     ai_setenv("GIT_SSH_COMMAND", "ssh -o BatchMode=yes -o ConnectTimeout=8");
     snprintf(cmd, sizeof(cmd),
-             "git ls-remote --exit-code \"%s\" HEAD 2>&1",
+             "git ls-remote \"%s\" 2>&1",
              auth_url);
 
     FILE *pipe = AI_POPEN(cmd, "r");
@@ -474,7 +474,7 @@ static int git_push_skill(sync_backend_t *self, const char *skill_name, const ch
     if (cb) cb(0.8f, "正在推送到远端 Git 仓库...", user_data);
     char push_cmd[1024];
     snprintf(push_cmd, sizeof(push_cmd),
-             "cd \"%s\" && git push origin \"%s\" 2>&1",
+             "cd \"%s\" && git push -u origin \"%s\" 2>&1",
              priv->git_cache_dir, priv->branch);
     int rc = system(push_cmd);
     if (rc != 0) {
@@ -579,7 +579,7 @@ static int git_push_all(sync_backend_t *self, const char *source_local_hub,
     if (cb) cb(0.8f, "正在推送到远端 Git 仓库...", user_data);
     char push_cmd[1024];
     snprintf(push_cmd, sizeof(push_cmd),
-             "cd \"%s\" && git push origin \"%s\" 2>&1",
+             "cd \"%s\" && git push -u origin \"%s\" 2>&1",
              priv->git_cache_dir, priv->branch);
     int rc = system(push_cmd);
     if (rc != 0) {
