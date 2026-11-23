@@ -62,14 +62,13 @@ jobs:
       - name: Set up zig (Linux glibc baseline)
         if: matrix.zig_target != ''
         run: |
-          ZIG_VER=0.14.1
-          case "$(uname -m)" in
-            x86_64)  ZIG_ARCH=x86_64 ;;
-            aarch64) ZIG_ARCH=aarch64 ;;
-            *) echo "unsupported arch"; exit 1 ;;
-          esac
-          curl -sL -o /tmp/zig.tar.xz \
-            "https://ziglang.org/download/${ZIG_VER}/zig-linux-${ZIG_ARCH}-${ZIG_VER}.tar.xz"
+          ZIG_VER=0.17.1
+          ARCH=$(uname -m)   # x86_64 | aarch64
+          # resolve the tarball URL from the official index (naming changed across versions)
+          ZIG_URL=$(curl -sL https://ziglang.org/download/index.json | \
+            python3 -c "import json,sys; print(json.load(sys.stdin)['${ZIG_VER}']['${ARCH}-linux']['tarball'])")
+          echo "zig url: $ZIG_URL"
+          curl -fL --retry 3 -o /tmp/zig.tar.xz "$ZIG_URL"
           sudo mkdir -p /usr/local/zig
           sudo tar xf /tmp/zig.tar.xz -C /usr/local/zig --strip-components=1
           echo "/usr/local/zig" >> "$GITHUB_PATH"

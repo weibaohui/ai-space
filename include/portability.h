@@ -38,6 +38,10 @@
 #define F_OK 0
 #endif
 
+/* lstat(2): Windows has no symlink distinction here and the project rejects
+ * symlinks by design, so plain stat() is the exact same semantic */
+#define lstat(path, buf) stat((path), (buf))
+
 /* POSIX 2-arg mkdir -> Win32 1-arg _mkdir */
 #define AI_MKDIR(path) _mkdir((path))
 
