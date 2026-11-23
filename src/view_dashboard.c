@@ -560,9 +560,16 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
             /* 5. 历史快照 */
             int snap_count = count_snapshots(s->setting_backup_dir);
             cui_card(ui, .width = CUI_GROW(1), .pad = 12, .gap = 4) {
-                cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                    cui_icon(ui, CUI_ICON_CLOCK, 14, CUI_COLOR_ACCENT);
-                    cui_text(ui, "历史快照", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                    cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                        cui_icon(ui, CUI_ICON_CLOCK, 14, CUI_COLOR_ACCENT);
+                        cui_text(ui, "历史快照", .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+                    }
+                    cui_spacer(ui);
+                    if (cui_button(ui, "管理", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM)) {
+                        s->current_page = PAGE_STORAGE;
+                        app_refresh_storage_stats(s);
+                    }
                 }
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_END) {
                     char snap_txt[32];

@@ -362,6 +362,15 @@ void render_storage_page(cui_ctx *ui, app_state_t *s) {
     expand_path_local(s->setting_hub_dir[0] ? s->setting_hub_dir : "~/.ai-space/skills",
                       exp_hub, sizeof(exp_hub));
 
+    char backup_size_buf[64];
+    format_size((size_t)st->backup_total_bytes, backup_size_buf, sizeof(backup_size_buf));
+
+    char cache_size_buf[64];
+    format_size((size_t)st->cache_total_bytes, cache_size_buf, sizeof(cache_size_buf));
+
+    char hub_size_buf[64];
+    format_size((size_t)st->hub_total_bytes, hub_size_buf, sizeof(hub_size_buf));
+
     cui_column(ui, .width = CUI_FILL, .gap = 16) {
 
         /* 1. Header Row */
@@ -370,7 +379,7 @@ void render_storage_page(cui_ctx *ui, app_state_t *s) {
                 cui_box(ui, .width = CUI_PX(40), .height = CUI_PX(40), .radius = 8,
                         .bg = cui_color_of(ui, CUI_COLOR_ACCENT),
                         .dir = CUI_STACK, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
-                    cui_icon(ui, CUI_ICON_HARD_DRIVE, 20, CUI_COLOR_BACKGROUND);
+                    cui_icon(ui, CUI_ICON_DATABASE, 20, CUI_COLOR_BACKGROUND);
                 }
                 cui_column(ui, .gap = 2) {
                     cui_heading(ui, "本地存储管理", 2);
@@ -398,8 +407,6 @@ void render_storage_page(cui_ctx *ui, app_state_t *s) {
         /* 2. Top Summary Metrics Row (3 Cards) */
         cui_row(ui, .width = CUI_FILL, .gap = 12) {
             /* Card 1: Backups */
-            char backup_size_buf[64];
-            format_size((size_t)st->backup_total_bytes, backup_size_buf, sizeof(backup_size_buf));
             cui_card(ui, .width = CUI_GROW(1), .pad = 16, .gap = 8) {
                 cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                     cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
@@ -416,12 +423,10 @@ void render_storage_page(cui_ctx *ui, app_state_t *s) {
             }
 
             /* Card 2: Cache */
-            char cache_size_buf[64];
-            format_size((size_t)st->cache_total_bytes, cache_size_buf, sizeof(cache_size_buf));
             cui_card(ui, .width = CUI_GROW(1), .pad = 16, .gap = 8) {
                 cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                     cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, CUI_ICON_FOLDER_SYNC, 16, CUI_COLOR_ACCENT);
+                        cui_icon(ui, CUI_ICON_REFRESH_CW, 16, CUI_COLOR_ACCENT);
                         cui_text(ui, "运行缓存占用", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
                     }
                     cui_spacer(ui);
@@ -434,8 +439,6 @@ void render_storage_page(cui_ctx *ui, app_state_t *s) {
             }
 
             /* Card 3: Master Hub */
-            char hub_size_buf[64];
-            format_size((size_t)st->hub_total_bytes, hub_size_buf, sizeof(hub_size_buf));
             cui_card(ui, .width = CUI_GROW(1), .pad = 16, .gap = 8) {
                 cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                     cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
@@ -459,7 +462,7 @@ void render_storage_page(cui_ctx *ui, app_state_t *s) {
 
             cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                    cui_icon(ui, CUI_ICON_FOLDER_SYNC, 18, CUI_COLOR_ACCENT);
+                    cui_icon(ui, CUI_ICON_REFRESH_CW, 18, CUI_COLOR_ACCENT);
                     cui_heading(ui, "本地临时缓存清理", 4);
                 }
                 cui_spacer(ui);
@@ -571,7 +574,7 @@ void render_storage_page(cui_ctx *ui, app_state_t *s) {
 
             if (st->snapshot_count == 0) {
                 cui_column(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER, .pad = 30, .gap = 10) {
-                    cui_icon(ui, CUI_ICON_SHIELD_CHECK, 36, CUI_COLOR_SUCCESS);
+                    cui_icon(ui, CUI_ICON_SHIELD, 36, CUI_COLOR_SUCCESS);
                     cui_heading(ui, "暂无备份快照", 4);
                     cui_text(ui, "当前备份目录干净，未占用多余磁盘空间。",
                              .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
@@ -612,7 +615,7 @@ void render_storage_page(cui_ctx *ui, app_state_t *s) {
                             cui_spacer(ui);
 
                             /* Delete Single Item */
-                            if (cui_button(ui, "删除", .variant = CUI_BUTTON_OUTLINE, .size = CUI_SIZE_SM, .icon = CUI_ICON_TRASH)) {
+                            if (cui_button(ui, "删除", .variant = CUI_BUTTON_OUTLINE, .size = CUI_SIZE_SM, .icon = CUI_ICON_TRASH_2)) {
                                 app_delete_single_snapshot(s, item->dir_name);
                                 app_set_toast(s, "快照已成功删除");
                             }
