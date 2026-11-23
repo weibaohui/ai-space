@@ -26,6 +26,18 @@
 #include <io.h>     /* _access, _unlink */
 #include <process.h> /* _getpid */
 
+/* stat(2)-style helpers: check a path's readability/writability/existence */
+#define AI_ACCESS(path, mode) _access((path), (mode))
+#ifndef R_OK
+#define R_OK 4
+#endif
+#ifndef W_OK
+#define W_OK 2
+#endif
+#ifndef F_OK
+#define F_OK 0
+#endif
+
 /* POSIX 2-arg mkdir -> Win32 1-arg _mkdir */
 #define AI_MKDIR(path) _mkdir((path))
 
@@ -99,6 +111,18 @@ static inline int ai_gethostname(char *name, size_t len) {
 }
 #define gethostname(name, l) ai_gethostname((name), (l))
 
+/* directory containing the running executable (no trailing slash), 0 on success */
+static inline int ai_exe_dir(char *out, size_t cap) {
+    char exe[1024];
+    DWORD n = GetModuleFileNameA(NULL, exe, (DWORD)sizeof(exe));
+    if (n == 0 || n >= sizeof(exe)) return -1;
+    exe[n] = '\0';
+    char *dir = ai_dirname(exe);
+    if (!dir) return -1;
+    snprintf(out, cap, "%s", dir);
+    return 0;
+}
+
 /* localtime_r into a caller buffer; the app is single-threaded (CUI event loop),
  * so the CRT's static struct tm is safe here */
 static inline struct tm *ai_localtime(const time_t *t, struct tm *out) {
@@ -112,6 +136,9 @@ static inline struct tm *ai_localtime(const time_t *t, struct tm *out) {
 #include <pwd.h>
 #include <libgen.h> /* dirname */
 #include <sys/stat.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h> /* _NSGetExecutablePath */
+#endif
 
 #define AI_MKDIR(path)       mkdir((path), 0755)
 
@@ -134,6 +161,7 @@ static inline void ai_mkdir_p(const char *path) {
 #define AI_POPEN(cmd, mode)  popen((cmd), (mode))
 #define AI_PCLOSE(f)         pclose((f))
 #define ai_dirname(path)     dirname((path))
+#define AI_ACCESS(path, mode) access((path), (mode))
 
 static inline const char *ai_home_dir(void) {
     const char *h = getenv("HOME");
@@ -149,6 +177,26 @@ static inline int ai_setenv(const char *name, const char *value) {
 
 static inline struct tm *ai_localtime(const time_t *t, struct tm *out) {
     return localtime_r(t, out);
+}
+
+/* directory containing the running executable (no trailing slash), 0 on success */
+static inline int ai_exe_dir(char *out, size_t cap) {
+    char exe[1024];
+    char resolved[1024];
+#ifdef __APPLE__
+    uint32_t n = sizeof(exe);
+    if (_NSGetExecutablePath(exe, &n) != 0) return -1;
+    if (!realpath(exe, resolved)) return -1;
+#else /* Linux/BSD procfs */
+    ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    if (n <= 0) return -1;
+    exe[n] = '\0';
+    snprintf(resolved, sizeof(resolved), "%s", exe);
+#endif
+    char *dir = ai_dirname(resolved);
+    if (!dir) return -1;
+    snprintf(out, cap, "%s", dir);
+    return 0;
 }
 
 #define AI_DEVNULL "/dev/null"

@@ -43,6 +43,11 @@ set(AI_SPACE_SRCS
 
 add_executable(ai_space ${AI_SPACE_SRCS})
 
+# Window/taskbar icon on Windows: CUI's win32 backend loads resource ID 1
+if(WIN32)
+    target_sources(ai_space PRIVATE assets/app.rc)
+endif()
+
 target_include_directories(ai_space PRIVATE include CUI/include CUI/src)
 
 target_link_libraries(ai_space PRIVATE cui::cui SQLite::SQLite3)

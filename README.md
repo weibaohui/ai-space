@@ -74,7 +74,16 @@ cmake --build build --parallel
 - 每次推送：产物上传为 workflow artifact（Actions 页面下载）；
 - 推送 `v*` tag：产物自动附加到 GitHub Release。
 
-> ⚠️ 运行时请保持可执行文件与 `fonts/` 目录相对位置不变（CJK 字体从相对路径加载）。
+> ⚠️ 运行时请保持可执行文件与 `fonts/` 目录相对位置不变（CJK 字体从相对路径加载，程序也会自动在可执行文件旁与 `~/.ai-space/fonts/` 查找）。
+
+### 🎨 应用图标与 macOS App Bundle
+
+图标源文件由 `assets/make_icons.py`（Pillow）生成，产出的 `assets/icon.icns`（macOS）、`assets/app.ico`（Windows，经 `assets/app.rc` 以资源 ID 1 编译进 exe，Dock/任务栏即显示图标）、`assets/icon_256.png`（Linux）随仓库提交，CI 直接取用。
+
+- **macOS**：CI 把可执行文件、CJK 字体与图标打成 `AI-Space.app` Bundle（Info.plist + icns + 临时签名），解压后双击即可像正常 App 一样从 Dock/启动台打开。CI 构建未经 Apple 公证，首次打开若被 Gatekeeper 拦截：右键 →「打开」，或执行
+  `xattr -dr com.apple.quarantine AI-Space.app`。正式分发可另用 Developer ID 签名 + 公证。
+- **Linux**：归档内附 `com.weibaohui.ai-space.desktop` 与图标，安装到 `~/.local/share/applications/` 与 `~/.local/share/icons/hicolor/256x256/apps/` 后即可出现在应用列表/任务栏（程序已设置 `app_id`，窗口类名一致）。
+- **Windows**：图标直接内嵌于 exe，无需额外文件。
 
 ---
 

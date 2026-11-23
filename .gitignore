@@ -4,6 +4,7 @@ test_sync
 tests/*.o
 shot*.png
 smoke.png
+assets/icon.iconset/
 CUI/build/
 build/
 pack/

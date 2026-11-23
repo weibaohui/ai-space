@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=AI-Space
+Comment=本地优先的多智能体技能管理与多主机同步工作台
+Exec=ai_space
+Icon=com.weibaohui.ai-space
+Categories=Development;Utility;
+Terminal=false

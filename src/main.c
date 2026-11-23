@@ -3,6 +3,7 @@
 #include <string.h>
 #include <cui/cui.h>
 #include <cui/cui_app.h>
+#include "portability.h"
 #include "app_state.h"
 #include "db.h"
 #include "view_common.h"
@@ -80,7 +81,14 @@ static void frame(cui_ctx *ui, void *user) {
 
 int main(int argc, char **argv) {
     static app_state_t s = {0};
-    strncpy(s.db_path, "data/ai_space.db", sizeof(s.db_path) - 1);
+
+    /* data/ beside the working directory when writable (dev layout); otherwise
+     * fall back to ~/.ai-space (e.g. Finder-launched .app has CWD "/") */
+    if (AI_ACCESS("data", W_OK) == 0 || AI_MKDIR("data") == 0) {
+        strncpy(s.db_path, "data/ai_space.db", sizeof(s.db_path) - 1);
+    } else {
+        snprintf(s.db_path, sizeof(s.db_path), "%s/.ai-space/ai_space.db", ai_home_dir());
+    }
 
     const char *custom_hub = getenv("AI_SPACE_HUB_DIR");
     const char *custom_backup = getenv("AI_SPACE_BACKUP_DIR");
@@ -238,6 +246,7 @@ int main(int argc, char **argv) {
 
     cui_app *app = cui_app_create(&(cui_app_desc){
         .title = custom_title ? custom_title : "AI-Space 本地工具与技能管理器",
+        .app_id = "com.weibaohui.ai-space",
         .width = 1260,
         .height = 780,
         .min_width = 960,
@@ -252,6 +261,22 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    /* Resolve the CJK fallback font: working directory first (dev layout), then
+     * beside the executable (.app bundle / installed layout), then ~/.ai-space */
+    char font_file[1024] = "";
+    if (AI_ACCESS("fonts/NotoSansSC-Regular.otf", R_OK) == 0) {
+        strncpy(font_file, "fonts/NotoSansSC-Regular.otf", sizeof(font_file) - 1);
+    } else {
+        char exe_dir[1024];
+        if (ai_exe_dir(exe_dir, sizeof(exe_dir)) == 0) {
+            snprintf(font_file, sizeof(font_file), "%s/fonts/NotoSansSC-Regular.otf", exe_dir);
+        }
+        if (AI_ACCESS(font_file, R_OK) != 0) {
+            snprintf(font_file, sizeof(font_file),
+                     "%s/.ai-space/fonts/NotoSansSC-Regular.otf", ai_home_dir());
+        }
+    }
+
     while (cui_app_frame(app)) {
         cui_ctx *ui = cui_app_ui(app);
         static cui_font cjk;
@@ -259,7 +284,7 @@ int main(int argc, char **argv) {
 
         /* Load CJK fallback font for Chinese characters */
         if (!font_done) {
-            cjk = cui_font_load_file(ui, "fonts/NotoSansSC-Regular.otf");
+            cjk = cui_font_load_file(ui, font_file);
             if (cjk > 0) {
                 cui_font_add_fallback(ui, CUI_FONT_BODY, cjk);
                 cui_font_add_fallback(ui, CUI_FONT_MEDIUM, cjk);
