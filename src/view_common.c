@@ -904,7 +904,7 @@ void render_app_sidebar(cui_ctx *ui, app_state_t *s) {
             }
 
             bool is_storage = (s->current_page == PAGE_STORAGE);
-            if (cui_nav_item(ui, "本地存储", .icon = CUI_ICON_HARD_DRIVE, .selected = is_storage, .group = "pages")) {
+            if (cui_nav_item(ui, "本地存储", .icon = CUI_ICON_DATABASE, .selected = is_storage, .group = "pages")) {
                 s->current_page = PAGE_STORAGE;
                 if (!s->storage_stats.loaded) {
                     app_refresh_storage_stats(s);
