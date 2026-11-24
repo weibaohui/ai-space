@@ -94,6 +94,7 @@ int hub_compute_skill_hash(const char *dir_path, char *out_hash_hex, size_t max_
     file_hash_item_t *items = NULL;
     time_t latest_mtime = root_st.st_mtime;
     int rc = collect_files_recursive(dir_path, "", &items, &count, &capacity, &latest_mtime, 0);
+    /* 按相对路径排序，避免文件系统枚举顺序影响指纹。 */
     if (rc == 0 && count > 1) qsort(items, count, sizeof(*items), compare_file_items);
 
     uint64_t hash = FNV_OFFSET;
@@ -110,6 +111,7 @@ int hub_compute_skill_hash(const char *dir_path, char *out_hash_hex, size_t max_
             break;
         }
 
+        /* 相对路径、文件大小和内容共同参与指纹，文件改名也能被检测到。 */
         hash = fnv1a_update(hash, item->rel_path, strlen(item->rel_path));
         hash = fnv1a_update(hash, &st.st_size, sizeof(st.st_size));
         if (st.st_mtime > latest_mtime) latest_mtime = st.st_mtime;

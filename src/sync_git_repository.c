@@ -30,7 +30,7 @@ int git_repo_configure(git_priv_t *priv, const sync_config_t *cfg) {
         if (env_cache && env_cache[0] != '\0') {
             strncpy(raw_cache, env_cache, sizeof(raw_cache) - 1);
         } else {
-            /* If custom hub dir is active, derive git cache relative to custom hub parent */
+            /* 自定义主仓的缓存放在主仓的同级 cache 目录。 */
             char custom_hub[512] = "";
             hub_get_custom_dirs(custom_hub, sizeof(custom_hub), NULL, 0);
             if (custom_hub[0] != '\0' && strstr(custom_hub, ".ai-space/skills") == NULL) {
@@ -170,6 +170,7 @@ static int prepare_cache(git_priv_t *repo, const char *auth_url) {
 }
 
 static int git_repo_prepare(git_priv_t *repo, char *error, size_t cap) {
+    /* 同步任务持有缓存锁直到销毁后端，避免同时操作同一工作区。 */
     if (repo->cache_lock) return 0;
     char ref[sizeof(repo->branch) + sizeof("refs/heads/")];
     snprintf(ref, sizeof(ref), "refs/heads/%s", repo->branch);
@@ -182,7 +183,7 @@ static int git_repo_prepare(git_priv_t *repo, char *error, size_t cap) {
     git_build_auth_url(repo, auth_url, sizeof(auth_url));
     int rc = prepare_cache(repo, auth_url);
     if (rc == 1) {
-        /* Preserve the old repository when switching endpoints. */
+        /* 切换远端时另建缓存，保留旧仓库内容。 */
         uint64_t key = UINT64_C(14695981039346656037);
         for (const unsigned char *p = (const unsigned char *)repo->repo_url; *p; p++)
             key = (key ^ *p) * UINT64_C(1099511628211);
@@ -210,6 +211,7 @@ int git_repo_refresh(git_priv_t *repo, char *error, size_t cap) {
         if (error) snprintf(error, cap, "Git 缓存中有未保存内容，请先检查缓存目录");
         return -1;
     }
+    /* 只有成功获取选定的分支后才切换缓存内容。 */
     if (GIT(dir, "fetch", "--no-tags", "origin", ref) == 0) {
         if (GIT(dir, "checkout", "--force", "-B", repo->branch, "FETCH_HEAD") == 0) return 0;
     } else {

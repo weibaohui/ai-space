@@ -1,6 +1,7 @@
 #include "sync_webdav_listing.h"
 #include "skill_metadata.h"
 #include "sync_directory.h"
+#include "sync_local_files.h"
 #include "portability.h"
 
 #include <dirent.h>
@@ -43,18 +44,6 @@ static bool dav_child_url(char *out, size_t cap, const char *parent, const char 
     return true;
 }
 
-static int dav_stage(char *path, size_t cap) {
-#ifdef _WIN32
-    char temp[SYNC_PATH_CAP];
-    DWORD n = GetTempPathA((DWORD)sizeof(temp), temp);
-    if (!n || n >= sizeof(temp)) return -1;
-    return sync_make_stage(temp, path, cap);
-#else
-    const char *temp = getenv("TMPDIR");
-    return sync_make_stage(temp && temp[0] ? temp : "/tmp", path, cap);
-#endif
-}
-
 static void curl_option(FILE *file, const char *option, const char *value) {
     fprintf(file, "%s = \"", option);
     for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
@@ -87,11 +76,11 @@ static int run_curl(const char *path) {
 #endif
 }
 
-/* curl settings, including credentials, never enter the shell or process arguments. */
+/* 将 curl 选项写入临时配置文件，进程参数只传配置文件的路径。 */
 static int dav_request_headers(const sync_backend_t *self, const char *method, const char *url,
                                const char *header, const char *extra, const char *input, const char *output) {
     char stage[SYNC_PATH_CAP], config[SYNC_PATH_CAP], headers[SYNC_PATH_CAP];
-    if (dav_stage(stage, sizeof(stage)) != 0) return 0;
+    if (sync_make_temp_stage(stage, sizeof(stage)) != 0) return 0;
     int status = 0;
     if (sync_join(config, sizeof(config), stage, "curl.conf") != 0 ||
         sync_join(headers, sizeof(headers), stage, "headers") != 0) goto done;
@@ -155,12 +144,12 @@ static void dav_error(char *error, size_t cap, const char *operation, int code) 
     else snprintf(error, cap, "%s失败 (HTTP %d)", operation, code);
 }
 
-/* Locate DAV XML elements by their local names, independent of the namespace prefix. */
+/* 目录查询使用 Depth 头，响应通过专用解析器处理。 */
 static int dav_list(const sync_backend_t *self, const char *url, int depth, dav_listing_t *listing) {
     *listing = (dav_listing_t){0};
     char stage[SYNC_PATH_CAP], file_path[SYNC_PATH_CAP], collection[DAV_URL_CAP];
     int n = snprintf(collection, sizeof(collection), "%s%s", url, url[strlen(url) - 1] == '/' ? "" : "/");
-    if (n < 0 || (size_t)n >= sizeof(collection) || dav_stage(stage, sizeof(stage)) != 0) return 0;
+    if (n < 0 || (size_t)n >= sizeof(collection) || sync_make_temp_stage(stage, sizeof(stage)) != 0) return 0;
     int rc = 0;
     if (sync_join(file_path, sizeof(file_path), stage, "listing") != 0) goto done;
     rc = dav_request(self, "PROPFIND", collection, depth ? "Depth: 1" : "Depth: 0", NULL, file_path);
@@ -305,7 +294,7 @@ static int dav_check_available(sync_backend_t *self, char *error, size_t cap) {
     }
 
     char stage[SYNC_PATH_CAP], local[SYNC_PATH_CAP], result[SYNC_PATH_CAP];
-    if (dav_stage(stage, sizeof(stage)) != 0) return -1;
+    if (sync_make_temp_stage(stage, sizeof(stage)) != 0) return -1;
     int rc = -1;
     if (sync_join(local, sizeof(local), stage, "probe") != 0 ||
         sync_join(result, sizeof(result), stage, "result") != 0) goto done;
@@ -381,6 +370,7 @@ static int dav_download(const sync_backend_t *self, const char *url, const char 
     return sync_set_mtime(local, modified) == 0 ? 200 : 0;
 }
 
+/* 先把远端技能下载到本地暂存目录，再用统一规则生成指纹清单。 */
 static int dav_fetch(sync_backend_t *self, sync_remote_manifest_t *manifest, char *error, size_t cap) {
     *manifest = (sync_remote_manifest_t){0};
     const dav_state_t *dav = self->priv_data;
@@ -389,7 +379,7 @@ static int dav_fetch(sync_backend_t *self, sync_remote_manifest_t *manifest, cha
         return -1;
     }
     char stage[SYNC_PATH_CAP];
-    if (dav_stage(stage, sizeof(stage)) != 0) return -1;
+    if (sync_make_temp_stage(stage, sizeof(stage)) != 0) return -1;
     dav_listing_t root;
     int status = dav_list(self, dav->root, 1, &root);
     int rc = -1;
@@ -421,15 +411,6 @@ done:
     return rc;
 }
 
-static int dav_drift(sync_backend_t *self, const char *local, sync_drift_summary_t *out,
-                     char *error, size_t cap) {
-    sync_remote_manifest_t manifest;
-    if (dav_fetch(self, &manifest, error, cap) != 0) return -1;
-    int rc = sync_compare_directory(&manifest, local, self->baseline, out, error, cap);
-    sync_free_manifest(&manifest);
-    return rc;
-}
-
 static int dav_pull(sync_backend_t *self, const char *name, const char *local,
                     sync_progress_cb cb, void *user) {
     const dav_state_t *dav = self->priv_data;
@@ -448,15 +429,11 @@ static int dav_pull(sync_backend_t *self, const char *name, const char *local,
         int status = dav_list(self, url, 1, &listing);
         if (status == 207 && has_skill_file(&listing) &&
             dav_success(dav_download(self, url, replacement, &listing, 0))) {
-            const sync_drift_item_t *expected = self->expected_skill;
-            if (!expected || (sync_skill_matches(replacement, expected->remote_hash) &&
-                              sync_skill_matches(target, expected->local_hash)))
-                rc = sync_replace_tree(stage, replacement, target);
-            else rc = SYNC_TRANSFER_CHANGED;
+            rc = sync_publish_local_skill(stage, replacement, target, self->expected_skill, true);
         }
         free(listing.entries);
     }
-    if (rc != -2) sync_remove_tree(stage);
+    sync_cleanup_stage(stage, rc);
     if (cb) cb(rc == 0 ? 1.0f : 0.2f, rc == 0 ? "WebDAV 拉取完成" : rc == SYNC_TRANSFER_CHANGED ? "技能状态已变化，请检查后重试" : "WebDAV 拉取失败", user);
     return rc;
 }
@@ -498,7 +475,7 @@ static bool dav_skill_matches(const sync_backend_t *self, const char *url, const
     int status = dav_list(self, url, 1, &listing);
     bool matches = !hash[0] && status == 404;
     char stage[SYNC_PATH_CAP], path[SYNC_PATH_CAP];
-    if (hash[0] && status == 207 && has_skill_file(&listing) && dav_stage(stage, sizeof(stage)) == 0) {
+    if (hash[0] && status == 207 && has_skill_file(&listing) && sync_make_temp_stage(stage, sizeof(stage)) == 0) {
         matches = sync_join(path, sizeof(path), stage, "check") == 0 &&
                   dav_success(dav_download(self, url, path, &listing, 0)) && sync_skill_matches(path, hash);
         sync_remove_tree(stage);
@@ -517,6 +494,7 @@ static int dav_push(sync_backend_t *self, const char *name, const char *local,
         !dav_child_url(target, sizeof(target), dav->root, name) ||
         !dav_scratch_url(stage, sizeof(stage), dav->root)) return -1;
     if (cb) cb(0.2f, "正在向 WebDAV 上传技能", user);
+    /* 在远端暂存目录完成上传并校验之后，再替换正式目录。 */
     const sync_drift_item_t *expected = self->expected_skill;
     int status = dav_request(self, "MKCOL", stage, NULL, NULL, NULL);
     if (dav_success(status)) {
@@ -539,16 +517,6 @@ static int dav_push(sync_backend_t *self, const char *name, const char *local,
     return ok ? 0 : status == SYNC_TRANSFER_CHANGED || status == 412 ? SYNC_TRANSFER_CHANGED : -1;
 }
 
-static int dav_pull_all(sync_backend_t *self, const char *local, sync_progress_cb cb, void *user) {
-    int rc = sync_transfer_batch(self, local, true, cb, user, NULL);
-    return rc == SYNC_BATCH_UNCHANGED ? 0 : rc;
-}
-
-static int dav_push_all(sync_backend_t *self, const char *local, sync_progress_cb cb, void *user) {
-    int rc = sync_transfer_batch(self, local, false, cb, user, NULL);
-    return rc == SYNC_BATCH_UNCHANGED ? 0 : rc;
-}
-
 const sync_driver_ops_t g_webdav_driver_ops = {
     .type = SYNC_BACKEND_WEBDAV,
     .name = "webdav",
@@ -558,10 +526,10 @@ const sync_driver_ops_t g_webdav_driver_ops = {
     .test_connection = dav_check_available,
     .check_available = dav_check_available,
     .fetch_remote_manifest = dav_fetch,
-    .check_drift = dav_drift,
+    .check_drift = sync_check_directory_drift,
     .pull_skill = dav_pull,
     .push_skill = dav_push,
-    .pull_all = dav_pull_all,
-    .push_all = dav_push_all,
+    .pull_all = sync_batch_pull_all,
+    .push_all = sync_batch_push_all,
     .transfer_batch = sync_transfer_batch,
 };

@@ -51,6 +51,7 @@ static int run_hub_operation(app_hub_job_t *job) {
     return -1;
 }
 
+/* 文件操作可能部分成功，结束后也要重新扫描已写入的磁盘状态。 */
 static void *hub_worker(void *arg) {
     app_hub_job_t *job = arg;
     if (job->action != HUB_SCAN) {
@@ -74,6 +75,7 @@ static void start_hub_job(app_state_t *s, hub_action_t action, const char *path,
     }
     job->action = action;
     job->db = s->db;
+    /* 任务运行期间保留当前矩阵，工作线程另建扫描结果。 */
     job->current_matrix = &s->hub_matrix;
     job->tool_idx = tool_idx;
     snprintf(job->path, sizeof(job->path), "%s", path ? path : "");
@@ -151,6 +153,7 @@ void app_hub_tasks_poll(app_state_t *s) {
                         sizeof(s->op_progress.message));
     if (!done) return;
 
+    /* 等待线程结束后才移交矩阵，旧矩阵由主线程释放。 */
     app_task_join(&job->task);
     s->hub_job = NULL;
     if (scan) s->hub_scan.is_scanning = false;

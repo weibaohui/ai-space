@@ -68,6 +68,7 @@ set(AI_SPACE_SRCS
     src/view_dependencies.c
     src/sync_manager.c
     src/sync_directory.c
+    src/sync_local_files.c
     src/sync_driver_share.c
     src/sync_network_share.c
     src/sync_driver_webdav.c

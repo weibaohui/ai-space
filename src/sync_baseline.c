@@ -19,6 +19,7 @@ int sync_baseline_scope(const sync_config_t *cfg, const char *local, char *out, 
     char root[SYNC_PATH_CAP], endpoint[SYNC_PATH_CAP];
     if (sync_expand(local, root, sizeof(root)) != 0) return -1;
 
+    /* 只使用目标身份字段确定基线范围，单独配置的 Token 和密码不参与。 */
     const char *parts[5] = {root};
     size_t count = 1;
     switch (cfg->type) {
@@ -50,6 +51,7 @@ int sync_baseline_scope(const sync_config_t *cfg, const char *local, char *out, 
     if (n < 0 || (size_t)n >= cap) return -1;
     size_t used = (size_t)n;
     for (size_t i = 0; i < count; i++) {
+        /* 为每段写入长度，避免不同字段组合拼出相同范围。 */
         n = snprintf(out + used, cap - used, "%zu:%s", strlen(parts[i]), parts[i]);
         if (n < 0 || (size_t)n >= cap - used) return -1;
         used += (size_t)n;
@@ -92,6 +94,7 @@ int sync_baseline_load(sqlite3 *db, const char *scope, sync_baseline_t *baseline
 }
 
 int sync_baseline_record(sqlite3 *db, const char *scope, const sync_drift_summary_t *drift) {
+    /* 只为已验证一致的技能推进基线，冲突保留上一次确认的版本。 */
     if (!drift->in_sync_count) return 0;
     const char *sql = "INSERT INTO sync_baselines(scope,skill,hash) VALUES(?,?,?)"
                       " ON CONFLICT(scope,skill) DO UPDATE SET hash=excluded.hash"

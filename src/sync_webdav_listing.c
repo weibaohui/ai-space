@@ -107,6 +107,7 @@ static time_t dav_modified(const char *p, const char *end) {
     return (time_t)((int64_t)(days + starts[m] + day - 1) * 86400 + hour * 3600 + min * 60 + sec);
 }
 
+/* 解析时仅收录请求目录的直接子项，并验证响应中包含父目录。 */
 bool dav_parse_listing(const char *xml, size_t size, const char *url, dav_listing_t *listing) {
     char parent[DAV_URL_CAP];
     const char *path = url_path(url);
@@ -163,5 +164,3 @@ bool dav_parse_listing(const char *xml, size_t size, const char *url, dav_listin
     }
     return has_root;
 }
-
-/* HTTP 207 denotes a validated collection; 0 denotes a failed local/HTTP operation. */

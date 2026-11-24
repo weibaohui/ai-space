@@ -9,7 +9,7 @@
 static int compare_file_nodes(const void *a, const void *b) {
     const file_node_t *na = (const file_node_t *)a;
     const file_node_t *nb = (const file_node_t *)b;
-    /* SKILL.md always at the top */
+    /* 将 SKILL.md 固定在列表顶部。 */
     bool a_document = strcmp(na->name, SKILL_DOCUMENT) == 0;
     bool b_document = strcmp(nb->name, SKILL_DOCUMENT) == 0;
     if (a_document != b_document) return a_document ? -1 : 1;
@@ -31,7 +31,7 @@ file_node_t *build_skill_file_tree(const char *skill_dir_path, const char *rel_b
         return NULL;
     }
 
-    /* Extract name of current folder */
+    /* 从路径末段取得文件树节点的显示名称。 */
     const char *last_slash = strrchr(skill_dir_path, '/');
     const char *dname = last_slash ? (last_slash + 1) : skill_dir_path;
     strncpy(root->name, dname, sizeof(root->name) - 1);
@@ -83,7 +83,7 @@ file_node_t *build_skill_file_tree(const char *skill_dir_path, const char *rel_b
             if (S_ISDIR(st.st_mode)) {
                 child->is_dir = true;
                 child->is_open = (depth < 2);
-                /* Build sub-tree */
+                /* 目录节点继续读取下一级，文件节点直接收录。 */
                 file_node_t *sub_tree = build_skill_file_tree(sub_abs, sub_rel, depth + 1, max_depth);
                 if (sub_tree) {
                     child->children = sub_tree->children;

@@ -11,7 +11,7 @@ extern char **environ;
 #endif
 
 #ifdef _WIN32
-/* CreateProcess does not invoke cmd.exe. Quote arguments for the child's CRT. */
+/* 直接启动进程，并按子进程 C 运行库的规则处理引号和反斜杠。 */
 static bool windows_argument(char *line, size_t cap, size_t *used, const char *arg) {
     size_t n = *used;
     if (n && n < cap) line[n++] = ' ';
@@ -104,6 +104,7 @@ int sync_git_run(const char *cwd, const char *const *options, char *result, size
         args[argc++] = (char *)options[i];
     }
     args[argc] = NULL;
+    /* 需要读取结果时用临时流接收输出，避免等待子进程时管道被写满。 */
     FILE *output = result ? tmpfile() : NULL;
     if (result && !output) return -1;
     int rc = spawn_git(args, output);

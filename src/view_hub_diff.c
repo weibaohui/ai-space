@@ -105,7 +105,7 @@ static void render_installed_copy(cui_ctx *ui, app_state_t *s, const hub_skill_e
 
     cui_push_id_int(ui, t);
 
-    /* Make card directly clickable and compact */
+    /* 将整张工具卡片作为选中区域。 */
     bool card_clicked = cui_card_begin(ui, &(cui_card_opts){
         .width = CUI_FILL,
         .pad = 8,
@@ -114,7 +114,7 @@ static void render_installed_copy(cui_ctx *ui, app_state_t *s, const hub_skill_e
         .selected = is_cur,
     });
 
-    /* Tool Title & Status Badge */
+    /* 工具名称和副本状态共用一行。 */
     cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
         cui_row(ui, .gap = 5, .align = CUI_ALIGN_CENTER) {
             cui_icon(ui, CUI_ICON_FOLDER, 13, is_cur ? CUI_COLOR_ACCENT : CUI_COLOR_FOREGROUND);
@@ -229,13 +229,7 @@ static void render_diff_tree(cui_ctx *ui, app_state_t *s, bool compact) {
 }
 
 void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
-    hub_skill_entry_t *entry = NULL;
-    for (int i = 0; i < s->hub_matrix.skill_count; i++) {
-        if (strcmp(s->hub_matrix.skills[i].skill_name, s->selected_hub_skill) == 0) {
-            entry = &s->hub_matrix.skills[i];
-            break;
-        }
-    }
+    const hub_skill_entry_t *entry = hub_find_skill(&s->hub_matrix, s->selected_hub_skill);
     if (!entry) {
         s->hub_subview = s->prev_hub_subview;
         return;
@@ -253,7 +247,7 @@ void render_hub_diff_subview(cui_ctx *ui, app_state_t *s) {
         }
     }
 
-    /* Auto-load skill file manifest if not yet loaded */
+    /* 当前清单与选中技能不匹配时重新加载。 */
     if (!s->diff_manifest_loaded || strcmp(s->diff_manifest.skill_name, entry->skill_name) != 0) {
         build_skill_diff_manifest(s, entry->skill_name, s->selected_hub_tool_idx);
         load_hub_diff(s, entry->skill_name, s->selected_hub_tool_idx, s->diff_file_rel);

@@ -1,3 +1,4 @@
+/* 预览模块负责按字节上限读取，并把文本与二进制信息交给展示层。 */
 #include "file_preview.h"
 
 #include <stdio.h>
@@ -45,7 +46,7 @@ char *read_file_preview(const char *file_path, size_t max_bytes, size_t *out_rea
     buf[n] = '\0';
     fclose(f);
 
-    /* Check for binary characters in first 1024 bytes */
+    /* 只在开头 1024 字节检查 NUL，限制二进制探测的开销。 */
     bool is_bin = false;
     size_t check_len = n < 1024 ? n : 1024;
     for (size_t i = 0; i < check_len; i++) {

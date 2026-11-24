@@ -9,7 +9,7 @@
 static void render_preview_toolbar(cui_ctx *ui, app_state_t *s,
                                    const hub_skill_entry_t *entry, const tool_copy_status_t *cur_tc,
                                    const hub_diff_file_item_t *cur_file) {
-    /* Diff Toolbar */
+    /* 预览工具栏保留文件状态和变更导航。 */
     cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
         cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
             cui_icon(ui, CUI_ICON_CODE, 16, CUI_COLOR_ACCENT);
@@ -54,7 +54,7 @@ static void render_preview_toolbar(cui_ctx *ui, app_state_t *s,
     }
 
     cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-        /* Mode Toggles */
+        /* 可在预览和源码间切换。 */
         if (cur_file && cur_file->status == DIFF_FILE_MODIFIED) {
             static const char *diff_modes[] = { "左右分屏", "单列内联" };
             int d_mode_int = (int)s->diff_mode;

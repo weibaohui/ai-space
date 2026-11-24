@@ -11,6 +11,7 @@
 
 typedef enum { SYNC_CHECK, SYNC_PROBE, SYNC_PULL, SYNC_PUSH } sync_action_t;
 
+/* 主线程复制配置和已显示的指纹，工作线程只处理这份快照。 */
 typedef struct app_sync_job {
     app_task_t task;
     sync_action_t action;
@@ -68,6 +69,7 @@ static void run_sync(app_sync_job_t *job) {
     }
     backend->baseline = &job->baseline;
     job->result = job->action == SYNC_CHECK ? 0 : transfer(backend, job);
+    /* 无写入时复用已完成的检查，避免再次下载远端清单。 */
     if (job->result == SYNC_BATCH_UNCHANGED) {
         job->unchanged = true;
         job->result = 0;
@@ -150,6 +152,7 @@ static void start_sync(app_state_t *s, sync_action_t action, const char *skill, 
              sync_backend_display_name(job->cfg.type));
 }
 
+/* 收回工作线程结果的所有权，并仅记录两端已验证一致的指纹。 */
 static void apply_drift(app_state_t *s, app_sync_job_t *job) {
     sync_free_drift_summary(&s->sync_drift);
     s->sync_drift_loaded = job->refreshed == 0;

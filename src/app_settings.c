@@ -35,10 +35,10 @@ void app_init_settings(app_state_t *s) {
         s->accent_color = CUI_ACCENT_BLUE;
     }
 
-    /* Apply custom dirs to hub manager */
+    /* 设置加载后先同步主仓路径，再读取后端配置。 */
     hub_set_custom_dirs(s->setting_hub_dir, s->setting_backup_dir);
 
-    /* Sync Backend Settings */
+    /* 从同一配置恢复运行后端和待编辑表单。 */
     char s_type[16];
     db_get_setting(s->db, "sync_backend_type", s_type, sizeof(s_type), "0"); /* default Single Machine (None) */
     s->sync_cfg.type = (sync_backend_type_t)atoi(s_type);
@@ -124,6 +124,7 @@ int app_store_sync_settings(sqlite3 *db, const sync_config_t *cfg) {
         {"sync_git_email", cfg->git_user_email},
     };
 
+    /* 将生效后端和对应连接参数一起提交，避免下次启动读到部分配置。 */
     if (sqlite3_exec(db, "BEGIN IMMEDIATE", NULL, NULL, NULL) != SQLITE_OK) return -1;
     for (size_t i = 0; i < sizeof(settings) / sizeof(settings[0]); i++) {
         if (db_set_setting(db, settings[i].key, settings[i].value) != 0) goto rollback;

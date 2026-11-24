@@ -72,12 +72,12 @@ static int compare_manifest_items(const void *a, const void *b) {
     const hub_diff_file_item_t *ia = (const hub_diff_file_item_t *)a;
     const hub_diff_file_item_t *ib = (const hub_diff_file_item_t *)b;
 
-    /* SKILL.md always first */
+    /* SKILL.md 是技能入口，保持置顶。 */
     bool a_is_skill = strcmp(ia->rel_path, "SKILL.md") == 0;
     bool b_is_skill = strcmp(ib->rel_path, "SKILL.md") == 0;
     if (a_is_skill != b_is_skill) return a_is_skill ? -1 : 1;
 
-    /* Changed before in-sync */
+    /* 有差异的文件排在一致文件之前。 */
     bool ia_changed = (ia->status != DIFF_FILE_IN_SYNC);
     bool ib_changed = (ib->status != DIFF_FILE_IN_SYNC);
     if (ia_changed != ib_changed) {
@@ -169,7 +169,7 @@ int skill_diff_compute(const char *master, const char *tool_path, hub_skill_diff
             manifest->total_added_lines += item->added_lines;
             if (t_text) free(t_text);
         } else if (has_m && has_t) {
-            /* Check if identical bytes */
+            /* 先按字节确认是否一致，再计算文本行差异。 */
             bool same = false;
             if (m_st.st_size == t_st.st_size) {
                 FILE *fm = fopen(m_full, "rb");
@@ -235,7 +235,7 @@ int skill_diff_compute(const char *master, const char *tool_path, hub_skill_diff
     }
     free(rel_files);
 
-    /* Sort manifest: SKILL.md first, then modified, then added/deleted, then in_sync */
+    /* 先展示 SKILL.md，再按修改、新增或删除、一致的顺序分组。 */
     if (manifest->count > 1) {
         qsort(manifest->items, manifest->count, sizeof(hub_diff_file_item_t), compare_manifest_items);
     }

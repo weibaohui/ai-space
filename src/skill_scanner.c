@@ -78,7 +78,7 @@ int scan_tool_skills(const char *tool_skills_path, skill_item_t **out_items, int
             strncpy(item->path, skill_path, sizeof(item->path) - 1);
             item->path[sizeof(item->path) - 1] = '\0';
 
-            /* Check SKILL.md */
+            /* 仅将含有技能入口文档的目录收录到技能扫描结果。 */
             char skill_md[1100];
             if (sync_join(skill_md, sizeof(skill_md), skill_path, SKILL_DOCUMENT) == 0 &&
                 skill_has_document(skill_path, true)) {

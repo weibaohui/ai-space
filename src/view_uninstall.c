@@ -43,15 +43,9 @@ void render_uninstall_all_modal(cui_ctx *ui, app_state_t *s) {
                 }
             }
 
-            /* 2. Details: Tools or Skills list */
+            /* 单技能展示涉及的工具，批量卸载展示选中的技能。 */
             if (!s->uninstall_all_is_batch) {
-                hub_skill_entry_t *entry = NULL;
-                for (int i = 0; i < s->hub_matrix.skill_count; i++) {
-                    if (strcmp(s->hub_matrix.skills[i].skill_name, s->uninstall_all_skill_name) == 0) {
-                        entry = &s->hub_matrix.skills[i];
-                        break;
-                    }
-                }
+                const hub_skill_entry_t *entry = hub_find_skill(&s->hub_matrix, s->uninstall_all_skill_name);
 
                 cui_column(ui, .gap = 6) {
                     cui_text(ui, "涉及已安装的本地工具：", .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);

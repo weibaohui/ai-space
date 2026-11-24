@@ -178,7 +178,7 @@ static void render_probe_controls(cui_ctx *ui, app_state_t *s) {
         }
     }
 
-    /* Pre-activation Check Feedback Banner */
+    /* 显示待启用后端的测试结果。 */
     if (s->sync_has_checked_candidate && s->sync_candidate_check_msg[0] != '\0') {
         cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 10, .gap = 4,
                 .bg = s->sync_candidate_checked_ok ? cui_alpha(cui_color_of(ui, CUI_COLOR_SUCCESS), 0.12f)
@@ -246,7 +246,7 @@ void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
             }
         }
 
-        /* Backend Specific Configuration Card */
+        /* 切换候选后端只替换表单，实际启用以连接测试结果为准。 */
         cui_box(ui, .width = CUI_FILL, .radius = 8, .pad = 16, .gap = 14,
                 .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
                 .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {

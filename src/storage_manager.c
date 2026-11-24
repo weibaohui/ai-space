@@ -7,7 +7,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
-/* Recursive directory size calculation */
+/* 按普通文件统计占用，符号链接不会计入其目标内容。 */
 static int64_t compute_dir_size_recursive(const char *dir_path, int *out_file_count) {
     if (!dir_path || !dir_path[0]) return 0;
     DIR *d = opendir(dir_path);
@@ -33,7 +33,7 @@ static int64_t compute_dir_size_recursive(const char *dir_path, int *out_file_co
     return total;
 }
 
-/* Parse snapshot directory name: YYYYMMDD_HHMMSS_tool_skill */
+/* 从快照目录名还原时间、工具和技能名称。 */
 static void parse_snapshot_name(const char *dir_name, char *out_time, size_t time_cap,
                                 char *out_tool, size_t tool_cap,
                                 char *out_skill, size_t skill_cap) {
@@ -42,7 +42,7 @@ static void parse_snapshot_name(const char *dir_name, char *out_time, size_t tim
     if (out_tool && tool_cap > 0) out_tool[0] = '\0';
     if (out_skill && skill_cap > 0) out_skill[0] = '\0';
 
-    /* Expecting format: 20261122_220139_agent_agent-browser */
+    /* 例如 20261122_220139_agent_agent-browser。 */
     if (strlen(dir_name) >= 16 && dir_name[8] == '_' && dir_name[15] == '_') {
         if (out_time && time_cap >= 20) {
             snprintf(out_time, time_cap, "%.4s-%.2s-%.2s %.2s:%.2s:%.2s",
@@ -67,7 +67,7 @@ static void parse_snapshot_name(const char *dir_name, char *out_time, size_t tim
         }
     }
 
-    /* Fallback if name doesn't match standard template */
+    /* 保留旧命名的备份目录，使用原名展示。 */
     if (out_time && time_cap > 0) strncpy(out_time, "快照时间", time_cap - 1);
     if (out_tool && tool_cap > 0) strncpy(out_tool, "本地备份", tool_cap - 1);
     if (out_skill && skill_cap > 0) strncpy(out_skill, dir_name, skill_cap - 1);
@@ -159,7 +159,7 @@ void storage_collect(const char *hub_dir, const char *backup_dir, const char *ca
                      storage_stats_t *st) {
     memset(st, 0, sizeof(storage_stats_t));
 
-    /* 1. Backups statistics */
+    /* 备份统计使用完整快照列表，页面只展示其中最新的一部分。 */
     char exp_backup[SYNC_PATH_CAP] = "";
     if (sync_expand(backup_dir, exp_backup, sizeof(exp_backup)) != 0) exp_backup[0] = '\0';
 
@@ -189,7 +189,7 @@ void storage_collect(const char *hub_dir, const char *backup_dir, const char *ca
     }
     free(snapshots);
 
-    /* 2. Cache statistics (~/.ai-space/cache) */
+    /* 统计可清理的应用缓存占用。 */
     char exp_cache[SYNC_PATH_CAP] = "";
     if (sync_expand(cache_dir, exp_cache, sizeof(exp_cache)) != 0) exp_cache[0] = '\0';
 
@@ -217,7 +217,7 @@ void storage_collect(const char *hub_dir, const char *backup_dir, const char *ca
         closedir(cd);
     }
 
-    /* 3. Central Hub skills statistics */
+    /* 主仓技能文件单独计入主仓占用。 */
     char exp_hub[SYNC_PATH_CAP] = "";
     if (sync_expand(hub_dir, exp_hub, sizeof(exp_hub)) != 0) exp_hub[0] = '\0';
 
@@ -239,7 +239,7 @@ void storage_collect(const char *hub_dir, const char *backup_dir, const char *ca
         closedir(hd);
     }
 
-    /* Timestamp */
+    /* 记录统计完成时间，便于界面展示刷新时间。 */
     time_t now = time(NULL);
     struct tm tm_info;
     if (ai_localtime(&now, &tm_info))
@@ -248,7 +248,7 @@ void storage_collect(const char *hub_dir, const char *backup_dir, const char *ca
     st->loaded = true;
 }
 
-/* A cleanup root must be a directory, even if its path is a preference. */
+/* 清理入口只接受实际目录，防止偏好路径指向文件或链接。 */
 static int cleanup_root(const char *path, char *root) {
     if (sync_expand(path, root, SYNC_PATH_CAP) != 0) return -1;
     size_t len = strlen(root);

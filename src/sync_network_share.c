@@ -2,6 +2,7 @@
 #include "skill_metadata.h"
 #include "sync_network_share.h"
 #include "sync_directory.h"
+#include "sync_local_files.h"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -76,8 +77,7 @@ static bool valid_path(const char *path) {
     return true;
 }
 
-/* Connect a fresh protocol context for each operation. NFS paths begin with /;
- * SMB paths are relative to the connected share. */
+/* 每次操作独立建立协议连接。NFS 使用导出内的绝对路径，SMB 使用共享内的相对路径。 */
 static int share_connect(share_t *share, const sync_config_t *cfg, char *error, size_t cap) {
     bool nfs = cfg->share_mode == SYNC_SHARE_NFS;
     bool smb = cfg->share_mode == SYNC_SHARE_SMB;
@@ -344,7 +344,7 @@ static int upload_tree(share_t *share, const char *remote, const char *local, in
     return rc == 0 ? share_mtime(share, remote, st.st_mtime, true) : rc;
 }
 
-/* Return 1 for a skill, 0 for an unrelated entry, and -1 for an I/O error. */
+/* 区分有效技能、普通目录项和 I/O 错误，防止把访问失败当成缺失。 */
 static int share_has_skill(share_t *share, const char *path) {
     entry_info_t info;
     int rc = share_stat(share, path, &info);
@@ -361,23 +361,22 @@ static int share_has_skill(share_t *share, const char *path) {
 
 static int share_replace(share_t *share, const char *stage, const char *replacement, const char *target) {
     char previous[SYNC_PATH_CAP];
-    if (share_path(previous, stage, "previous") != 0) return -2;
+    if (share_path(previous, stage, "previous") != 0) return SYNC_REPLACE_RESTORE_FAILED;
     entry_info_t info;
     int rc = share_stat(share, target, &info);
     bool backed_up = rc == 0;
     if (backed_up) {
         if (info.kind != ENTRY_DIRECTORY) return -1;
-        /* A lost reply can hide a successful rename. Retain the stage when
-         * the server cannot confirm where the previous copy lives. */
+        /* 服务端可能已改名但应答丢失，旧副本位置无法确认时保留暂存目录。 */
         if (share_rename(share, target, previous) != 0) {
-            return share_stat(share, previous, &info) == -ENOENT ? -1 : -2;
+            return share_stat(share, previous, &info) == -ENOENT ? -1 : SYNC_REPLACE_RESTORE_FAILED;
         }
     } else if (rc != -ENOENT) {
         return -1;
     }
 
     if (share_rename(share, replacement, target) == 0) return 0;
-    if (backed_up && share_rename(share, previous, target) != 0) return -2;
+    if (backed_up && share_rename(share, previous, target) != 0) return SYNC_REPLACE_RESTORE_FAILED;
     return -1;
 }
 
@@ -419,6 +418,7 @@ int sync_network_check(const sync_config_t *cfg, char *error, size_t cap) {
     return rc;
 }
 
+/* 一次只暂存一个远端技能，生成指纹后马上释放对应磁盘空间。 */
 static int scan_share(share_t *share, const char *stage, sync_remote_manifest_t *manifest) {
     share_dir_t dir;
     if (share_opendir(share, share->root, &dir) != 0) return -1;
@@ -469,14 +469,8 @@ int sync_network_fetch(const sync_config_t *cfg, sync_remote_manifest_t *manifes
     char message[256] = "";
     int rc = share_connect(&share, cfg, message, sizeof(message));
     if (rc == 0) {
-        const char *temp = getenv("TMPDIR");
-#ifdef _WIN32
-        if (!temp || !*temp) temp = getenv("TEMP");
-#else
-        if (!temp || !*temp) temp = "/tmp";
-#endif
         char stage[SYNC_PATH_CAP];
-        if (temp && sync_make_stage(temp, stage, sizeof(stage)) == 0) {
+        if (sync_make_temp_stage(stage, sizeof(stage)) == 0) {
             rc = scan_share(&share, stage, manifest);
             if (sync_remove_tree(stage) != 0) rc = -1;
             if (rc != 0) snprintf(message, sizeof(message), "无法完整读取共享目录：%.180s", share_error(&share));
@@ -502,14 +496,8 @@ static bool remote_skill_matches(share_t *share, const char *remote, const char 
     entry_info_t info;
     if (!hash[0]) return share_stat(share, remote, &info) == -ENOENT;
     if (share_has_skill(share, remote) != 1) return false;
-    const char *temp = getenv("TMPDIR");
-#ifdef _WIN32
-    if (!temp || !*temp) temp = getenv("TEMP");
-#else
-    if (!temp || !*temp) temp = "/tmp";
-#endif
     char stage[SYNC_PATH_CAP], copy[SYNC_PATH_CAP];
-    if (!temp || sync_make_stage(temp, stage, sizeof(stage)) != 0) return false;
+    if (sync_make_temp_stage(stage, sizeof(stage)) != 0) return false;
     bool matches = sync_join(copy, sizeof(copy), stage, "copy") == 0 &&
                    download_tree(share, remote, copy, 0) == 0 && sync_skill_matches(copy, hash);
     sync_remove_tree(stage);
@@ -525,12 +513,9 @@ static int share_pull(share_t *share, const char *remote, const char *root, cons
     int rc = -1;
     if (sync_join(replacement, sizeof(replacement), stage, "new") == 0 &&
         download_tree(share, remote, replacement, 0) == 0 && skill_is_directory(replacement)) {
-        if (!expected || (sync_skill_matches(replacement, expected->remote_hash) &&
-                          sync_skill_matches(target, expected->local_hash)))
-            rc = sync_replace_tree(stage, replacement, target);
-        else rc = SYNC_TRANSFER_CHANGED;
+        rc = sync_publish_local_skill(stage, replacement, target, expected, true);
     }
-    if (rc != -2) sync_remove_tree(stage);
+    sync_cleanup_stage(stage, rc);
     return rc;
 }
 
@@ -547,7 +532,7 @@ static int share_push(share_t *share, const char *local, const char *target,
             rc = share_replace(share, stage, replacement, target);
         else rc = SYNC_TRANSFER_CHANGED;
     }
-    if (rc != -2) share_remove(share, stage, 0);
+    if (rc != SYNC_REPLACE_RESTORE_FAILED) share_remove(share, stage, 0);
     return rc;
 }
 
@@ -565,7 +550,7 @@ int sync_network_transfer(const sync_config_t *cfg, const char *name, const char
         if (cb) cb(0.2f, pull ? "正在下载技能文件" : "正在上传技能文件", user);
         rc = share_path(remote, share.root, name);
         if (rc == 0) rc = pull ? share_pull(&share, remote, root, path, expected) : share_push(&share, path, remote, expected);
-        if (rc == -2) snprintf(message, sizeof(message), "替换失败，暂存目录保留了原有内容");
+        if (rc == SYNC_REPLACE_RESTORE_FAILED) snprintf(message, sizeof(message), "替换失败，暂存目录保留了原有内容");
         else if (rc == SYNC_TRANSFER_CHANGED) snprintf(message, sizeof(message), "技能状态已变化，请检查后重试");
         else if (rc != 0) snprintf(message, sizeof(message), "共享目录传输失败：%.180s", share_error(&share));
     }

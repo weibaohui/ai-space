@@ -7,6 +7,7 @@ static const char *get_user_home(void) {
     return ai_home_dir();
 }
 
+/* 设置页更新自定义路径，空值表示由主仓模块选用默认路径。 */
 static char g_custom_hub_dir[512] = "";
 static char g_custom_backup_dir[512] = "";
 

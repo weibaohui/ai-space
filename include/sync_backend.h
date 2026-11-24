@@ -120,22 +120,19 @@ typedef struct {
 } sync_baseline_item_t;
 
 typedef struct {
-    sync_baseline_item_t *items; /* Sorted by skill name. */
+    sync_baseline_item_t *items; /* 按技能名称排序，供差异检查二分查找。 */
     size_t count;
 } sync_baseline_t;
 
 enum { SYNC_BATCH_UNCHANGED = 1, SYNC_TRANSFER_CHANGED = -3 };
 
-/*
- * Immutable Synchronization Primitives (同步原语 VTable 接口)
- * Regardless of backend implementation (WebDAV, NFS, Git), these primitives never change.
- */
+/* 统一的同步驱动接口，由各后端提供连接、清单和文件传输实现。 */
 typedef struct sync_driver_ops_t {
     sync_backend_type_t type;
     const char *name;              /* "webdav", "nfs", "git", "none" */
     const char *display_name;      /* Friendly UI display string */
 
-    /* Lifecycle */
+    /* 驱动实例的初始化与释放。 */
     int (*init)(sync_backend_t *self, const sync_config_t *cfg);
     void (*destroy)(sync_backend_t *self);
 
@@ -145,19 +142,18 @@ typedef struct sync_driver_ops_t {
     /* Availability Check Interface (各个后端检测是否可用，必须通过后才可激活) */
     int (*check_available)(sync_backend_t *self, char *err_buf, size_t err_cap);
 
-    /* Remote Manifest & Drift Detection */
+    /* 读取远端清单，并与本地主仓比较。 */
     int (*fetch_remote_manifest)(sync_backend_t *self, sync_remote_manifest_t *out_manifest, char *err_buf, size_t err_cap);
     int (*check_drift)(sync_backend_t *self, const char *local_hub_dir, sync_drift_summary_t *out_diff, char *err_buf, size_t err_cap);
 
-    /* Granular Skill Synchronization */
+    /* 单个技能的拉取和推送。 */
     int (*pull_skill)(sync_backend_t *self, const char *skill_name, const char *target_local_hub, sync_progress_cb cb, void *user_data);
     int (*push_skill)(sync_backend_t *self, const char *skill_name, const char *source_local_hub, sync_progress_cb cb, void *user_data);
 
-    /* Batch Full Synchronization */
+    /* 批量入口按差异决定传输范围。 */
     int (*pull_all)(sync_backend_t *self, const char *target_local_hub, sync_progress_cb cb, void *user_data);
     int (*push_all)(sync_backend_t *self, const char *source_local_hub, sync_progress_cb cb, void *user_data);
-    /* Optional batch operation. On SYNC_BATCH_UNCHANGED, unchanged_drift receives
-       the fresh comparison (if supplied), and the caller owns its items. */
+    /* 无需传输时可把最新差异交给调用方，返回的条目由调用方释放。 */
     int (*transfer_batch)(sync_backend_t *self, const char *local_hub_dir, bool pull,
                           sync_progress_cb cb, void *user_data, sync_drift_summary_t *unchanged_drift);
 } sync_driver_ops_t;
@@ -168,8 +164,8 @@ struct sync_backend_t {
     void *priv_data;
     bool is_connected;
     char status_msg[256];
-    const sync_baseline_t *baseline;
-    const sync_drift_item_t *expected_skill;
+    const sync_baseline_t *baseline;       /* 借用当前任务加载的基线。 */
+    const sync_drift_item_t *expected_skill; /* 借用当前传输计划中的指纹。 */
 };
 
 /* Factory and memory helpers */

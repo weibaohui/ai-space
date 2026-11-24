@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
+/* 快照先在备份目录内完整生成，同秒重名时使用序号。 */
 static int backup_skill(const char *tool, const char *skill, const char *source) {
     char root[512];
     if (hub_init_dirs(NULL, 0, root, sizeof(root)) != 0) return -1;
@@ -54,6 +55,7 @@ static int replace_skill(const char *source_root, const char *target_root,
     if (sync_join(replacement, sizeof(replacement), stage, "new") != 0 ||
         file_tree_copy(source, replacement, false, skill_skip_name) != 0) goto done;
 
+    /* 覆盖目标前先备份旧版本，备份失败就保留原状。 */
     struct stat current;
     if (lstat(target, &current) == 0) {
         if (!S_ISDIR(current.st_mode) || backup_skill(target_label, skill, target) != 0) goto done;
@@ -62,7 +64,7 @@ static int replace_skill(const char *source_root, const char *target_root,
     }
     rc = sync_replace_tree(stage, replacement, target);
 done:
-    if (rc != -2) sync_remove_tree(stage);
+    sync_cleanup_stage(stage, rc);
     return rc;
 }
 

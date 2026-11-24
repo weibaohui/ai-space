@@ -57,6 +57,7 @@ static void render_sync_result(cui_ctx *ui, app_state_t *s, const sync_drift_ite
     }
 }
 
+/* 覆盖操作需要用户先选择保留的一侧，最终写入仍会校验指纹。 */
 static void render_conflict_dialog(cui_ctx *ui, app_state_t *s, bool busy) {
     if (!s->show_sync_conflict_modal) return;
     cui_dialog(ui, "选择保留的技能版本", &s->show_sync_conflict_modal, .width = 480) {

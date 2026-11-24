@@ -34,13 +34,7 @@ void build_skill_diff_manifest(app_state_t *s, const char *skill_name, int tool_
     s->diff_manifest_loaded = false;
     strncpy(s->diff_manifest.skill_name, skill_name, sizeof(s->diff_manifest.skill_name) - 1);
 
-    hub_skill_entry_t *entry = NULL;
-    for (int i = 0; i < s->hub_matrix.skill_count; i++) {
-        if (strcmp(s->hub_matrix.skills[i].skill_name, skill_name) == 0) {
-            entry = &s->hub_matrix.skills[i];
-            break;
-        }
-    }
+    const hub_skill_entry_t *entry = hub_find_skill(&s->hub_matrix, skill_name);
     if (!entry) return;
 
     const char *tool_skills_path = NULL;
@@ -56,7 +50,7 @@ void build_skill_diff_manifest(app_state_t *s, const char *skill_name, int tool_
 
     s->diff_manifest_loaded = true;
 
-    /* Ensure current active file is valid */
+    /* 原选择消失时优先定位第一项有差异的文件。 */
     bool current_found = false;
     for (int i = 0; i < s->diff_manifest.count; i++) {
         if (strcmp(s->diff_manifest.items[i].rel_path, s->diff_file_rel) == 0) {
@@ -79,7 +73,7 @@ void build_skill_diff_manifest(app_state_t *s, const char *skill_name, int tool_
         }
     }
 
-    /* Build hierarchical diff file tree for Central Hub view */
+    /* 用同一份差异清单构建文件树，保持徽标与预览一致。 */
     s->hub_diff_file_tree = build_tree_from_diff_manifest(&s->diff_manifest, entry->hub_path, tool_skills_path);
 }
 
@@ -97,16 +91,10 @@ void load_hub_diff(app_state_t *s, const char *skill_name, int tool_idx, const c
         snprintf(s->diff_file_rel, sizeof(s->diff_file_rel), "%s", rel_file);
     s->diff_current_change = 0;
 
-    hub_skill_entry_t *entry = NULL;
-    for (int i = 0; i < s->hub_matrix.skill_count; i++) {
-        if (strcmp(s->hub_matrix.skills[i].skill_name, skill_name) == 0) {
-            entry = &s->hub_matrix.skills[i];
-            break;
-        }
-    }
+    const hub_skill_entry_t *entry = hub_find_skill(&s->hub_matrix, skill_name);
     if (!entry) return;
 
-    /* 1. Master Hub text */
+    /* 读取主仓预览，限制读取量以免大文件拖慢页面。 */
     if (entry->in_hub) {
         char m_path[1200];
         snprintf(m_path, sizeof(m_path), "%s/%s", entry->hub_path, s->diff_file_rel);
@@ -118,7 +106,7 @@ void load_hub_diff(app_state_t *s, const char *skill_name, int tool_idx, const c
         s->diff_old_text = strdup("");
     }
 
-    /* 2. Tool copy text */
+    /* 工具副本使用同样的预览上限。 */
     if (tool_idx >= 0 && tool_idx < entry->tool_count && entry->tool_copies[tool_idx].exists) {
         char t_path[1200];
         snprintf(t_path, sizeof(t_path), "%s/%s", entry->tool_copies[tool_idx].skill_path, s->diff_file_rel);
@@ -138,16 +126,10 @@ void open_hub_diff_view(app_state_t *s, const char *skill_name) {
         start_hub_scan_thread(s);
     }
 
-    hub_skill_entry_t *entry = NULL;
-    for (int i = 0; i < s->hub_matrix.skill_count; i++) {
-        if (strcmp(s->hub_matrix.skills[i].skill_name, skill_name) == 0) {
-            entry = &s->hub_matrix.skills[i];
-            break;
-        }
-    }
+    const hub_skill_entry_t *entry = hub_find_skill(&s->hub_matrix, skill_name);
     if (!entry) return;
 
-    /* Find first drifted tool copy, or first existing copy */
+    /* 打开差异页时优先定位有变更的工具副本。 */
     int chosen_idx = -1;
     for (int t = 0; t < entry->tool_count; t++) {
         if (entry->tool_copies[t].exists) {

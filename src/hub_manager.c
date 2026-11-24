@@ -107,6 +107,7 @@ static int build_entry(hub_matrix_t *matrix, const skill_location_t *locations, 
     snprintf(entry->skill_name, sizeof(entry->skill_name), "%s", locations[0].name);
     if (sync_join(entry->hub_path, sizeof(entry->hub_path), matrix->hub_dir, entry->skill_name) != 0)
         return -1;
+    /* 主仓的位置编号为 -1，排序后出现在同名技能组的最前面。 */
     if (locations[0].tool == -1) {
         entry->in_hub = true;
         entry->hub_unreadable = hub_compute_skill_hash(entry->hub_path, entry->hub_hash,
@@ -139,6 +140,7 @@ static int build_entry(hub_matrix_t *matrix, const skill_location_t *locations, 
         entry->installed_count++;
         const tool_copy_status_t *alias = &entry->tool_copies[aliases[tool]];
         bool readable;
+        /* 多个工具可以指向同一路径，同一轮扫描复用已经计算的指纹。 */
         if (alias != copy && alias->exists) {
             memcpy(copy->hash, alias->hash, sizeof(copy->hash));
             copy->mtime = alias->mtime;
@@ -193,6 +195,7 @@ int hub_scan_matrix_ex(sqlite3 *db, hub_matrix_t *matrix, hub_progress_cb cb, vo
         if (collect_locations(matrix->tool_paths[tool], tool, &locations, &count, &capacity) != 0)
             goto done;
     }
+    /* 先按名称聚合真实位置，再生成界面所需的完整工具矩阵。 */
     if (count > 1) qsort(locations, count, sizeof(*locations), compare_locations);
     size_t unique = 0;
     for (size_t i = 0; i < count; i++)
@@ -236,6 +239,21 @@ done:
 
 int hub_scan_matrix(sqlite3 *db, hub_matrix_t *out_matrix) {
     return hub_scan_matrix_ex(db, out_matrix, NULL, NULL);
+}
+
+const hub_skill_entry_t *hub_find_skill(const hub_matrix_t *matrix, const char *name) {
+    if (!matrix || !name) return NULL;
+    /* 扫描结果按名称分组生成，渲染过程中可直接二分查找。 */
+    int first = 0, end = matrix->skill_count;
+    while (first < end) {
+        int mid = first + (end - first) / 2;
+        const hub_skill_entry_t *entry = &matrix->skills[mid];
+        int order = strcmp(entry->skill_name, name);
+        if (order == 0) return entry;
+        if (order < 0) first = mid + 1;
+        else end = mid;
+    }
+    return NULL;
 }
 
 void hub_free_matrix(hub_matrix_t *matrix) {

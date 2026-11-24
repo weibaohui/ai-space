@@ -37,21 +37,15 @@ void open_master_skill_explorer(app_state_t *s, const char *skill_name) {
     s->active_skill_name[sizeof(s->active_skill_name) - 1] = '\0';
     snprintf(s->active_skill_path, sizeof(s->active_skill_path), "%s/%s", s->hub_matrix.hub_dir, skill_name);
 
-    /* If not present in master hub folder, search for an existing tool copy */
+    /* 主仓目录不存在时，用第一个可用副本打开浏览器。 */
     struct stat st_dir;
     if (stat(s->active_skill_path, &st_dir) != 0) {
-        for (int i = 0; i < s->hub_matrix.skill_count; i++) {
-            if (strcmp(s->hub_matrix.skills[i].skill_name, skill_name) == 0) {
-                for (int j = 0; j < s->hub_matrix.skills[i].tool_count; j++) {
-                    if (s->hub_matrix.skills[i].tool_copies[j].exists &&
-                        s->hub_matrix.skills[i].tool_copies[j].skill_path[0] != '\0') {
-                        strncpy(s->active_skill_path, s->hub_matrix.skills[i].tool_copies[j].skill_path,
-                                sizeof(s->active_skill_path) - 1);
-                        break;
-                    }
-                }
-                break;
-            }
+        const hub_skill_entry_t *entry = hub_find_skill(&s->hub_matrix, skill_name);
+        for (int i = 0; entry && i < entry->tool_count; i++) {
+            const tool_copy_status_t *copy = &entry->tool_copies[i];
+            if (!copy->exists || !copy->skill_path[0]) continue;
+            strncpy(s->active_skill_path, copy->skill_path, sizeof(s->active_skill_path) - 1);
+            break;
         }
     }
 
@@ -61,7 +55,7 @@ void open_master_skill_explorer(app_state_t *s, const char *skill_name) {
     }
     s->master_skill_file_tree = build_skill_file_tree(s->active_skill_path, "", 0, 10);
 
-    /* Clear previously selected file */
+    /* 切换技能时释放旧的预览内容。 */
     s->selected_file_path[0] = '\0';
     s->selected_file_name[0] = '\0';
     if (s->selected_file_content) {
@@ -71,7 +65,7 @@ void open_master_skill_explorer(app_state_t *s, const char *skill_name) {
     s->selected_file_size = 0;
     s->selected_file_lines = 0;
 
-    /* Select SKILL.md by default */
+    /* 默认打开技能入口文件。 */
     char skill_md_path[1024];
     snprintf(skill_md_path, sizeof(skill_md_path), "%s/SKILL.md", s->active_skill_path);
     struct stat st;
@@ -104,16 +98,10 @@ static void on_master_file_select(file_node_t *node, void *user_data) {
 }
 
 void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s) {
-    /* Check whether this active skill is actually adopted in master hub */
-    bool is_in_hub = false;
-    for (int i = 0; i < s->hub_matrix.skill_count; i++) {
-        if (strcmp(s->hub_matrix.skills[i].skill_name, s->active_skill_name) == 0) {
-            is_in_hub = s->hub_matrix.skills[i].in_hub;
-            break;
-        }
-    }
+    const hub_skill_entry_t *entry = hub_find_skill(&s->hub_matrix, s->active_skill_name);
+    bool is_in_hub = entry && entry->in_hub;
 
-    /* Header & Breadcrumb */
+    /* 顶部显示技能来源和收录入口。 */
     cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
         if (cui_button(ui, "返回", .variant = CUI_BUTTON_GHOST, .icon = CUI_ICON_CHEVRON_LEFT)) {
             s->hub_subview = s->prev_hub_subview;
@@ -133,17 +121,12 @@ void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s) {
             cui_gap(ui, 8);
             if (cui_button(ui, "收录", .variant = CUI_BUTTON_PRIMARY,
                            .icon = ICON_COLLECT, .size = CUI_SIZE_SM)) {
-                for (int i = 0; i < s->hub_matrix.skill_count; i++) {
-                    if (strcmp(s->hub_matrix.skills[i].skill_name, s->active_skill_name) == 0) {
-                        for (int t = 0; t < s->hub_matrix.skills[i].tool_count; t++) {
-                            if (s->hub_matrix.skills[i].tool_copies[t].exists) {
-                                start_promote_to_master_thread(s, s->hub_matrix.skills[i].tool_copies[t].tool_skills_path,
-                                                               s->active_skill_name, s->hub_matrix.skills[i].tool_copies[t].tool_name, t);
-                                break;
-                            }
-                        }
-                        break;
-                    }
+                for (int t = 0; entry && t < entry->tool_count; t++) {
+                    const tool_copy_status_t *copy = &entry->tool_copies[t];
+                    if (!copy->exists) continue;
+                    start_promote_to_master_thread(s, copy->tool_skills_path, s->active_skill_name,
+                                                   copy->tool_name, t);
+                    break;
                 }
             }
         }
@@ -152,7 +135,7 @@ void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s) {
         cui_text(ui, s->active_skill_path, .size = 12, .color = CUI_COLOR_TEXT_MUTED);
     }
 
-    /* 2 Columns: File Tree + Content Viewer */
+    /* 目录树和文件预览并排展示。 */
     cui_row(ui, .width = CUI_FILL, .height = CUI_FILL, .gap = 12) {
         skill_tree_view_opts_t tree_opts = {
             .title = is_in_hub ? "主仓目录结构" : "技能目录结构",
@@ -164,7 +147,7 @@ void render_master_hub_explorer_view(cui_ctx *ui, app_state_t *s) {
         };
         render_skill_file_tree_component(ui, s->master_skill_file_tree, &tree_opts, on_master_file_select, s);
 
-        /* Content Viewer */
+        /* 文件预览。 */
         cui_card(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 14, .gap = 10) {
             bool is_md = (strstr(s->selected_file_name, ".md") != NULL ||
                           strstr(s->selected_file_name, ".markdown") != NULL);
@@ -234,12 +217,12 @@ typedef enum {
 } master_skill_filter_t;
 
 void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
-    /* 1. Metric Cards (3 Core Metrics) */
+    /* 主仓、覆盖工具和副本差异概览。 */
     cui_row(ui, .width = CUI_FILL, .gap = 14) {
         char buf_hub[32], buf_tool[32], buf_drift[32];
         snprintf(buf_hub, sizeof(buf_hub), "%d 个", s->hub_matrix.hub_managed_skills);
 
-        /* Count covered tools */
+        /* 每个工具只计一次覆盖。 */
         int covered_tools = 0;
         for (int t = 0; t < s->hub_matrix.tool_count; t++) {
             bool has_any = false;
@@ -253,7 +236,7 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
         }
         snprintf(buf_tool, sizeof(buf_tool), "%d / %d 个", covered_tools, s->hub_matrix.tool_count);
 
-        /* Count actual master skill copies drifted across tools */
+        /* 按存在差异的工具副本计数。 */
         int master_drift_copies = 0;
         for (int i = 0; i < s->hub_matrix.skill_count; i++) {
             hub_skill_entry_t *entry = &s->hub_matrix.skills[i];
@@ -298,9 +281,9 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
         }
     }
 
-    /* 3. Skill Cards List */
+    /* 按筛选条件展示主仓技能卡片。 */
     if (s->hub_matrix.hub_managed_skills == 0) {
-        /* Empty State */
+        /* 无匹配技能时显示空状态。 */
         cui_card(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 40) {
             cui_column(ui, .width = CUI_FILL, .height = CUI_FILL,
                        .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
@@ -408,7 +391,7 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                                  .width = CUI_FILL, .nowrap = true);
                     }
 
-                    /* Row 3: Tool Distribution Badges */
+                    /* 工具徽标展示该技能的分发状态。 */
                     cui_row(ui, .width = CUI_FILL, .gap = 6, .align = CUI_ALIGN_CENTER, .wrap = true) {
                         cui_textf(ui, "分发覆盖 (%d/%d):", entry->installed_count, s->hub_matrix.tool_count);
                         if (entry->installed_count > 0) {

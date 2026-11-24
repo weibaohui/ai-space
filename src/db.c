@@ -38,6 +38,7 @@ static int migrate_legacy_tools(sqlite3 *db) {
     if (rc != SQLITE_DONE) return -1;
     if (!legacy) return 0;
 
+    /* 旧版本可能缺少统计和时间字段，迁移时用当前表定义的默认值补齐。 */
     char migration[1400];
     snprintf(migration, sizeof(migration),
              "CREATE TABLE local_tools_migration " TOOLS_COLUMNS ";"
@@ -75,6 +76,7 @@ int db_init(const char *db_path, sqlite3 **out_db) {
         "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         "CREATE TABLE IF NOT EXISTS sync_baselines ("
         " scope TEXT NOT NULL, skill TEXT NOT NULL, hash TEXT NOT NULL, PRIMARY KEY(scope,skill));";
+    /* 迁移、建表及索引在同一事务完成，任一步失败都保留原表。 */
     if (sqlite3_exec(db, "BEGIN IMMEDIATE", NULL, NULL, NULL) != SQLITE_OK ||
         migrate_legacy_tools(db) != 0 ||
         sqlite3_exec(db, schema, NULL, NULL, NULL) != SQLITE_OK ||
@@ -108,14 +110,14 @@ int db_scan_and_sync(sqlite3 *db, int *out_inserted, int *out_updated, int *out_
     int updated = 0;
     int deleted = 0;
 
-    /* 1. Discover tools from disk */
+    /* 先完成磁盘发现，再开始写入数据库。 */
     discovered_tool_t *disc_tools = NULL;
     int disc_count = 0;
     if (scanner_scan(&disc_tools, &disc_count) != 0) {
         return -1;
     }
 
-    /* 2. Begin transaction */
+    /* 同一轮发现结果用一个事务落库。 */
     char *errmsg = NULL;
     if (sqlite3_exec(db, "BEGIN IMMEDIATE TRANSACTION;", NULL, NULL, &errmsg) != SQLITE_OK) {
         fprintf(stderr, "[db] Transaction begin failed: %s\n", errmsg ? errmsg : "");
@@ -124,7 +126,7 @@ int db_scan_and_sync(sqlite3 *db, int *out_inserted, int *out_updated, int *out_
         return -1;
     }
 
-    /* 3. Read current tools in DB */
+    /* 加载旧记录以区分更新、插入和移除。 */
     sqlite3_stmt *stmt = NULL;
     const char *sel_sql = "SELECT id, name FROM local_tools;";
     if (sqlite3_prepare_v2(db, sel_sql, -1, &stmt, NULL) != SQLITE_OK) {
@@ -153,7 +155,7 @@ int db_scan_and_sync(sqlite3 *db, int *out_inserted, int *out_updated, int *out_
     }
     sqlite3_finalize(stmt);
 
-    /* 4. Prepare update and insert statements */
+    /* 循环复用写入语句，避免重复编译 SQL。 */
     sqlite3_stmt *stmt_update = NULL;
     const char *upd_sql =
         "UPDATE local_tools SET "
@@ -206,7 +208,7 @@ int db_scan_and_sync(sqlite3 *db, int *out_inserted, int *out_updated, int *out_
     if (stmt_update) sqlite3_finalize(stmt_update);
     if (stmt_insert) sqlite3_finalize(stmt_insert);
 
-    /* 5. Tools in DB but missing from disk -> remove from DB */
+    /* 移除本轮未发现的旧记录。 */
     sqlite3_stmt *stmt_del = NULL;
     const char *del_sql = "DELETE FROM local_tools WHERE id = ?;";
     sqlite3_prepare_v2(db, del_sql, -1, &stmt_del, NULL);
@@ -225,7 +227,7 @@ int db_scan_and_sync(sqlite3 *db, int *out_inserted, int *out_updated, int *out_
 
     if (stmt_del) sqlite3_finalize(stmt_del);
 
-    /* 6. Commit transaction */
+    /* 提交整轮变更。 */
     sqlite3_exec(db, "COMMIT;", NULL, NULL, NULL);
 
     free(db_entries);

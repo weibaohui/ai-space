@@ -38,6 +38,7 @@ int sync_expand(const char *path, char *out, size_t cap) {
 }
 
 int sync_make_stage(const char *root, char *out, size_t cap) {
+    /* 放在目标目录所在的文件系统，允许后续通过 rename 替换。 */
     for (int attempt = 0; attempt < 128; attempt++) {
         int n = snprintf(out, cap, "%s/.ai-space-stage-%ld-%d", root, (long)getpid(), attempt);
         if (n < 0 || (size_t)n >= cap) return -1;
@@ -49,6 +50,25 @@ int sync_make_stage(const char *root, char *out, size_t cap) {
         if (errno != EEXIST) return -1;
     }
     return -1;
+}
+
+int sync_make_temp_stage(char *out, size_t cap) {
+    const char *temp = getenv("TMPDIR");
+#ifdef _WIN32
+    char system_temp[SYNC_PATH_CAP];
+    if (!temp || !temp[0]) {
+        DWORD len = GetTempPathA((DWORD)sizeof(system_temp), system_temp);
+        if (!len || len >= sizeof(system_temp)) return -1;
+        temp = system_temp;
+    }
+#else
+    if (!temp || !temp[0]) temp = "/tmp";
+#endif
+    return sync_make_stage(temp, out, cap);
+}
+
+void sync_cleanup_stage(const char *stage, int result) {
+    if (result != SYNC_REPLACE_RESTORE_FAILED) sync_remove_tree(stage);
 }
 
 int sync_remove_tree(const char *path) {
@@ -170,7 +190,7 @@ int sync_replace_tree(const char *stage, const char *replacement, const char *ta
     }
 
     if (rename(replacement, target) == 0) return 0;
-    /* Keep the previous copy on disk if the rollback itself fails. */
-    if (backed_up && rename(old, target) != 0) return -2;
+    /* 回滚失败时保留 previous，避免清理暂存目录时丢掉旧版本。 */
+    if (backed_up && rename(old, target) != 0) return SYNC_REPLACE_RESTORE_FAILED;
     return -1;
 }

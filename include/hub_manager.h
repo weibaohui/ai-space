@@ -69,6 +69,9 @@ typedef void (*hub_progress_cb)(float percent, const char *status_msg, void *use
 int hub_scan_matrix(sqlite3 *db, hub_matrix_t *out_matrix);
 int hub_scan_matrix_ex(sqlite3 *db, hub_matrix_t *out_matrix, hub_progress_cb cb, void *user_data);
 
+/* 返回矩阵中的只读条目，矩阵刷新或释放后指针失效。 */
+const hub_skill_entry_t *hub_find_skill(const hub_matrix_t *matrix, const char *name);
+
 /* Free memory in hub_matrix_t */
 void hub_free_matrix(hub_matrix_t *matrix);
 

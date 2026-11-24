@@ -9,19 +9,12 @@
 void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
     if (!s || !s->show_distribute_modal || s->distribute_skill_name[0] == '\0') return;
 
-    /* Find entry in hub_matrix */
-    hub_skill_entry_t *entry = NULL;
-    for (int i = 0; i < s->hub_matrix.skill_count; i++) {
-        if (strcmp(s->hub_matrix.skills[i].skill_name, s->distribute_skill_name) == 0) {
-            entry = &s->hub_matrix.skills[i];
-            break;
-        }
-    }
+    const hub_skill_entry_t *entry = hub_find_skill(&s->hub_matrix, s->distribute_skill_name);
 
     cui_dialog(ui, "分发主仓技能到本地工具", &s->show_distribute_modal,
                .width = 720, .persistent = false) {
         cui_column(ui, .width = CUI_FILL, .gap = 14) {
-            /* 1. Skill Header Card */
+            /* 先展示待分发技能及已覆盖工具数。 */
             cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 12, .gap = 8,
                     .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
                     .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
@@ -53,7 +46,7 @@ void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
                 }
             }
 
-            /* 2. Tools Distribution List */
+            /* 按工具查看各自的安装和版本状态。 */
             static bool s_dist_tool_sel[64] = {false};
             int sel_tools = 0;
             for (int i = 0; i < s->hub_matrix.tool_count && i < 64; i++) {
@@ -88,7 +81,7 @@ void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
                         const char *t_name = s->hub_matrix.tools[t];
                         const char *t_path = s->hub_matrix.tool_paths[t];
 
-                        /* Find tool_copies status if entry exists */
+                        /* 已有扫描结果时复用该工具的副本状态。 */
                         tool_copy_status_t *tc = NULL;
                         if (entry) {
                             for (int k = 0; k < entry->tool_count; k++) {
@@ -121,7 +114,7 @@ void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
 
                                 cui_spacer(ui);
 
-                                /* Status Badge */
+                                /* 显示该工具的副本状态。 */
                                 if (!exists) {
                                     cui_badge(ui, "未安装", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
                                 } else if (status == HUB_STATUS_IN_SYNC) {
@@ -134,7 +127,7 @@ void render_distribute_skill_modal(cui_ctx *ui, app_state_t *s) {
                                     cui_badge(ui, "版本落后", .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
                                 }
 
-                                /* Action Buttons */
+                                /* 操作随副本状态切换。 */
                                 cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                                     if (!exists) {
                                         if (cui_button(ui, "安装", .variant = CUI_BUTTON_GHOST,

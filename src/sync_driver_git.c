@@ -3,6 +3,7 @@
 #include "skill_metadata.h"
 #include "sync_backend.h"
 #include "sync_directory.h"
+#include "sync_local_files.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -55,6 +56,7 @@ static int git_test_connection(sync_backend_t *self, char *err_buf, size_t err_c
 static int git_read_manifest(const git_priv_t *repo, int revision, sync_remote_manifest_t *out,
                              char *error, size_t cap) {
     *out = (sync_remote_manifest_t){0};
+    /* 空仓可以首次推送，读取清单时直接返回零项。 */
     if (revision != GIT_REPO_EMPTY &&
         sync_scan_directory(repo->git_cache_dir, false, out, error, cap) != 0) return -1;
     snprintf(out->remote_root, sizeof(out->remote_root), "%s", repo->repo_url);
@@ -68,44 +70,6 @@ static int git_fetch_remote_manifest(sync_backend_t *self, sync_remote_manifest_
     int revision = git_repo_refresh(repo, error, cap);
     if (revision < 0) return -1;
     return git_read_manifest(repo, revision, out, error, cap);
-}
-
-static int git_check_drift(sync_backend_t *self, const char *local,
-                           sync_drift_summary_t *out, char *error, size_t cap) {
-    sync_remote_manifest_t remote = {0};
-    if (git_fetch_remote_manifest(self, &remote, error, cap) != 0) return -1;
-    int rc = sync_compare_directory(&remote, local, self->baseline, out, error, cap);
-    sync_free_manifest(&remote);
-    return rc;
-}
-
-/* Complete the copy before replacing the published skill directory. */
-static int git_copy_skill(const char *source, const char *destination, const char *name,
-                          const char *source_hash, const char *target_hash) {
-    char src[SYNC_PATH_CAP], target[SYNC_PATH_CAP], stage[SYNC_PATH_CAP], replacement[SYNC_PATH_CAP];
-    if (!sync_valid_component(name) || skill_skip_name(name) ||
-        sync_join(src, sizeof(src), source, name) != 0 || !skill_is_directory(src) ||
-        sync_join(target, sizeof(target), destination, name) != 0 ||
-        sync_make_stage(destination, stage, sizeof(stage)) != 0) return -1;
-    int rc = -1;
-    if (sync_join(replacement, sizeof(replacement), stage, "new") == 0 &&
-        file_tree_copy(src, replacement, false, skill_skip_name) == 0) {
-        if ((!source_hash || sync_skill_matches(replacement, source_hash)) &&
-            (!target_hash || sync_skill_matches(target, target_hash)))
-            rc = sync_replace_tree(stage, replacement, target);
-        else rc = SYNC_TRANSFER_CHANGED;
-    }
-    if (rc != -2) sync_remove_tree(stage);
-    return rc;
-}
-
-static int git_apply_skill(git_priv_t *repo, const char *root, const char *name, bool pull,
-                           const sync_drift_item_t *expected) {
-    const char *source = pull ? repo->git_cache_dir : root;
-    const char *target = pull ? root : repo->git_cache_dir;
-    const char *source_hash = expected ? (pull ? expected->remote_hash : expected->local_hash) : NULL;
-    const char *target_hash = expected ? (pull ? expected->local_hash : expected->remote_hash) : NULL;
-    return git_copy_skill(source, target, name, source_hash, target_hash);
 }
 
 static void git_remove_new_skill(const git_priv_t *repo, const char *name) {
@@ -126,13 +90,12 @@ static int git_transfer_skill(sync_backend_t *self, const char *name, const char
         return -1;
     }
 
-    if (pull) ai_mkdir_p(root);
     if (cb) cb(0.4f, pull ? "正在拉取 Git 技能" : "正在准备 Git 技能提交", user);
     char target[SYNC_PATH_CAP];
     struct stat existing;
     if (sync_join(target, sizeof(target), repo->git_cache_dir, name) != 0) return -1;
     bool new_skill = lstat(target, &existing) != 0 && errno == ENOENT;
-    int rc = git_apply_skill(repo, root, name, pull, self->expected_skill);
+    int rc = sync_copy_local_skill(root, repo->git_cache_dir, name, self->expected_skill, pull);
     if (rc == 0 && !pull) {
         rc = git_repo_stage(repo, name);
         if (rc == 0) rc = git_repo_commit(repo, name, 0);
@@ -183,13 +146,13 @@ static int git_transfer_batch(sync_backend_t *self, const char *local, bool pull
         else sync_free_drift_summary(&drift);
         return SYNC_BATCH_UNCHANGED;
     }
-    if (pull) ai_mkdir_p(root);
+    /* 批量推送先准备所有候选项，最后合为一次 Git 提交。 */
     int done = 0, rc = 0, last_copied = -1;
     for (int i = 0; i < drift.count; i++) {
         const sync_drift_item_t *item = &drift.items[i];
         if (!sync_drift_is_candidate(item->status, pull)) continue;
         const char *name = item->skill_name;
-        rc = git_apply_skill(repo, root, name, pull, item);
+        rc = sync_copy_local_skill(root, repo->git_cache_dir, name, item, pull);
         if (rc == 0 && !pull) {
             last_copied = i;
             rc = git_repo_stage(repo, name);
@@ -218,16 +181,6 @@ static int git_transfer_batch(sync_backend_t *self, const char *local, bool pull
     return rc;
 }
 
-static int git_pull_all(sync_backend_t *self, const char *local, sync_progress_cb cb, void *user) {
-    int rc = git_transfer_batch(self, local, true, cb, user, NULL);
-    return rc == SYNC_BATCH_UNCHANGED ? 0 : rc;
-}
-
-static int git_push_all(sync_backend_t *self, const char *local, sync_progress_cb cb, void *user) {
-    int rc = git_transfer_batch(self, local, false, cb, user, NULL);
-    return rc == SYNC_BATCH_UNCHANGED ? 0 : rc;
-}
-
 const sync_driver_ops_t g_git_driver_ops = {
     .type = SYNC_BACKEND_GIT,
     .name = "git",
@@ -237,10 +190,10 @@ const sync_driver_ops_t g_git_driver_ops = {
     .test_connection = git_test_connection,
     .check_available = git_check_available,
     .fetch_remote_manifest = git_fetch_remote_manifest,
-    .check_drift = git_check_drift,
+    .check_drift = sync_check_directory_drift,
     .pull_skill = git_pull_skill,
     .push_skill = git_push_skill,
-    .pull_all = git_pull_all,
-    .push_all = git_push_all,
+    .pull_all = sync_batch_pull_all,
+    .push_all = sync_batch_push_all,
     .transfer_batch = git_transfer_batch,
 };

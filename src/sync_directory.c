@@ -97,6 +97,7 @@ static void report_difference(sync_drift_summary_t *out, const sync_remote_skill
         snprintf(item->remote_hash, sizeof(item->remote_hash), "%s", remote->hash);
         item->remote_mtime = remote->mtime;
     }
+    /* 只用上次一致的指纹判定双端改动，时间戳用于兼容未提供基线的调用方。 */
     const sync_baseline_item_t *previous = baseline && baseline->count
         ? bsearch(item->skill_name, baseline->items, baseline->count,
                   sizeof(*baseline->items), compare_baseline_name) : NULL;
@@ -145,6 +146,7 @@ int sync_compare_directory(const sync_remote_manifest_t *remote, const char *loc
 
     size_t local_count = (size_t)local_manifest.count;
     size_t count = (size_t)remote->count + local_count;
+    /* 单独排序查找索引，避免改变差异清单的原有排列。 */
     bool index_needed = local_count > 0 && remote->count > 0;
     skill_index_entry_t *index = index_needed ? calloc(local_count, sizeof(*index)) : NULL;
     bool *matched = index_needed ? calloc(local_count, sizeof(*matched)) : NULL;
@@ -189,12 +191,13 @@ bool sync_drift_is_candidate(sync_drift_status_t status, bool pull) {
                 : status == SYNC_DRIFT_LOCAL_ONLY || status == SYNC_DRIFT_LOCAL_AHEAD;
 }
 
-bool sync_skill_matches(const char *path, const char *expected_hash) {
-    struct stat st;
-    if (!expected_hash[0]) return lstat(path, &st) != 0 && errno == ENOENT;
-    char hash[32];
-    return skill_is_directory(path) && hub_compute_skill_hash(path, hash, sizeof(hash), NULL) == 0 &&
-           strcmp(hash, expected_hash) == 0;
+int sync_check_directory_drift(sync_backend_t *backend, const char *local,
+                               sync_drift_summary_t *out, char *error, size_t cap) {
+    sync_remote_manifest_t remote = {0};
+    int rc = backend->ops->fetch_remote_manifest(backend, &remote, error, cap);
+    if (rc == 0) rc = sync_compare_directory(&remote, local, backend->baseline, out, error, cap);
+    sync_free_manifest(&remote);
+    return rc;
 }
 
 int sync_transfer_batch(sync_backend_t *backend, const char *local, bool pull,
@@ -225,6 +228,7 @@ int sync_transfer_batch(sync_backend_t *backend, const char *local, bool pull,
                      item->skill_name, done + 1, total);
             cb((float)done / total, msg, user);
         }
+        /* 把计划中的源和目标指纹交给后端，在真正写入前复核。 */
         backend->expected_skill = item;
         rc = pull ? backend->ops->pull_skill(backend, item->skill_name, local, NULL, NULL)
                   : backend->ops->push_skill(backend, item->skill_name, local, NULL, NULL);
@@ -244,4 +248,18 @@ int sync_transfer_batch(sync_backend_t *backend, const char *local, bool pull,
     if (rc == 0 && cb) cb(1.0f, "同步完成", user);
     sync_free_drift_summary(&diff);
     return rc;
+}
+/* 旧批量入口用 0 表示成功，只有需要复用差异清单的调用方关心无传输状态。 */
+static int transfer_all(sync_backend_t *backend, const char *local, bool pull,
+                        sync_progress_cb cb, void *user) {
+    int rc = backend->ops->transfer_batch(backend, local, pull, cb, user, NULL);
+    return rc == SYNC_BATCH_UNCHANGED ? 0 : rc;
+}
+
+int sync_batch_pull_all(sync_backend_t *backend, const char *local, sync_progress_cb cb, void *user) {
+    return transfer_all(backend, local, true, cb, user);
+}
+
+int sync_batch_push_all(sync_backend_t *backend, const char *local, sync_progress_cb cb, void *user) {
+    return transfer_all(backend, local, false, cb, user);
 }

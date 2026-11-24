@@ -9,23 +9,16 @@ int hub_broadcast_skill(const hub_matrix_t *matrix, const char *skill_name, int 
 
     int synced = 0;
     int result = 0;
-    for (int i = 0; i < matrix->skill_count; i++) {
-        if (strcmp(matrix->skills[i].skill_name, skill_name) == 0) {
-            hub_skill_entry_t *entry = &matrix->skills[i];
-            if (!entry->in_hub) return -1;
+    const hub_skill_entry_t *entry = hub_find_skill(matrix, skill_name);
+    if (entry && !entry->in_hub) return -1;
 
-            for (int t = 0; t < entry->tool_count; t++) {
-                if (entry->tool_copies[t].exists) {
-                    if (hub_sync_master_to_tool(entry->tool_copies[t].tool_skills_path,
-                                                skill_name, entry->tool_copies[t].tool_name) == 0) {
-                        synced++;
-                    } else {
-                        result = -1;
-                    }
-                }
-            }
-            break;
-        }
+    /* 广播只更新已经安装该技能的工具，分发可以安装到新工具。 */
+    for (int t = 0; entry && t < entry->tool_count; t++) {
+        const tool_copy_status_t *copy = &entry->tool_copies[t];
+        if (!copy->exists) continue;
+        if (hub_sync_master_to_tool(copy->tool_skills_path, skill_name, copy->tool_name) == 0)
+            synced++;
+        else result = -1;
     }
 
     if (out_synced_count) *out_synced_count = synced;
@@ -91,22 +84,13 @@ int hub_uninstall_skill_from_all_tools(const hub_matrix_t *matrix, const char *s
     if (!matrix || !skill_name || skill_name[0] == '\0') return -1;
     int uninstalled = 0;
     bool failed = false;
-    for (int i = 0; i < matrix->skill_count; i++) {
-        const hub_skill_entry_t *entry = &matrix->skills[i];
-        if (strcmp(entry->skill_name, skill_name) == 0) {
-            for (int t = 0; t < entry->tool_count; t++) {
-                if (entry->tool_copies[t].exists) {
-                    if (hub_uninstall_skill_from_tool(entry->tool_copies[t].tool_skills_path,
-                                                      skill_name,
-                                                      entry->tool_copies[t].tool_name) == 0) {
-                        uninstalled++;
-                    } else {
-                        failed = true;
-                    }
-                }
-            }
-            break;
-        }
+    const hub_skill_entry_t *entry = hub_find_skill(matrix, skill_name);
+    for (int t = 0; entry && t < entry->tool_count; t++) {
+        const tool_copy_status_t *copy = &entry->tool_copies[t];
+        if (!copy->exists) continue;
+        if (hub_uninstall_skill_from_tool(copy->tool_skills_path, skill_name, copy->tool_name) == 0)
+            uninstalled++;
+        else failed = true;
     }
     return failed ? -1 : uninstalled;
 }
@@ -127,7 +111,7 @@ int hub_adopt_all_to_master_ex(const hub_matrix_t *matrix, int *out_adopted_coun
             cb(p, p_msg, user_data);
         }
         if (!entry->in_hub && entry->installed_count > 0) {
-            /* Find first existing tool copy to promote */
+            /* 批量收录时沿用矩阵顺序，取第一个已安装副本。 */
             for (int t = 0; t < entry->tool_count; t++) {
                 if (entry->tool_copies[t].exists) {
                     if (hub_promote_to_master(entry->tool_copies[t].tool_skills_path,

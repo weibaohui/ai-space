@@ -11,8 +11,11 @@ int sync_compare_directory(const sync_remote_manifest_t *remote, const char *loc
                            const sync_baseline_t *baseline,
                            sync_drift_summary_t *out, char *error, size_t cap);
 bool sync_drift_is_candidate(sync_drift_status_t status, bool pull);
-bool sync_skill_matches(const char *path, const char *expected_hash);
+int sync_check_directory_drift(sync_backend_t *backend, const char *local,
+                               sync_drift_summary_t *out, char *error, size_t cap);
 int sync_transfer_batch(sync_backend_t *backend, const char *local, bool pull,
                         sync_progress_cb cb, void *user, sync_drift_summary_t *unchanged_drift);
+int sync_batch_pull_all(sync_backend_t *backend, const char *local, sync_progress_cb cb, void *user);
+int sync_batch_push_all(sync_backend_t *backend, const char *local, sync_progress_cb cb, void *user);
 
 #endif
