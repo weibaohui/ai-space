@@ -92,6 +92,8 @@ cmake --build build --parallel
 ./test_sync_backends smb nas.local share isolated-fixture /tmp/hub-a /tmp/hub-b
 ```
 
+本地存储与文件预览回归可运行 `make test_storage_preview && ./test_storage_preview`。
+
 测试认证 WebDAV 时，可通过 `AI_SPACE_TEST_WEBDAV_USER` 和 `AI_SPACE_TEST_WEBDAV_PASSWORD` 提供凭据。
 
 ### 自动化构建（GitHub Actions）
@@ -129,7 +131,7 @@ ai-space/
 ├── include/                # 头文件与接口定义
 │   ├── app_state.h         # 全局应用状态机模型
 │   ├── sync_backend.h      # 远端同步后端抽象与原语 VTable
-│   ├── hub_manager.h       # 主仓管理、物理复制与指纹哈希
+│   ├── hub_manager.h       # 主仓与工具副本关系矩阵
 │   ├── db.h                # SQLite 本地持久化与配置表
 │   ├── view_tools.h        # 工具列表视图
 │   ├── view_master_hub.h   # 主仓集中管理视图
@@ -140,10 +142,16 @@ ai-space/
 ├── src/                    # 核心实现源码
 │   ├── main.c              # 程序主入口与帧调度分发器
 │   ├── sync_manager.c      # 同步后端驱动工厂与调度
-│   ├── sync_driver_nfs.c   # NFS / 局域网共享文件系统驱动
+│   ├── sync_driver_share.c # SMB / NFS 共享存储驱动
 │   ├── sync_driver_webdav.c# WebDAV 协议驱动
 │   ├── sync_driver_git.c   # Git 远端版本库驱动
-│   ├── hub_manager.c       # 主仓物理读写、安全快照与哈希计算
+│   ├── hub_manager.c       # 主仓与工具副本关系扫描
+│   ├── hub_files.c         # 主仓采纳、分发与安全快照
+│   ├── storage_manager.c   # 本地存储统计与清理
+│   ├── skill_metadata.c    # Skill 目录识别和元数据
+│   ├── file_preview.c      # 限长读取与语法高亮类型识别
+│   ├── sync_git_repository.c # Git 缓存与命令执行
+│   ├── sync_webdav_listing.c # WebDAV 目录列表解析
 │   ├── db.c                # SQLite 数据持久化与 Key-Value 配置
 │   └── ...
 ├── CUI/                    # 响应式即时渲染 GUI 引擎

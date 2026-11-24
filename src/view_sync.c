@@ -1,3 +1,4 @@
+#include "app_sync.h"
 #include "view_sync.h"
 #include "view_common.h"
 #include <stdio.h>
@@ -46,6 +47,34 @@ static void render_sync_result(cui_ctx *ui, app_state_t *s, const sync_drift_ite
                                        .icon = CUI_ICON_UPLOAD, .disabled = busy)) {
                 start_sync_push_skill_thread(s, item->skill_name);
             }
+            if (item->status == SYNC_DRIFT_CONFLICT &&
+                cui_button(ui, "处理冲突", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM,
+                           .icon = CUI_ICON_TRIANGLE_ALERT, .disabled = busy)) {
+                snprintf(s->sync_conflict_skill, sizeof(s->sync_conflict_skill), "%s", item->skill_name);
+                s->show_sync_conflict_modal = true;
+            }
+        }
+    }
+}
+
+static void render_conflict_dialog(cui_ctx *ui, app_state_t *s, bool busy) {
+    if (!s->show_sync_conflict_modal) return;
+    cui_dialog(ui, "选择保留的技能版本", &s->show_sync_conflict_modal, .width = 480) {
+        cui_column(ui, .width = CUI_FILL, .gap = 12) {
+            cui_text(ui, s->sync_conflict_skill, .width = CUI_FILL, .font = CUI_FONT_MEDIUM);
+            cui_text(ui, "保留主仓将覆盖远端副本。保留远端将覆盖本地主仓副本。", .width = CUI_FILL);
+            cui_row(ui, .width = CUI_FILL, .gap = 8, .justify = CUI_JUSTIFY_END) {
+                if (cui_button(ui, "取消", .variant = CUI_BUTTON_GHOST))
+                    s->show_sync_conflict_modal = false;
+                if (cui_button(ui, "保留主仓并推送", .variant = CUI_BUTTON_OUTLINE, .disabled = busy)) {
+                    s->show_sync_conflict_modal = false;
+                    start_sync_resolve_conflict_thread(s, s->sync_conflict_skill, false);
+                }
+                if (cui_button(ui, "保留远端并拉取", .variant = CUI_BUTTON_OUTLINE, .disabled = busy)) {
+                    s->show_sync_conflict_modal = false;
+                    start_sync_resolve_conflict_thread(s, s->sync_conflict_skill, true);
+                }
+            }
         }
     }
 }
@@ -75,7 +104,7 @@ void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
     }
 
     bool offline = s->sync_cfg.type == SYNC_BACKEND_NONE;
-    bool busy = s->sync_is_busy || s->op_progress.active;
+    bool busy = s->sync_is_busy || s->op_progress.active || s->hub_scan.is_scanning;
     cui_row(ui, .width = CUI_FILL, .gap = 12, .align = CUI_ALIGN_CENTER) {
         render_workspace_heading(ui, ICON_SYNC, "同步管理", endpoint);
         if (offline) {
@@ -172,4 +201,5 @@ void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
             }
         }
     }
+    render_conflict_dialog(ui, s, busy);
 }

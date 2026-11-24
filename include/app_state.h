@@ -4,13 +4,15 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <sqlite3.h>
-#include <pthread.h>
 #include <cui/cui.h>
 #include "models.h"
 #include "version.h"
 #include "skill_scanner.h"
+#include "skill_file_tree.h"
 #include "hub_manager.h"
 #include "sync_backend.h"
+#include "skill_diff.h"
+#include "app_storage.h"
 
 typedef enum {
     PAGE_DASHBOARD = 0,        /* 首页 */
@@ -65,80 +67,15 @@ typedef struct {
     bool indeterminate;
     int current_item;
     int total_items;
-    pthread_t thread;
-    bool thread_running;
 } op_progress_t;
 
 /* Async background scanner state for the Hub Matrix */
 typedef struct {
     bool is_scanning;
+    bool failed;
     float progress;              /* 0.0 to 1.0 */
     char status_text[256];
-    pthread_t thread;
-    bool thread_running;
 } hub_scan_state_t;
-
-/* Status for individual files within a skill */
-typedef enum {
-    DIFF_FILE_IN_SYNC = 0,    /* Identical in both master and tool */
-    DIFF_FILE_MODIFIED = 1,   /* Exists in both but content has drifted */
-    DIFF_FILE_ADDED = 2,      /* Exists only in tool (added locally) */
-    DIFF_FILE_DELETED = 3,    /* Exists only in master (missing in tool copy) */
-} diff_file_status_t;
-
-typedef struct {
-    char rel_path[256];
-    char file_name[128];
-    diff_file_status_t status;
-    size_t master_size;
-    size_t tool_size;
-    bool is_binary;
-    int added_lines;            /* Added lines in tool vs master */
-    int removed_lines;          /* Removed lines in tool vs master */
-} hub_diff_file_item_t;
-
-typedef struct {
-    char skill_name[128];
-    char tool_name[128];
-    hub_diff_file_item_t *items;
-    int count;
-    int modified_count;
-    int added_count;
-    int deleted_count;
-    int in_sync_count;
-    int total_added_lines;
-    int total_removed_lines;
-} hub_skill_diff_manifest_t;
-
-/* Local Storage snapshot item */
-typedef struct {
-    char dir_name[128];
-    char full_path[1024];
-    char time_str[32];
-    char tool_name[64];
-    char skill_name[64];
-    int64_t size_bytes;
-    int file_count;
-    time_t mtime;
-} storage_snapshot_item_t;
-
-/* Local Storage stats summary */
-typedef struct {
-    bool loaded;
-    int snapshot_count;
-    int64_t backup_total_bytes;
-    int backup_file_count;
-    storage_snapshot_item_t snapshots[128];
-
-    int64_t cache_total_bytes;
-    int cache_file_count;
-    int cache_dir_count;
-
-    int64_t hub_total_bytes;
-    int hub_skill_count;
-
-    char last_checked_at[32];
-} storage_stats_t;
 
 /* Dependency severity levels */
 typedef enum {
@@ -197,6 +134,7 @@ typedef struct app_state_t {
     hub_matrix_t hub_matrix;
     bool hub_matrix_loaded;
     hub_scan_state_t hub_scan;
+    struct app_hub_job *hub_job;
     char hub_search_kw[128];
     int hub_filter_mode;        /* skill_filter_t */
     int hub_subview;            /* hub_subview_t */
@@ -259,13 +197,13 @@ typedef struct app_state_t {
 
     /* Remote Synchronization State */
     sync_config_t sync_cfg;
-    sync_backend_t *sync_backend;
+    struct app_sync_job *sync_job;
     sync_drift_summary_t sync_drift;
     bool sync_drift_loaded;
+    bool show_sync_conflict_modal;
+    char sync_conflict_skill[128];
     bool sync_is_busy;
     char sync_status_msg[256];
-    char sync_test_result[256];
-    bool sync_test_ok;
 
     /* Pre-activation Availability Check State */
     sync_backend_type_t setting_sync_candidate_type;
@@ -273,9 +211,6 @@ typedef struct app_state_t {
     char sync_candidate_check_msg[256];
     bool sync_candidate_checked_ok;
     bool sync_has_checked_candidate;
-
-    /* Global About Dialog (extracted from settings) */
-    bool show_about_dialog;
 
     /* Skill Distribution Modal State (从主仓分发技能至各本地工具) */
     bool show_distribute_modal;
@@ -295,6 +230,7 @@ typedef struct app_state_t {
 
     /* Local Storage Management State */
     storage_stats_t storage_stats;
+    app_storage_cache_t storage_cache;
     bool show_storage_cleanup_modal;
     storage_cleanup_action_t storage_cleanup_action;
     char storage_cleanup_snapshot[128];
@@ -310,30 +246,6 @@ void app_set_toast(app_state_t *s, const char *msg);
 
 void reload_db_data(app_state_t *s);
 void do_scan_sync(app_state_t *s);
-
-void clear_diff_texts(app_state_t *s);
-void load_hub_diff(app_state_t *s, const char *skill_name, int tool_idx, const char *rel_file);
-void open_hub_diff_view(app_state_t *s, const char *skill_name);
-
-void start_hub_scan_thread(app_state_t *s);
-void start_adopt_all_thread(app_state_t *s);
-
-void app_init_settings(app_state_t *s);
-void app_save_settings(app_state_t *s);
-void app_init_sync_backend(app_state_t *s);
-
-void start_sync_check_thread(app_state_t *s);
-void start_sync_pull_skill_thread(app_state_t *s, const char *skill_name);
-void start_sync_push_skill_thread(app_state_t *s, const char *skill_name);
-void start_sync_pull_all_thread(app_state_t *s);
-void start_sync_push_all_thread(app_state_t *s);
-
-/* Storage & Backup management helpers */
-void app_refresh_storage_stats(app_state_t *s);
-void app_clear_storage_cache(app_state_t *s);
-void app_clear_all_backups(app_state_t *s);
-void app_prune_backups_keep_latest(app_state_t *s, int keep_count);
-void app_delete_single_snapshot(app_state_t *s, const char *snapshot_name);
 
 /* Dependency check helpers */
 void app_check_dependencies(app_state_t *s);

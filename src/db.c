@@ -16,6 +16,41 @@ static void ensure_parent_dir(const char *path) {
     }
 }
 
+#define TOOLS_COLUMNS "(id INTEGER PRIMARY KEY AUTOINCREMENT," \
+    "name TEXT NOT NULL UNIQUE, path TEXT NOT NULL, skill_count INTEGER NOT NULL DEFAULT 0," \
+    "created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))," \
+    "updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')))"
+
+static int migrate_legacy_tools(sqlite3 *db) {
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(db, "PRAGMA table_info(local_tools)", -1, &stmt, NULL) != SQLITE_OK) return -1;
+    bool legacy = false, count = false, created = false, updated = false;
+    int rc;
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        const char *name = (const char *)sqlite3_column_text(stmt, 1);
+        if (!name) continue;
+        if (strcmp(name, "is_deleted") == 0) legacy = true;
+        else if (strcmp(name, "skill_count") == 0) count = true;
+        else if (strcmp(name, "created_at") == 0) created = true;
+        else if (strcmp(name, "updated_at") == 0) updated = true;
+    }
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) return -1;
+    if (!legacy) return 0;
+
+    char migration[1400];
+    snprintf(migration, sizeof(migration),
+             "CREATE TABLE local_tools_migration " TOOLS_COLUMNS ";"
+             "INSERT INTO local_tools_migration (id,name,path,skill_count,created_at,updated_at)"
+             " SELECT id,name,path,%s,%s,%s FROM local_tools WHERE coalesce(is_deleted,0)=0;"
+             "DROP TABLE local_tools;"
+             "ALTER TABLE local_tools_migration RENAME TO local_tools;",
+             count ? "coalesce(skill_count,0)" : "0",
+             created ? "coalesce(created_at,datetime('now','localtime'))" : "datetime('now','localtime')",
+             updated ? "coalesce(updated_at,datetime('now','localtime'))" : "datetime('now','localtime')");
+    return sqlite3_exec(db, migration, NULL, NULL, NULL) == SQLITE_OK ? 0 : -1;
+}
+
 int db_init(const char *db_path, sqlite3 **out_db) {
     if (!db_path || !out_db) return -1;
     *out_db = NULL;
@@ -30,39 +65,22 @@ int db_init(const char *db_path, sqlite3 **out_db) {
         return -1;
     }
 
+    sqlite3_busy_timeout(db, 2000);
     sqlite3_exec(db, "PRAGMA journal_mode=WAL;", NULL, NULL, NULL);
     sqlite3_exec(db, "PRAGMA synchronous=NORMAL;", NULL, NULL, NULL);
 
-    /* If legacy table has is_deleted column, migrate or recreate it cleanly */
-    sqlite3_stmt *chk_stmt = NULL;
-    if (sqlite3_prepare_v2(db, "SELECT is_deleted FROM local_tools LIMIT 1;", -1, &chk_stmt, NULL) == SQLITE_OK) {
-        /* Old schema detected -> drop legacy table to adopt clean schema without deleted flag */
-        sqlite3_finalize(chk_stmt);
-        sqlite3_exec(db, "DROP TABLE IF EXISTS local_tools;", NULL, NULL, NULL);
-    } else {
-        if (chk_stmt) sqlite3_finalize(chk_stmt);
-    }
-
     const char *schema =
-        "CREATE TABLE IF NOT EXISTS local_tools ("
-        "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "  name TEXT NOT NULL UNIQUE,"
-        "  path TEXT NOT NULL,"
-        "  skill_count INTEGER NOT NULL DEFAULT 0,"
-        "  created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),"
-        "  updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))"
-        ");"
+        "CREATE TABLE IF NOT EXISTS local_tools " TOOLS_COLUMNS ";"
         "CREATE INDEX IF NOT EXISTS idx_tools_name ON local_tools(name);"
-        "CREATE TABLE IF NOT EXISTS app_settings ("
-        "  key TEXT PRIMARY KEY,"
-        "  value TEXT NOT NULL"
-        ");";
-
-    char *errmsg = NULL;
-    rc = sqlite3_exec(db, schema, NULL, NULL, &errmsg);
-    if (rc != SQLITE_OK) {
-        fprintf(stderr, "[db] Failed to init schema: %s\n", errmsg ? errmsg : "unknown error");
-        sqlite3_free(errmsg);
+        "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
+        "CREATE TABLE IF NOT EXISTS sync_baselines ("
+        " scope TEXT NOT NULL, skill TEXT NOT NULL, hash TEXT NOT NULL, PRIMARY KEY(scope,skill));";
+    if (sqlite3_exec(db, "BEGIN IMMEDIATE", NULL, NULL, NULL) != SQLITE_OK ||
+        migrate_legacy_tools(db) != 0 ||
+        sqlite3_exec(db, schema, NULL, NULL, NULL) != SQLITE_OK ||
+        sqlite3_exec(db, "COMMIT", NULL, NULL, NULL) != SQLITE_OK) {
+        fprintf(stderr, "[db] Failed to initialize schema: %s\n", sqlite3_errmsg(db));
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
         sqlite3_close(db);
         return -1;
     }

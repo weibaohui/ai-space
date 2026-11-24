@@ -1,3 +1,5 @@
+#include "skill_file_tree.h"
+#include "file_preview.h"
 #include "view_tool_skills.h"
 #include "view_common.h"
 #include "view_skill_tree.h"
@@ -39,7 +41,7 @@ static void load_skill_file(app_state_t *s, const char *path, const char *name) 
     size_t sz = 0;
     int lines = 0;
     bool is_bin = false;
-    s->selected_file_content = read_file_text_content(path, 1024 * 1024, &sz, &lines, &is_bin);
+    s->selected_file_content = read_file_preview(path, 1024 * 1024, NULL, &sz, &lines, &is_bin);
     s->selected_file_size = sz;
     s->selected_file_lines = lines;
     s->selected_file_is_binary = is_bin;

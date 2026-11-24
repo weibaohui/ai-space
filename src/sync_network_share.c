@@ -1,3 +1,5 @@
+#include "skill_fingerprint.h"
+#include "skill_metadata.h"
 #include "sync_network_share.h"
 #include "sync_directory.h"
 
@@ -5,7 +7,6 @@
 #include <winsock2.h>
 #endif
 
-#include "hub_manager.h"
 #include "portability.h"
 
 #include <dirent.h>
@@ -301,7 +302,7 @@ static int download_tree(share_t *share, const char *remote, const char *local, 
     int rc = 0;
     const char *name;
     while ((name = share_readdir(share, &dir))) {
-        if (sync_skip_name(name)) continue;
+        if (skill_skip_name(name)) continue;
         char remote_child[SYNC_PATH_CAP], local_child[SYNC_PATH_CAP];
         if (!sync_valid_component(name) || share_path(remote_child, remote, name) != 0 ||
             sync_join(local_child, sizeof(local_child), local, name) != 0 ||
@@ -332,7 +333,7 @@ static int upload_tree(share_t *share, const char *remote, const char *local, in
             if (errno) rc = -1;
             break;
         }
-        if (sync_skip_name(entry->d_name)) continue;
+        if (skill_skip_name(entry->d_name)) continue;
         char remote_child[SYNC_PATH_CAP], local_child[SYNC_PATH_CAP];
         if (!sync_valid_component(entry->d_name) ||
             share_path(remote_child, remote, entry->d_name) != 0 ||
@@ -351,7 +352,7 @@ static int share_has_skill(share_t *share, const char *path) {
     if (rc != 0) return -1;
     if (info.kind != ENTRY_DIRECTORY) return 0;
     char doc[SYNC_PATH_CAP];
-    if (share_path(doc, path, "SKILL.md") != 0) return -1;
+    if (share_path(doc, path, SKILL_DOCUMENT) != 0) return -1;
     rc = share_stat(share, doc, &info);
     if (rc == -ENOENT) return 0;
     if (rc != 0) return -1;
@@ -425,7 +426,7 @@ static int scan_share(share_t *share, const char *stage, sync_remote_manifest_t 
     size_t capacity = 0;
     const char *name;
     while ((name = share_readdir(share, &dir))) {
-        if (sync_skip_name(name)) continue;
+        if (skill_skip_name(name)) continue;
         char remote[SYNC_PATH_CAP], local[SYNC_PATH_CAP];
         if (!sync_valid_component(name) || share_path(remote, share->root, name) != 0) {
             rc = -1;
@@ -497,34 +498,62 @@ int sync_network_fetch(const sync_config_t *cfg, sync_remote_manifest_t *manifes
     return rc;
 }
 
-static int share_pull(share_t *share, const char *remote, const char *root, const char *target) {
+static bool remote_skill_matches(share_t *share, const char *remote, const char *hash) {
+    entry_info_t info;
+    if (!hash[0]) return share_stat(share, remote, &info) == -ENOENT;
+    if (share_has_skill(share, remote) != 1) return false;
+    const char *temp = getenv("TMPDIR");
+#ifdef _WIN32
+    if (!temp || !*temp) temp = getenv("TEMP");
+#else
+    if (!temp || !*temp) temp = "/tmp";
+#endif
+    char stage[SYNC_PATH_CAP], copy[SYNC_PATH_CAP];
+    if (!temp || sync_make_stage(temp, stage, sizeof(stage)) != 0) return false;
+    bool matches = sync_join(copy, sizeof(copy), stage, "copy") == 0 &&
+                   download_tree(share, remote, copy, 0) == 0 && sync_skill_matches(copy, hash);
+    sync_remove_tree(stage);
+    return matches;
+}
+
+static int share_pull(share_t *share, const char *remote, const char *root, const char *target,
+                      const sync_drift_item_t *expected) {
     char stage[SYNC_PATH_CAP], replacement[SYNC_PATH_CAP];
     if (share_has_skill(share, remote) != 1) return -1;
     ai_mkdir_p(root);
     if (sync_make_stage(root, stage, sizeof(stage)) != 0) return -1;
     int rc = -1;
     if (sync_join(replacement, sizeof(replacement), stage, "new") == 0 &&
-        download_tree(share, remote, replacement, 0) == 0 && sync_is_skill(replacement))
-        rc = sync_replace_tree(stage, replacement, target);
+        download_tree(share, remote, replacement, 0) == 0 && skill_is_directory(replacement)) {
+        if (!expected || (sync_skill_matches(replacement, expected->remote_hash) &&
+                          sync_skill_matches(target, expected->local_hash)))
+            rc = sync_replace_tree(stage, replacement, target);
+        else rc = SYNC_TRANSFER_CHANGED;
+    }
     if (rc != -2) sync_remove_tree(stage);
     return rc;
 }
 
-static int share_push(share_t *share, const char *local, const char *target) {
+static int share_push(share_t *share, const char *local, const char *target,
+                      const sync_drift_item_t *expected) {
     char stage[SYNC_PATH_CAP], replacement[SYNC_PATH_CAP];
-    if (!sync_is_skill(local) || share_stage(share, stage) != 0) return -1;
+    if (!skill_is_directory(local) || share_stage(share, stage) != 0) return -1;
     int rc = -1;
     if (share_path(replacement, stage, "new") == 0 &&
         upload_tree(share, replacement, local, 0) == 0 &&
-        share_has_skill(share, replacement) == 1)
-        rc = share_replace(share, stage, replacement, target);
+        share_has_skill(share, replacement) == 1) {
+        if (!expected || (remote_skill_matches(share, replacement, expected->local_hash) &&
+                          remote_skill_matches(share, target, expected->remote_hash)))
+            rc = share_replace(share, stage, replacement, target);
+        else rc = SYNC_TRANSFER_CHANGED;
+    }
     if (rc != -2) share_remove(share, stage, 0);
     return rc;
 }
 
 int sync_network_transfer(const sync_config_t *cfg, const char *name, const char *local,
-                          bool pull, sync_progress_cb cb, void *user) {
-    if (!sync_valid_component(name) || sync_skip_name(name)) return -1;
+                          bool pull, const sync_drift_item_t *expected, sync_progress_cb cb, void *user) {
+    if (!sync_valid_component(name) || skill_skip_name(name)) return -1;
     char root[SYNC_PATH_CAP], path[SYNC_PATH_CAP], remote[SYNC_PATH_CAP];
     if (sync_expand(local ? local : "~/.ai-space/skills", root, sizeof(root)) != 0 ||
         sync_join(path, sizeof(path), root, name) != 0) return -1;
@@ -535,8 +564,9 @@ int sync_network_transfer(const sync_config_t *cfg, const char *name, const char
     if (rc == 0) {
         if (cb) cb(0.2f, pull ? "正在下载技能文件" : "正在上传技能文件", user);
         rc = share_path(remote, share.root, name);
-        if (rc == 0) rc = pull ? share_pull(&share, remote, root, path) : share_push(&share, path, remote);
+        if (rc == 0) rc = pull ? share_pull(&share, remote, root, path, expected) : share_push(&share, path, remote, expected);
         if (rc == -2) snprintf(message, sizeof(message), "替换失败，暂存目录保留了原有内容");
+        else if (rc == SYNC_TRANSFER_CHANGED) snprintf(message, sizeof(message), "技能状态已变化，请检查后重试");
         else if (rc != 0) snprintf(message, sizeof(message), "共享目录传输失败：%.180s", share_error(&share));
     }
     share_close(&share);

@@ -1,9 +1,9 @@
+#include "skill_fingerprint.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include "sync_backend.h"
-#include "hub_manager.h"
 
 static void print_usage(const char *prog) {
     printf("Usage:\n");

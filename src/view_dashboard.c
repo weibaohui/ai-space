@@ -1,48 +1,13 @@
+#include "app_sync.h"
+#include "app_hub_tasks.h"
 #include "view_dashboard.h"
 #include "view_common.h"
-#include "hub_manager.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <dirent.h>
-#include <sys/stat.h>
 #include "portability.h"
 
-static void expand_path_local(const char *in, char *out, size_t cap) {
-    if (!in || !out || cap == 0) return;
-    if (in[0] == '~' && (in[1] == '/' || in[1] == '\0')) {
-        const char *home = ai_home_dir();
-        if (home && home[0]) {
-            snprintf(out, cap, "%s%s", home, in + 1);
-            return;
-        }
-    }
-    snprintf(out, cap, "%s", in);
-}
-
-static int count_snapshots(const char *backup_dir_setting) {
-    if (!backup_dir_setting || !backup_dir_setting[0]) return 0;
-    char exp[512] = "";
-    expand_path_local(backup_dir_setting, exp, sizeof(exp));
-    DIR *d = opendir(exp);
-    if (!d) return 0;
-    int count = 0;
-    struct dirent *ent;
-    while ((ent = readdir(d)) != NULL) {
-        if (ent->d_name[0] == '.') continue;
-        char sub[1024];
-        snprintf(sub, sizeof(sub), "%s/%s", exp, ent->d_name);
-        struct stat st;
-        if (stat(sub, &st) == 0 && S_ISDIR(st.st_mode)) {
-            count++;
-        }
-    }
-    closedir(d);
-    return count;
-}
-
-/* Global header with app status and the settings entry point */
 void render_app_top_bar(cui_ctx *ui, app_state_t *s) {
     cui_row(ui, .width = CUI_FILL, .height = CUI_PX(44), .pad_x = 16,
             .align = CUI_ALIGN_CENTER, .bg = CUI_COLOR_SURFACE) {
@@ -272,7 +237,7 @@ static void render_dashboard_topology(cui_ctx *ui, app_state_t *s) {
                                .icon = CUI_ICON_HISTORY, .size = CUI_SIZE_SM)) {
                     s->current_page = PAGE_SETTINGS;
                     s->settings_active_tab = SETTINGS_TAB_LOCAL_STORAGE;
-                    app_refresh_storage_stats(s);
+                    s->storage_stats.loaded = false;
                 }
             }
         }
@@ -351,7 +316,7 @@ static void render_dashboard_topology(cui_ctx *ui, app_state_t *s) {
 void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
     if (s->toast_frames > 0) s->toast_frames--;
 
-    if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning) {
+    if (!s->hub_matrix_loaded && !s->hub_scan.is_scanning && !s->hub_scan.failed) {
         start_hub_scan_thread(s);
     }
 
@@ -361,7 +326,8 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
     for (int i = 0; s->hub_matrix_loaded && i < s->hub_matrix.skill_count; i++) {
         const hub_skill_entry_t *skill = &s->hub_matrix.skills[i];
         if (!skill->in_hub) uncollected++;
-        else if (skill->modified_count > 0 || skill->outdated_count > 0) drifted++;
+        else if (skill->modified_count > 0 || skill->outdated_count > 0 ||
+                 skill->hub_unreadable || skill->unreadable_count > 0) drifted++;
         else if (skill->installed_count > 0) in_sync++;
     }
 
@@ -409,7 +375,8 @@ void render_dashboard_page(cui_ctx *ui, app_state_t *s) {
     }
 
     char tools_count[24], hub_count[24], synced_count[24], snapshots_count[24];
-    int snapshots = count_snapshots(s->setting_backup_dir);
+    const char *backup = s->setting_backup_dir[0] ? s->setting_backup_dir : STORAGE_DEFAULT_BACKUP;
+    int snapshots = app_storage_directory(s, STORAGE_PATH_DASHBOARD_BACKUP, backup)->subdirs;
     snprintf(tools_count, sizeof(tools_count), "%d", s->record_count);
     snprintf(snapshots_count, sizeof(snapshots_count), "%d", snapshots);
     snprintf(hub_count, sizeof(hub_count), "%d", s->hub_matrix.hub_managed_skills);

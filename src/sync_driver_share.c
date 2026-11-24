@@ -1,3 +1,4 @@
+#include "skill_metadata.h"
 #include "sync_directory.h"
 #include "sync_network_share.h"
 #include "portability.h"
@@ -78,7 +79,7 @@ static int shared_drift(sync_backend_t *self, const char *local, sync_drift_summ
                         char *error, size_t cap) {
     sync_remote_manifest_t remote = {0};
     if (shared_fetch(self, &remote, error, cap) != 0) return -1;
-    int rc = sync_compare_directory(&remote, local, out, error, cap);
+    int rc = sync_compare_directory(&remote, local, self->baseline, out, error, cap);
     sync_free_manifest(&remote);
     return rc;
 }
@@ -86,16 +87,16 @@ static int shared_drift(sync_backend_t *self, const char *local, sync_drift_summ
 static int shared_transfer(sync_backend_t *self, const char *name, const char *local,
                            bool pull, sync_progress_cb cb, void *user) {
     if (self->cfg.share_mode != SYNC_SHARE_MOUNTED)
-        return sync_network_transfer(&self->cfg, name, local, pull, cb, user);
+        return sync_network_transfer(&self->cfg, name, local, pull, self->expected_skill, cb, user);
     shared_dir_t *priv = self->priv_data;
-    if (!priv->path[0] || !sync_valid_component(name) || sync_skip_name(name)) return -1;
+    if (!priv->path[0] || !sync_valid_component(name) || skill_skip_name(name)) return -1;
 
     char local_root[SYNC_PATH_CAP];
     if (sync_expand(local ? local : "~/.ai-space/skills", local_root, sizeof(local_root)) != 0) return -1;
     const char *src_root = pull ? priv->path : local_root;
     const char *dst_root = pull ? local_root : priv->path;
     char src[SYNC_PATH_CAP], dst[SYNC_PATH_CAP], stage[SYNC_PATH_CAP], replacement[SYNC_PATH_CAP];
-    if (sync_join(src, sizeof(src), src_root, name) != 0 || !sync_is_skill(src) ||
+    if (sync_join(src, sizeof(src), src_root, name) != 0 || !skill_is_directory(src) ||
         sync_join(dst, sizeof(dst), dst_root, name) != 0) return -1;
 
     if (pull) ai_mkdir_p(local_root);
@@ -103,12 +104,16 @@ static int shared_transfer(sync_backend_t *self, const char *name, const char *l
 
     if (cb) cb(0.2f, pull ? "正在读取共享目录" : "正在写入共享目录", user);
     int rc = -1;
+    const sync_drift_item_t *expected = self->expected_skill;
     if (sync_join(replacement, sizeof(replacement), stage, "new") == 0 &&
-        sync_copy_tree(src, replacement, 0) == 0) {
-        rc = sync_replace_tree(stage, replacement, dst);
+        file_tree_copy(src, replacement, false, skill_skip_name) == 0) {
+        if (!expected || (sync_skill_matches(replacement, pull ? expected->remote_hash : expected->local_hash) &&
+                          sync_skill_matches(dst, pull ? expected->local_hash : expected->remote_hash)))
+            rc = sync_replace_tree(stage, replacement, dst);
+        else rc = SYNC_TRANSFER_CHANGED;
     }
     if (rc != -2) sync_remove_tree(stage);
-    if (cb) cb(rc == 0 ? 1.0f : 0.2f, rc == 0 ? "共享目录同步完成" : "共享目录传输失败", user);
+    if (cb) cb(rc == 0 ? 1.0f : 0.2f, rc == 0 ? "共享目录同步完成" : rc == SYNC_TRANSFER_CHANGED ? "技能状态已变化，请检查后重试" : "共享目录传输失败", user);
     return rc;
 }
 
@@ -123,14 +128,16 @@ static int shared_push(sync_backend_t *self, const char *name, const char *local
 }
 
 static int shared_pull_all(sync_backend_t *self, const char *local, sync_progress_cb cb, void *user) {
-    return sync_transfer_batch(self, local, true, cb, user);
+    int rc = sync_transfer_batch(self, local, true, cb, user, NULL);
+    return rc == SYNC_BATCH_UNCHANGED ? 0 : rc;
 }
 
 static int shared_push_all(sync_backend_t *self, const char *local, sync_progress_cb cb, void *user) {
-    return sync_transfer_batch(self, local, false, cb, user);
+    int rc = sync_transfer_batch(self, local, false, cb, user, NULL);
+    return rc == SYNC_BATCH_UNCHANGED ? 0 : rc;
 }
 
-const sync_driver_ops_t g_nfs_driver_ops = {
+const sync_driver_ops_t g_share_driver_ops = {
     .type = SYNC_BACKEND_NFS,
     .name = "nfs",
     .display_name = "SMB / NFS 共享目录",
@@ -144,4 +151,5 @@ const sync_driver_ops_t g_nfs_driver_ops = {
     .push_skill = shared_push,
     .pull_all = shared_pull_all,
     .push_all = shared_push_all,
+    .transfer_batch = sync_transfer_batch,
 };

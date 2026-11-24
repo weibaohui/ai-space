@@ -1,176 +1,14 @@
+#include "skill_fingerprint.h"
+#include "skill_metadata.h"
 #include "sync_directory.h"
-#include "hub_manager.h"
 #include "portability.h"
 
 #include <dirent.h>
 #include <errno.h>
+#include <limits.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#ifdef _WIN32
-#include <sys/utime.h>
-#else
-#include <utime.h>
-#endif
-
-bool sync_valid_component(const char *name) {
-    if (!name || !name[0] || strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return false;
-    for (const unsigned char *p = (const unsigned char *)name; *p; p++) {
-        if (*p < 32 || *p == 127 || strchr("/\\:", *p)) return false;
-    }
-    return true;
-}
-
-bool sync_skip_name(const char *name) {
-    return name[0] == '.' || strcmp(name, "__pycache__") == 0;
-}
-
-int sync_join(char *out, size_t cap, const char *parent, const char *name) {
-    int n = snprintf(out, cap, "%s/%s", parent, name);
-    return n >= 0 && (size_t)n < cap ? 0 : -1;
-}
-
-int sync_expand(const char *path, char *out, size_t cap) {
-    if (!path || !path[0]) return -1;
-    int n;
-    if (path[0] == '~' && (path[1] == '/' || path[1] == '\0')) {
-        const char *home = ai_home_dir();
-        if (!home || !home[0]) return -1;
-        n = snprintf(out, cap, "%s%s", home, path + 1);
-    } else {
-        n = snprintf(out, cap, "%s", path);
-    }
-    return n >= 0 && (size_t)n < cap ? 0 : -1;
-}
-
-bool sync_is_skill(const char *path) {
-    char skill_md[SYNC_PATH_CAP];
-    struct stat st;
-    return lstat(path, &st) == 0 && S_ISDIR(st.st_mode) &&
-           sync_join(skill_md, sizeof(skill_md), path, "SKILL.md") == 0 &&
-           lstat(skill_md, &st) == 0 && S_ISREG(st.st_mode);
-}
-
-int sync_make_stage(const char *root, char *out, size_t cap) {
-    for (int attempt = 0; attempt < 128; attempt++) {
-        int n = snprintf(out, cap, "%s/.ai-space-stage-%ld-%d", root, (long)getpid(), attempt);
-        if (n < 0 || (size_t)n >= cap) return -1;
-#ifdef _WIN32
-        if (AI_MKDIR(out) == 0) return 0;
-#else
-        if (mkdir(out, 0700) == 0) return 0;
-#endif
-        if (errno != EEXIST) return -1;
-    }
-    return -1;
-}
-
-int sync_remove_tree(const char *path) {
-    struct stat st;
-    if (lstat(path, &st) != 0) return errno == ENOENT ? 0 : -1;
-    if (!S_ISDIR(st.st_mode)) return remove(path);
-    DIR *dir = opendir(path);
-    if (!dir) return -1;
-
-    int rc = 0;
-    struct dirent *entry;
-    while ((entry = readdir(dir))) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
-        char child[SYNC_PATH_CAP];
-        if (sync_join(child, sizeof(child), path, entry->d_name) != 0 ||
-            sync_remove_tree(child) != 0) rc = -1;
-    }
-    closedir(dir);
-#ifdef _WIN32
-    if (_rmdir(path) != 0) rc = -1;
-#else
-    if (rmdir(path) != 0) rc = -1;
-#endif
-    return rc;
-}
-
-int sync_set_mtime(const char *path, time_t mtime) {
-#ifdef _WIN32
-    struct _utimbuf times = {mtime, mtime};
-    return _utime(path, &times);
-#else
-    struct utimbuf times = {mtime, mtime};
-    return utime(path, &times);
-#endif
-}
-
-static int copy_file(const char *source, const char *target) {
-    FILE *in = fopen(source, "rb");
-    if (!in) return -1;
-    FILE *out = fopen(target, "wb");
-    if (!out) {
-        fclose(in);
-        return -1;
-    }
-
-    char buf[16384];
-    size_t len;
-    int rc = 0;
-    while ((len = fread(buf, 1, sizeof(buf), in)) > 0) {
-        if (fwrite(buf, 1, len, out) != len) {
-            rc = -1;
-            break;
-        }
-    }
-    if (ferror(in)) rc = -1;
-    fclose(in);
-    if (fclose(out) != 0) rc = -1;
-    return rc;
-}
-
-int sync_copy_tree(const char *source, const char *target, int depth) {
-    struct stat st;
-    if (depth >= SYNC_TREE_DEPTH || lstat(source, &st) != 0) return -1;
-    if (S_ISREG(st.st_mode)) {
-        if (copy_file(source, target) != 0) return -1;
-        return sync_set_mtime(target, st.st_mtime);
-    }
-    if (!S_ISDIR(st.st_mode)) return -1;
-
-    DIR *dir = opendir(source);
-    if (!dir) return -1;
-    int rc = AI_MKDIR(target);
-    while (rc == 0) {
-        errno = 0;
-        struct dirent *entry = readdir(dir);
-        if (!entry) {
-            if (errno) rc = -1;
-            break;
-        }
-        if (sync_skip_name(entry->d_name)) continue;
-        char src[SYNC_PATH_CAP], dst[SYNC_PATH_CAP];
-        if (!sync_valid_component(entry->d_name) ||
-            sync_join(src, sizeof(src), source, entry->d_name) != 0 ||
-            sync_join(dst, sizeof(dst), target, entry->d_name) != 0 ||
-            sync_copy_tree(src, dst, depth + 1) != 0) rc = -1;
-    }
-    closedir(dir);
-    if (rc == 0) rc = sync_set_mtime(target, st.st_mtime);
-    return rc;
-}
-
-int sync_replace_tree(const char *stage, const char *replacement, const char *target) {
-    char old[SYNC_PATH_CAP];
-    if (sync_join(old, sizeof(old), stage, "previous") != 0) return -1;
-
-    struct stat st;
-    bool backed_up = lstat(target, &st) == 0;
-    if (backed_up) {
-        if (!S_ISDIR(st.st_mode) || rename(target, old) != 0) return -1;
-    } else if (errno != ENOENT) {
-        return -1;
-    }
-
-    if (rename(replacement, target) == 0) return 0;
-    /* Keep the previous copy on disk if the rollback itself fails. */
-    if (backed_up && rename(old, target) != 0) return -2;
-    return -1;
-}
-
 int sync_scan_directory(const char *root, bool allow_missing, sync_remote_manifest_t *out,
                         char *error, size_t cap) {
     *out = (sync_remote_manifest_t){0};
@@ -191,13 +29,26 @@ int sync_scan_directory(const char *root, bool allow_missing, sync_remote_manife
             if (errno) goto failed;
             break;
         }
-        if (sync_skip_name(entry->d_name)) continue;
+        if (skill_skip_name(entry->d_name)) continue;
         char child[SYNC_PATH_CAP];
         if (sync_join(child, sizeof(child), root, entry->d_name) != 0) goto failed;
-        if (!sync_is_skill(child)) continue;
+        struct stat st;
+        if (lstat(child, &st) != 0) {
+            if (errno == ENOENT) continue;
+            goto failed;
+        }
+        if (!S_ISDIR(st.st_mode)) continue;
+        char document[SYNC_PATH_CAP + sizeof(SKILL_DOCUMENT)];
+        if (sync_join(document, sizeof(document), child, SKILL_DOCUMENT) != 0) goto failed;
+        if (lstat(document, &st) != 0) {
+            if (errno == ENOENT) continue;
+            goto failed;
+        }
+        if (!S_ISREG(st.st_mode)) continue;
         if (!sync_valid_component(entry->d_name) ||
             strlen(entry->d_name) >= sizeof(out->items[0].skill_name)) goto failed;
         if (out->count == allocated) {
+            if (allocated > INT_MAX / 2) goto failed;
             allocated = allocated ? allocated * 2 : 16;
             void *items = realloc(out->items, (size_t)allocated * sizeof(*out->items));
             if (!items) goto failed;
@@ -219,15 +70,23 @@ failed:
     return -1;
 }
 
-static const sync_remote_skill_item_t *find_skill(const sync_remote_manifest_t *manifest, const char *name) {
-    for (int i = 0; i < manifest->count; i++) {
-        if (strcmp(manifest->items[i].skill_name, name) == 0) return &manifest->items[i];
-    }
-    return NULL;
+typedef struct {
+    const char *name;
+    int position;
+} skill_index_entry_t;
+
+static int compare_skill_names(const void *lhs, const void *rhs) {
+    const skill_index_entry_t *a = lhs;
+    const skill_index_entry_t *b = rhs;
+    return strcmp(a->name, b->name);
+}
+
+static int compare_baseline_name(const void *name, const void *item) {
+    return strcmp(name, ((const sync_baseline_item_t *)item)->skill);
 }
 
 static void report_difference(sync_drift_summary_t *out, const sync_remote_skill_item_t *local,
-                              const sync_remote_skill_item_t *remote) {
+                              const sync_remote_skill_item_t *remote, const sync_baseline_t *baseline) {
     sync_drift_item_t *item = &out->items[out->count++];
     snprintf(item->skill_name, sizeof(item->skill_name), "%s", local ? local->skill_name : remote->skill_name);
     if (local) {
@@ -238,6 +97,12 @@ static void report_difference(sync_drift_summary_t *out, const sync_remote_skill
         snprintf(item->remote_hash, sizeof(item->remote_hash), "%s", remote->hash);
         item->remote_mtime = remote->mtime;
     }
+    const sync_baseline_item_t *previous = baseline && baseline->count
+        ? bsearch(item->skill_name, baseline->items, baseline->count,
+                  sizeof(*baseline->items), compare_baseline_name) : NULL;
+    bool local_unchanged = previous && local && strcmp(local->hash, previous->hash) == 0;
+    bool remote_unchanged = previous && remote && strcmp(remote->hash, previous->hash) == 0;
+
     const char *description;
     if (!local) {
         item->status = SYNC_DRIFT_REMOTE_ONLY;
@@ -251,11 +116,13 @@ static void report_difference(sync_drift_summary_t *out, const sync_remote_skill
         item->status = SYNC_DRIFT_IN_SYNC;
         out->in_sync_count++;
         description = "两端完全一致";
-    } else if (local->mtime == remote->mtime) {
+    } else if (baseline ? local_unchanged == remote_unchanged : local->mtime == remote->mtime) {
         item->status = SYNC_DRIFT_CONFLICT;
         out->conflict_count++;
-        description = "修改时间相同，但内容不同";
-    } else if (local->mtime > remote->mtime) {
+        description = baseline
+            ? (previous ? "两端均有改动，请选择保留的版本" : "两端内容不同，首次同步需选择版本")
+            : "修改时间相同，但内容不同";
+    } else if (baseline ? remote_unchanged : local->mtime > remote->mtime) {
         item->status = SYNC_DRIFT_LOCAL_AHEAD;
         out->local_ahead_count++;
         description = "本地有新改动 (需推送)";
@@ -268,6 +135,7 @@ static void report_difference(sync_drift_summary_t *out, const sync_remote_skill
 }
 
 int sync_compare_directory(const sync_remote_manifest_t *remote, const char *local,
+                           const sync_baseline_t *baseline,
                            sync_drift_summary_t *out, char *error, size_t cap) {
     *out = (sync_drift_summary_t){0};
     char path[SYNC_PATH_CAP];
@@ -275,23 +143,39 @@ int sync_compare_directory(const sync_remote_manifest_t *remote, const char *loc
     sync_remote_manifest_t local_manifest;
     if (sync_scan_directory(path, true, &local_manifest, error, cap) != 0) return -1;
 
-    size_t count = (size_t)remote->count + (size_t)local_manifest.count;
-    if (count) {
-        out->items = calloc(count, sizeof(*out->items));
-        if (!out->items) {
-            sync_free_manifest(&local_manifest);
-            if (error) snprintf(error, cap, "无法分配同步清单内存");
-            return -1;
+    size_t local_count = (size_t)local_manifest.count;
+    size_t count = (size_t)remote->count + local_count;
+    bool index_needed = local_count > 0 && remote->count > 0;
+    skill_index_entry_t *index = index_needed ? calloc(local_count, sizeof(*index)) : NULL;
+    bool *matched = index_needed ? calloc(local_count, sizeof(*matched)) : NULL;
+    out->items = count ? calloc(count, sizeof(*out->items)) : NULL;
+    if ((count && !out->items) || (index_needed && (!index || !matched))) {
+        free(index);
+        free(matched);
+        sync_free_drift_summary(out);
+        sync_free_manifest(&local_manifest);
+        if (error) snprintf(error, cap, "无法分配同步清单内存");
+        return -1;
+    }
+    if (index) {
+        for (int i = 0; i < local_manifest.count; i++) {
+            index[i] = (skill_index_entry_t){local_manifest.items[i].skill_name, i};
         }
+        qsort(index, local_count, sizeof(*index), compare_skill_names);
     }
     for (int i = 0; i < remote->count; i++) {
         const sync_remote_skill_item_t *item = &remote->items[i];
-        report_difference(out, find_skill(&local_manifest, item->skill_name), item);
+        skill_index_entry_t key = {.name = item->skill_name};
+        const skill_index_entry_t *match = index
+            ? bsearch(&key, index, local_count, sizeof(*index), compare_skill_names) : NULL;
+        if (match) matched[match->position] = true;
+        report_difference(out, match ? &local_manifest.items[match->position] : NULL, item, baseline);
     }
     for (int i = 0; i < local_manifest.count; i++) {
-        const sync_remote_skill_item_t *item = &local_manifest.items[i];
-        if (!find_skill(remote, item->skill_name)) report_difference(out, item, NULL);
+        if (!matched || !matched[i]) report_difference(out, &local_manifest.items[i], NULL, baseline);
     }
+    free(index);
+    free(matched);
     sync_free_manifest(&local_manifest);
     time_t now = time(NULL);
     struct tm storage;
@@ -300,8 +184,21 @@ int sync_compare_directory(const sync_remote_manifest_t *remote, const char *loc
     return 0;
 }
 
+bool sync_drift_is_candidate(sync_drift_status_t status, bool pull) {
+    return pull ? status == SYNC_DRIFT_REMOTE_ONLY || status == SYNC_DRIFT_REMOTE_AHEAD
+                : status == SYNC_DRIFT_LOCAL_ONLY || status == SYNC_DRIFT_LOCAL_AHEAD;
+}
+
+bool sync_skill_matches(const char *path, const char *expected_hash) {
+    struct stat st;
+    if (!expected_hash[0]) return lstat(path, &st) != 0 && errno == ENOENT;
+    char hash[32];
+    return skill_is_directory(path) && hub_compute_skill_hash(path, hash, sizeof(hash), NULL) == 0 &&
+           strcmp(hash, expected_hash) == 0;
+}
+
 int sync_transfer_batch(sync_backend_t *backend, const char *local, bool pull,
-                        sync_progress_cb cb, void *user) {
+                        sync_progress_cb cb, void *user, sync_drift_summary_t *unchanged_drift) {
     sync_drift_summary_t diff = {0};
     char error[256] = "";
     if (backend->ops->check_drift(backend, local, &diff, error, sizeof(error)) != 0) {
@@ -311,33 +208,40 @@ int sync_transfer_batch(sync_backend_t *backend, const char *local, bool pull,
 
     int total = pull ? diff.remote_only_count + diff.remote_ahead_count
                      : diff.local_only_count + diff.local_ahead_count;
+    if (!total) {
+        if (cb) cb(1.0f, "没有需要传输的技能", user);
+        if (unchanged_drift) *unchanged_drift = diff;
+        else sync_free_drift_summary(&diff);
+        return SYNC_BATCH_UNCHANGED;
+    }
     int done = 0;
     int rc = 0;
     for (int i = 0; i < diff.count; i++) {
         const sync_drift_item_t *item = &diff.items[i];
-        bool candidate = pull ? item->status == SYNC_DRIFT_REMOTE_ONLY || item->status == SYNC_DRIFT_REMOTE_AHEAD
-                              : item->status == SYNC_DRIFT_LOCAL_ONLY || item->status == SYNC_DRIFT_LOCAL_AHEAD;
-        if (!candidate) continue;
+        if (!sync_drift_is_candidate(item->status, pull)) continue;
         if (cb) {
             char msg[256];
             snprintf(msg, sizeof(msg), "%s [%s] (%d/%d)", pull ? "正在拉取" : "正在推送",
                      item->skill_name, done + 1, total);
             cb((float)done / total, msg, user);
         }
+        backend->expected_skill = item;
         rc = pull ? backend->ops->pull_skill(backend, item->skill_name, local, NULL, NULL)
                   : backend->ops->push_skill(backend, item->skill_name, local, NULL, NULL);
+        backend->expected_skill = NULL;
         if (rc != 0) {
             if (cb) {
                 char msg[256];
-                snprintf(msg, sizeof(msg), "%s [%s] 失败，已完成 %d/%d",
-                         pull ? "拉取" : "推送", item->skill_name, done, total);
+                snprintf(msg, sizeof(msg), "%s [%s] %s，已完成 %d/%d",
+                         pull ? "拉取" : "推送", item->skill_name,
+                         rc == SYNC_TRANSFER_CHANGED ? "时发现技能状态已变化" : "失败", done, total);
                 cb((float)done / total, msg, user);
             }
             break;
         }
         done++;
     }
-    if (rc == 0 && cb) cb(1.0f, total ? "同步完成" : "没有需要传输的技能", user);
+    if (rc == 0 && cb) cb(1.0f, "同步完成", user);
     sync_free_drift_summary(&diff);
     return rc;
 }

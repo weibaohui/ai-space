@@ -1,159 +1,45 @@
+#include "sync_git_repository.h"
+#include "skill_fingerprint.h"
+#include "skill_metadata.h"
 #include "sync_backend.h"
-#include "hub_manager.h"
+#include "sync_directory.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <time.h>
-#include <dirent.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include "portability.h"
 
-typedef struct {
-    char repo_url[512];
-    char branch[64];
-    char auth_token[256];
-    char user_name[128];
-    char user_email[128];
-    char git_cache_dir[512]; /* Expanded path to local git tracking directory */
-} git_priv_t;
-
-static void expand_path_local(const char *in, char *out, size_t cap) {
-    if (!in || in[0] == '\0') {
-        if (out && cap > 0) out[0] = '\0';
-        return;
-    }
-    if (in[0] == '~' && (in[1] == '/' || in[1] == '\0')) {
-        const char *h = ai_home_dir();
-        if (h && h[0]) {
-            snprintf(out, cap, "%s%s", h, in + 1);
-            return;
-        }
-    }
-    strncpy(out, in, cap - 1);
-    out[cap - 1] = '\0';
-}
-
-bool sync_git_uses_ssh(const char *url) {
-    return strncmp(url, "ssh://", 6) == 0 || strncmp(url, "git@", 4) == 0;
-}
-
-bool sync_git_uses_token(const char *url) {
-    return strncmp(url, "https://", 8) == 0;
-}
-
-static void git_build_auth_url(const git_priv_t *priv, char *out_url, size_t cap) {
-    if (priv->auth_token[0] != '\0' && sync_git_uses_token(priv->repo_url)) {
-        snprintf(out_url, cap, "https://oauth2:%s@%s", priv->auth_token, priv->repo_url + 8);
-    } else {
-        strncpy(out_url, priv->repo_url, cap - 1);
-        out_url[cap - 1] = '\0';
-    }
-}
-
 static int git_init(sync_backend_t *self, const sync_config_t *cfg) {
-    git_priv_t *priv = (git_priv_t *)calloc(1, sizeof(git_priv_t));
+    git_priv_t *priv = calloc(1, sizeof(*priv));
     if (!priv) return -1;
-
-    strncpy(priv->repo_url, cfg->git_repo_url, sizeof(priv->repo_url) - 1);
-    strncpy(priv->branch, cfg->git_branch[0] ? cfg->git_branch : "main", sizeof(priv->branch) - 1);
-    strncpy(priv->auth_token, cfg->git_auth_token, sizeof(priv->auth_token) - 1);
-    strncpy(priv->user_name, cfg->git_user_name[0] ? cfg->git_user_name : "AI-Space User", sizeof(priv->user_name) - 1);
-    strncpy(priv->user_email, cfg->git_user_email[0] ? cfg->git_user_email : "user@example.com", sizeof(priv->user_email) - 1);
-
-    char raw_cache[512] = "";
-    if (cfg->git_cache_dir[0] != '\0') {
-        strncpy(raw_cache, cfg->git_cache_dir, sizeof(raw_cache) - 1);
-    } else {
-        const char *env_cache = getenv("AI_SPACE_GIT_CACHE");
-        if (env_cache && env_cache[0] != '\0') {
-            strncpy(raw_cache, env_cache, sizeof(raw_cache) - 1);
-        } else {
-            /* If custom hub dir is active, derive git cache relative to custom hub parent */
-            char custom_hub[512] = "";
-            hub_get_custom_dirs(custom_hub, sizeof(custom_hub), NULL, 0);
-            if (custom_hub[0] != '\0' && strstr(custom_hub, ".ai-space/skills") == NULL) {
-                char tmp[512];
-                strncpy(tmp, custom_hub, sizeof(tmp) - 1);
-                tmp[sizeof(tmp) - 1] = '\0';
-                char *slash = strrchr(tmp, '/');
-                if (slash) *slash = '\0';
-                snprintf(raw_cache, sizeof(raw_cache), "%s/cache/git_remote", tmp);
-            } else {
-                strncpy(raw_cache, "~/.ai-space/cache/git_remote", sizeof(raw_cache) - 1);
-            }
-        }
+    if (git_repo_configure(priv, cfg) != 0) {
+        free(priv);
+        return -1;
     }
-    expand_path_local(raw_cache, priv->git_cache_dir, sizeof(priv->git_cache_dir));
-
     self->priv_data = priv;
     return 0;
 }
 
 static void git_destroy(sync_backend_t *self) {
     if (self->priv_data) {
+        git_repo_release(self->priv_data);
         free(self->priv_data);
         self->priv_data = NULL;
     }
 }
 
-static int git_check_available(sync_backend_t *self, char *err_buf, size_t err_cap) {
-    git_priv_t *priv = (git_priv_t *)self->priv_data;
-    if (!priv || priv->repo_url[0] == '\0') {
-        if (err_buf) snprintf(err_buf, err_cap, "未配置 Git 远端仓库地址");
-        return -1;
-    }
-
-    if (strncmp(priv->repo_url, "http://", 7) != 0 &&
-        !sync_git_uses_token(priv->repo_url) && !sync_git_uses_ssh(priv->repo_url)) {
-        if (err_buf) snprintf(err_buf, err_cap, "请输入以 https://、http://、ssh:// 或 git@ 开头的仓库地址");
-        return -1;
-    }
-
-    char auth_url[768];
-    git_build_auth_url(priv, auth_url, sizeof(auth_url));
-
-    char cmd[1280];
-    /* env vars instead of the POSIX "VAR=val cmd" prefix (not valid under cmd.exe) */
-    ai_setenv("GIT_TERMINAL_PROMPT", "0");
-    ai_setenv("GIT_SSH_COMMAND", "ssh -o BatchMode=yes -o ConnectTimeout=8");
-    snprintf(cmd, sizeof(cmd),
-             "git ls-remote \"%s\" 2>&1",
-             auth_url);
-
-    FILE *pipe = AI_POPEN(cmd, "r");
-    if (!pipe) {
-        if (err_buf) snprintf(err_buf, err_cap, "无法执行 git 检测命令");
-        return -1;
-    }
-    char line[512] = {0};
-    char first_line[256] = {0};
-    if (fgets(line, sizeof(line), pipe)) {
-        strncpy(first_line, line, sizeof(first_line) - 1);
-        size_t l = strlen(first_line);
-        if (l > 0 && first_line[l - 1] == '\n') first_line[l - 1] = '\0';
-    }
-    int rc = AI_PCLOSE(pipe);
-
+static int git_check_available(sync_backend_t *self, char *error, size_t cap) {
+    const git_priv_t *repo = self->priv_data;
+    int rc = git_repo_check_available(repo, error, cap);
     if (rc == 0) {
         self->is_connected = true;
-        if (err_buf) snprintf(err_buf, err_cap, "Git 远端版本库检测通过，连接正常！");
-        snprintf(self->status_msg, sizeof(self->status_msg), "Git 远端仓库就绪: %s [%s]", priv->repo_url, priv->branch);
-        return 0;
-    } else {
-        if (err_buf) {
-            if (strstr(first_line, "Repository not found") || strstr(first_line, "not found")) {
-                snprintf(err_buf, err_cap, "Git 仓库不存在或无读取权限");
-            } else if (strstr(first_line, "Authentication failed") || strstr(first_line, "fatal: Authentication")) {
-                snprintf(err_buf, err_cap, "Git 鉴权失败：Access Token 无效或过期");
-            } else if (first_line[0] != '\0') {
-                snprintf(err_buf, err_cap, "Git 远端连接失败: %s", first_line);
-            } else {
-                snprintf(err_buf, err_cap, "Git 远端检测失败 (退出代码: %d)", rc);
-            }
-        }
-        return -1;
+        snprintf(self->status_msg, sizeof(self->status_msg), "Git 远端仓库就绪: %s [%s]",
+                 repo->repo_url, repo->branch);
     }
+    return rc;
 }
 
 static int git_test_connection(sync_backend_t *self, char *err_buf, size_t err_cap) {
@@ -166,512 +52,180 @@ static int git_test_connection(sync_backend_t *self, char *err_buf, size_t err_c
     return 0;
 }
 
-static void normalize_git_url(const char *in, char *out, size_t cap) {
-    if (!in || !out || cap == 0) return;
-    out[0] = '\0';
-    const char *p = in;
-    if (strncmp(p, "https://", 8) == 0) p += 8;
-    else if (strncmp(p, "http://", 7) == 0) p += 7;
-    else if (strncmp(p, "ssh://", 6) == 0) p += 6;
-    else if (strncmp(p, "git@", 4) == 0) p += 4;
-
-    const char *at = strchr(p, '@');
-    if (at && (at - p < 128)) {
-        p = at + 1;
-    }
-    char tmp[512];
-    snprintf(tmp, sizeof(tmp), "%s", p);
-    for (char *c = tmp; *c; c++) {
-        if (*c == ':') *c = '/';
-    }
-    size_t len = strlen(tmp);
-    while (len > 0 && (tmp[len - 1] == '/' || tmp[len - 1] == ' ' || tmp[len - 1] == '\r' || tmp[len - 1] == '\n')) {
-        tmp[--len] = '\0';
-    }
-    if (len > 4 && strcmp(tmp + len - 4, ".git") == 0) {
-        tmp[len - 4] = '\0';
-    }
-    strncpy(out, tmp, cap - 1);
-    out[cap - 1] = '\0';
-}
-
-static int ensure_git_cache_ready(git_priv_t *priv, char *err_buf, size_t err_cap) {
-    if (!priv || priv->git_cache_dir[0] == '\0') {
-        if (err_buf) snprintf(err_buf, err_cap, "Git 缓存路径未初始化");
-        return -1;
-    }
-
-    char git_dir[1024];
-    snprintf(git_dir, sizeof(git_dir), "%s/.git", priv->git_cache_dir);
-    struct stat st;
-
-    char auth_url[768];
-    git_build_auth_url(priv, auth_url, sizeof(auth_url));
-
-    bool need_clone = false;
-
-    if (stat(git_dir, &st) != 0) {
-        need_clone = true;
-    } else {
-        /* Check current remote URL of origin */
-        char check_url_cmd[1024];
-        snprintf(check_url_cmd, sizeof(check_url_cmd),
-                 "cd \"%s\" && git config --get remote.origin.url",
-                 priv->git_cache_dir);
-        FILE *fp = AI_POPEN(check_url_cmd, "r");
-        char current_url[768] = "";
-        if (fp) {
-            if (fgets(current_url, sizeof(current_url), fp)) {
-                size_t l = strlen(current_url);
-                while (l > 0 && (current_url[l - 1] == '\n' || current_url[l - 1] == '\r')) {
-                    current_url[--l] = '\0';
-                }
-            }
-            AI_PCLOSE(fp);
-        }
-
-        char norm_cur[512] = "";
-        char norm_new[512] = "";
-        normalize_git_url(current_url, norm_cur, sizeof(norm_cur));
-        normalize_git_url(priv->repo_url, norm_new, sizeof(norm_new));
-
-        if (norm_cur[0] == '\0' || strcmp(norm_cur, norm_new) != 0) {
-            /* Remote repository changed! Wipe stale cache completely to prevent mixing old repo files */
-            char rm_cmd[1024];
-            snprintf(rm_cmd, sizeof(rm_cmd), "rm -rf \"%s\"", priv->git_cache_dir);
-            system(rm_cmd);
-            need_clone = true;
-        } else {
-            /* Same repo, update origin URL in case credentials/token changed */
-            char set_url_cmd[1024];
-            snprintf(set_url_cmd, sizeof(set_url_cmd),
-                     "cd \"%s\" && git remote set-url origin \"%s\" 2>&1",
-                     priv->git_cache_dir, auth_url);
-            system(set_url_cmd);
-        }
-    }
-
-    if (need_clone) {
-        ai_mkdir_p(priv->git_cache_dir);
-
-        char clone_cmd[2048];
-        snprintf(clone_cmd, sizeof(clone_cmd),
-                 "git clone --branch \"%s\" \"%s\" \"%s\" 2>&1",
-                 priv->branch, auth_url, priv->git_cache_dir);
-
-        FILE *pipe = AI_POPEN(clone_cmd, "r");
-        bool cloned_ok = false;
-        if (pipe) {
-            int rc = AI_PCLOSE(pipe);
-            if (rc == 0) {
-                cloned_ok = true;
-            } else {
-                /* Branch might not exist yet, try cloning default/unborn branch */
-                snprintf(clone_cmd, sizeof(clone_cmd),
-                         "git clone \"%s\" \"%s\" 2>&1",
-                         auth_url, priv->git_cache_dir);
-                FILE *p2 = AI_POPEN(clone_cmd, "r");
-                if (p2) {
-                    int rc2 = AI_PCLOSE(p2);
-                    if (rc2 == 0) cloned_ok = true;
-                }
-            }
-        }
-
-        /* If cloning failed (e.g. freshly created empty repository without commits) */
-        if (!cloned_ok) {
-            char init_cmd[2048];
-            snprintf(init_cmd, sizeof(init_cmd),
-                     "cd \"%s\" && git init 2>&1 && git remote add origin \"%s\" 2>&1 && git checkout -B \"%s\" 2>&1",
-                     priv->git_cache_dir, auth_url, priv->branch);
-            system(init_cmd);
-        }
-    }
-
-    /* Configure user identity inside this cache repo */
-    if (priv->user_name[0] != '\0') {
-        char cmd[1024];
-        snprintf(cmd, sizeof(cmd), "cd \"%s\" && git config user.name \"%s\"",
-                 priv->git_cache_dir, priv->user_name);
-        system(cmd);
-    }
-    if (priv->user_email[0] != '\0') {
-        char cmd[1024];
-        snprintf(cmd, sizeof(cmd), "cd \"%s\" && git config user.email \"%s\"",
-                 priv->git_cache_dir, priv->user_email);
-        system(cmd);
-    }
-
+static int git_read_manifest(const git_priv_t *repo, int revision, sync_remote_manifest_t *out,
+                             char *error, size_t cap) {
+    *out = (sync_remote_manifest_t){0};
+    if (revision != GIT_REPO_EMPTY &&
+        sync_scan_directory(repo->git_cache_dir, false, out, error, cap) != 0) return -1;
+    snprintf(out->remote_root, sizeof(out->remote_root), "%s", repo->repo_url);
+    out->fetched_at = time(NULL);
     return 0;
 }
 
-static int git_fetch_remote_manifest(sync_backend_t *self, sync_remote_manifest_t *out_manifest,
-                                     char *err_buf, size_t err_cap) {
-    git_priv_t *priv = (git_priv_t *)self->priv_data;
-    if (!priv || priv->repo_url[0] == '\0') {
-        if (err_buf) snprintf(err_buf, err_cap, "Git URL 未配置");
-        return -1;
-    }
-
-    if (ensure_git_cache_ready(priv, err_buf, err_cap) != 0) {
-        return -1;
-    }
-
-    /* Fetch from remote and update tracking branch if remote has commits */
-    char fetch_cmd[1024];
-    snprintf(fetch_cmd, sizeof(fetch_cmd),
-             "cd \"%s\" && if git fetch origin \"%s\" 2>/dev/null; then git reset --hard \"origin/%s\" 2>/dev/null; else git checkout -B \"%s\" 2>/dev/null; fi",
-             priv->git_cache_dir, priv->branch, priv->branch, priv->branch);
-    system(fetch_cmd);
-
-    /* Enumerate skills in git_cache_dir */
-    DIR *d = opendir(priv->git_cache_dir);
-    if (!d) {
-        if (err_buf) snprintf(err_buf, err_cap, "无法读取 Git 本地缓存目录: %s", priv->git_cache_dir);
-        return -1;
-    }
-
-    int cap = 32;
-    out_manifest->items = (sync_remote_skill_item_t *)calloc(cap, sizeof(sync_remote_skill_item_t));
-    out_manifest->count = 0;
-    strncpy(out_manifest->remote_root, priv->repo_url, sizeof(out_manifest->remote_root) - 1);
-    out_manifest->fetched_at = time(NULL);
-
-    struct dirent *ent;
-    while ((ent = readdir(d)) != NULL) {
-        if (ent->d_name[0] == '.') continue;
-        if (strcmp(ent->d_name, "node_modules") == 0 || strcmp(ent->d_name, "__pycache__") == 0) continue;
-
-        char skill_dir[1024];
-        snprintf(skill_dir, sizeof(skill_dir), "%s/%s", priv->git_cache_dir, ent->d_name);
-
-        struct stat st;
-        if (stat(skill_dir, &st) == 0 && S_ISDIR(st.st_mode)) {
-            char skill_md[1024];
-            snprintf(skill_md, sizeof(skill_md), "%s/SKILL.md", skill_dir);
-            struct stat md_st;
-            if (stat(skill_md, &md_st) == 0) {
-                if (out_manifest->count >= cap) {
-                    cap *= 2;
-                    out_manifest->items = (sync_remote_skill_item_t *)realloc(
-                        out_manifest->items, sizeof(sync_remote_skill_item_t) * cap);
-                }
-                sync_remote_skill_item_t *item = &out_manifest->items[out_manifest->count];
-                strncpy(item->skill_name, ent->d_name, sizeof(item->skill_name) - 1);
-                item->mtime = st.st_mtime;
-
-                time_t dir_mtime = 0;
-                hub_compute_skill_hash(skill_dir, item->hash, sizeof(item->hash), &dir_mtime);
-                if (dir_mtime > item->mtime) item->mtime = dir_mtime;
-
-                out_manifest->count++;
-            }
-        }
-    }
-    closedir(d);
-    return 0;
+static int git_fetch_remote_manifest(sync_backend_t *self, sync_remote_manifest_t *out,
+                                     char *error, size_t cap) {
+    git_priv_t *repo = self->priv_data;
+    int revision = git_repo_refresh(repo, error, cap);
+    if (revision < 0) return -1;
+    return git_read_manifest(repo, revision, out, error, cap);
 }
 
-static int git_check_drift(sync_backend_t *self, const char *local_hub_dir,
-                           sync_drift_summary_t *out_diff, char *err_buf, size_t err_cap) {
-    sync_remote_manifest_t manifest = {0};
-    if (git_fetch_remote_manifest(self, &manifest, err_buf, err_cap) != 0) {
-        return -1;
-    }
-
-    char exp_local[512];
-    expand_path_local(local_hub_dir ? local_hub_dir : "~/.ai-space/skills", exp_local, sizeof(exp_local));
-
-    int cap = manifest.count + 32;
-    out_diff->items = (sync_drift_item_t *)calloc(cap, sizeof(sync_drift_item_t));
-    out_diff->count = 0;
-    out_diff->in_sync_count = 0;
-    out_diff->remote_ahead_count = 0;
-    out_diff->local_ahead_count = 0;
-    out_diff->remote_only_count = 0;
-    out_diff->local_only_count = 0;
-    out_diff->conflict_count = 0;
-
-    time_t now = time(NULL);
-    struct tm tm_info;
-    ai_localtime(&now, &tm_info);
-    strftime(out_diff->last_checked_at, sizeof(out_diff->last_checked_at), "%Y-%m-%d %H:%M:%S", &tm_info);
-
-    /* 1. Compare remote items with local */
-    for (int i = 0; i < manifest.count; i++) {
-        sync_remote_skill_item_t *rm = &manifest.items[i];
-        sync_drift_item_t *item = &out_diff->items[out_diff->count++];
-        strncpy(item->skill_name, rm->skill_name, sizeof(item->skill_name) - 1);
-        strncpy(item->remote_hash, rm->hash, sizeof(item->remote_hash) - 1);
-        item->remote_mtime = rm->mtime;
-
-        char local_skill_dir[1024];
-        snprintf(local_skill_dir, sizeof(local_skill_dir), "%s/%s", exp_local, rm->skill_name);
-
-        struct stat st;
-        if (stat(local_skill_dir, &st) == 0 && S_ISDIR(st.st_mode)) {
-            time_t l_mtime = 0;
-            hub_compute_skill_hash(local_skill_dir, item->local_hash, sizeof(item->local_hash), &l_mtime);
-            item->local_mtime = l_mtime;
-
-            if (strcmp(item->local_hash, item->remote_hash) == 0) {
-                item->status = SYNC_DRIFT_IN_SYNC;
-                snprintf(item->status_desc, sizeof(item->status_desc), "两端完全一致");
-                out_diff->in_sync_count++;
-            } else if (item->remote_mtime > item->local_mtime) {
-                item->status = SYNC_DRIFT_REMOTE_AHEAD;
-                snprintf(item->status_desc, sizeof(item->status_desc), "远端已更新 (需拉取)");
-                out_diff->remote_ahead_count++;
-            } else {
-                item->status = SYNC_DRIFT_LOCAL_AHEAD;
-                snprintf(item->status_desc, sizeof(item->status_desc), "本地有新改动 (需推送)");
-                out_diff->local_ahead_count++;
-            }
-        } else {
-            item->status = SYNC_DRIFT_REMOTE_ONLY;
-            item->local_hash[0] = '\0';
-            snprintf(item->status_desc, sizeof(item->status_desc), "远端独有 (待拉取)");
-            out_diff->remote_only_count++;
-        }
-    }
-
-    /* 2. Check local items missing on remote */
-    DIR *ld = opendir(exp_local);
-    if (ld) {
-        struct dirent *ent;
-        while ((ent = readdir(ld)) != NULL) {
-            if (ent->d_name[0] == '.') continue;
-            char ldir[1024];
-            snprintf(ldir, sizeof(ldir), "%s/%s", exp_local, ent->d_name);
-            struct stat lst;
-            if (stat(ldir, &lst) == 0 && S_ISDIR(lst.st_mode)) {
-                bool found = false;
-                for (int i = 0; i < out_diff->count; i++) {
-                    if (strcmp(out_diff->items[i].skill_name, ent->d_name) == 0) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    if (out_diff->count >= cap) {
-                        cap *= 2;
-                        out_diff->items = (sync_drift_item_t *)realloc(
-                            out_diff->items, sizeof(sync_drift_item_t) * cap);
-                    }
-                    sync_drift_item_t *item = &out_diff->items[out_diff->count++];
-                    strncpy(item->skill_name, ent->d_name, sizeof(item->skill_name) - 1);
-                    item->status = SYNC_DRIFT_LOCAL_ONLY;
-                    time_t lm = 0;
-                    hub_compute_skill_hash(ldir, item->local_hash, sizeof(item->local_hash), &lm);
-                    item->local_mtime = lm;
-                    item->remote_hash[0] = '\0';
-                    snprintf(item->status_desc, sizeof(item->status_desc), "本地主仓独有 (待推送)");
-                    out_diff->local_only_count++;
-                }
-            }
-        }
-        closedir(ld);
-    }
-
-    sync_free_manifest(&manifest);
-    return 0;
-}
-
-static int git_pull_skill(sync_backend_t *self, const char *skill_name, const char *target_local_hub,
-                          sync_progress_cb cb, void *user_data) {
-    git_priv_t *priv = (git_priv_t *)self->priv_data;
-    if (!priv || !skill_name) return -1;
-
-    char exp_local[512];
-    expand_path_local(target_local_hub ? target_local_hub : "~/.ai-space/skills", exp_local, sizeof(exp_local));
-    AI_MKDIR(exp_local);
-
-    if (cb) cb(0.2f, "正在从 Git 远端获取最新提交...", user_data);
-    char pull_cmd[1024];
-    snprintf(pull_cmd, sizeof(pull_cmd),
-             "cd \"%s\" && git fetch origin \"%s\" 2>&1 && git reset --hard \"origin/%s\" 2>&1",
-             priv->git_cache_dir, priv->branch, priv->branch);
-    system(pull_cmd);
-
-    char src_dir[1024];
-    snprintf(src_dir, sizeof(src_dir), "%s/%s", priv->git_cache_dir, skill_name);
-
-    char dst_dir[1024];
-    snprintf(dst_dir, sizeof(dst_dir), "%s/%s", exp_local, skill_name);
-
-    struct stat st;
-    if (stat(src_dir, &st) != 0 || !S_ISDIR(st.st_mode)) {
-        if (cb) cb(1.0f, "远端未找到该技能目录", user_data);
-        return -1;
-    }
-
-    if (cb) cb(0.6f, "正在同步技能文件到本地主仓...", user_data);
-    int rc = hub_copy_dir_recursive(src_dir, dst_dir);
-    if (cb) cb(1.0f, "Git 技能拉取完成", user_data);
+static int git_check_drift(sync_backend_t *self, const char *local,
+                           sync_drift_summary_t *out, char *error, size_t cap) {
+    sync_remote_manifest_t remote = {0};
+    if (git_fetch_remote_manifest(self, &remote, error, cap) != 0) return -1;
+    int rc = sync_compare_directory(&remote, local, self->baseline, out, error, cap);
+    sync_free_manifest(&remote);
     return rc;
 }
 
-static int git_push_skill(sync_backend_t *self, const char *skill_name, const char *source_local_hub,
-                          sync_progress_cb cb, void *user_data) {
-    git_priv_t *priv = (git_priv_t *)self->priv_data;
-    if (!priv || !skill_name) return -1;
+/* Complete the copy before replacing the published skill directory. */
+static int git_copy_skill(const char *source, const char *destination, const char *name,
+                          const char *source_hash, const char *target_hash) {
+    char src[SYNC_PATH_CAP], target[SYNC_PATH_CAP], stage[SYNC_PATH_CAP], replacement[SYNC_PATH_CAP];
+    if (!sync_valid_component(name) || skill_skip_name(name) ||
+        sync_join(src, sizeof(src), source, name) != 0 || !skill_is_directory(src) ||
+        sync_join(target, sizeof(target), destination, name) != 0 ||
+        sync_make_stage(destination, stage, sizeof(stage)) != 0) return -1;
+    int rc = -1;
+    if (sync_join(replacement, sizeof(replacement), stage, "new") == 0 &&
+        file_tree_copy(src, replacement, false, skill_skip_name) == 0) {
+        if ((!source_hash || sync_skill_matches(replacement, source_hash)) &&
+            (!target_hash || sync_skill_matches(target, target_hash)))
+            rc = sync_replace_tree(stage, replacement, target);
+        else rc = SYNC_TRANSFER_CHANGED;
+    }
+    if (rc != -2) sync_remove_tree(stage);
+    return rc;
+}
 
-    char exp_local[512];
-    expand_path_local(source_local_hub ? source_local_hub : "~/.ai-space/skills", exp_local, sizeof(exp_local));
+static int git_apply_skill(git_priv_t *repo, const char *root, const char *name, bool pull,
+                           const sync_drift_item_t *expected) {
+    const char *source = pull ? repo->git_cache_dir : root;
+    const char *target = pull ? root : repo->git_cache_dir;
+    const char *source_hash = expected ? (pull ? expected->remote_hash : expected->local_hash) : NULL;
+    const char *target_hash = expected ? (pull ? expected->local_hash : expected->remote_hash) : NULL;
+    return git_copy_skill(source, target, name, source_hash, target_hash);
+}
 
-    char src_dir[1024];
-    snprintf(src_dir, sizeof(src_dir), "%s/%s", exp_local, skill_name);
+static void git_remove_new_skill(const git_priv_t *repo, const char *name) {
+    char path[SYNC_PATH_CAP];
+    if (sync_join(path, sizeof(path), repo->git_cache_dir, name) == 0) sync_remove_tree(path);
+}
 
-    char dst_dir[1024];
-    snprintf(dst_dir, sizeof(dst_dir), "%s/%s", priv->git_cache_dir, skill_name);
-
-    struct stat st;
-    if (stat(src_dir, &st) != 0 || !S_ISDIR(st.st_mode)) {
-        if (cb) cb(1.0f, "本地技能目录不存在", user_data);
+static int git_transfer_skill(sync_backend_t *self, const char *name, const char *local, bool pull,
+                              sync_progress_cb cb, void *user) {
+    git_priv_t *repo = self->priv_data;
+    char root[SYNC_PATH_CAP], error[256] = "";
+    if (!sync_valid_component(name) || skill_skip_name(name) ||
+        sync_expand(local ? local : "~/.ai-space/skills", root, sizeof(root)) != 0) return -1;
+    if (cb) cb(0.1f, "正在获取 Git 远端分支", user);
+    int revision = git_repo_refresh(repo, error, sizeof(error));
+    if (revision < 0 || (pull && revision == GIT_REPO_EMPTY)) {
+        if (cb) cb(0.1f, revision < 0 ? error : "Git 远端仓库为空", user);
         return -1;
     }
 
-    if (cb) cb(0.2f, "准备提交技能到 Git 本地暂存区...", user_data);
-    if (ensure_git_cache_ready(priv, NULL, 0) != 0) return -1;
-
-    /* Fetch and rebase first to avoid out-of-date conflicts */
-    char sync_cmd[1024];
-    snprintf(sync_cmd, sizeof(sync_cmd),
-             "cd \"%s\" && git fetch origin \"%s\" 2>&1 && git rebase \"origin/%s\" 2>&1",
-             priv->git_cache_dir, priv->branch, priv->branch);
-    system(sync_cmd);
-
-    /* Copy local skill to git cache */
-    hub_copy_dir_recursive(src_dir, dst_dir);
-
-    if (cb) cb(0.5f, "创建 Git 变更提交...", user_data);
-    char commit_cmd[2048];
-    snprintf(commit_cmd, sizeof(commit_cmd),
-             "cd \"%s\" && git add \"%s\" 2>&1 && "
-             "(git diff --cached --quiet || git commit -m \"sync(skill): update %s [AI-Space]\") 2>&1",
-             priv->git_cache_dir, skill_name, skill_name);
-    system(commit_cmd);
-
-    if (cb) cb(0.8f, "正在推送到远端 Git 仓库...", user_data);
-    char push_cmd[1024];
-    snprintf(push_cmd, sizeof(push_cmd),
-             "cd \"%s\" && git push -u origin \"%s\" 2>&1",
-             priv->git_cache_dir, priv->branch);
-    int rc = system(push_cmd);
-    if (rc != 0) {
-        /* Retry with rebase once */
-        snprintf(push_cmd, sizeof(push_cmd),
-                 "cd \"%s\" && git pull --rebase origin \"%s\" 2>&1 && git push origin \"%s\" 2>&1",
-                 priv->git_cache_dir, priv->branch, priv->branch);
-        rc = system(push_cmd);
+    if (pull) ai_mkdir_p(root);
+    if (cb) cb(0.4f, pull ? "正在拉取 Git 技能" : "正在准备 Git 技能提交", user);
+    char target[SYNC_PATH_CAP];
+    struct stat existing;
+    if (sync_join(target, sizeof(target), repo->git_cache_dir, name) != 0) return -1;
+    bool new_skill = lstat(target, &existing) != 0 && errno == ENOENT;
+    int rc = git_apply_skill(repo, root, name, pull, self->expected_skill);
+    if (rc == 0 && !pull) {
+        rc = git_repo_stage(repo, name);
+        if (rc == 0) rc = git_repo_commit(repo, name, 0);
+        if (rc == 0) rc = git_repo_push(repo);
+        else {
+            git_repo_restore(repo, revision);
+            if (new_skill) git_remove_new_skill(repo, name);
+        }
     }
-
-    if (cb) cb(1.0f, rc == 0 ? "Git 技能推送完成" : "Git 技能推送失败", user_data);
-    return rc == 0 ? 0 : -1;
+    const char *message = rc == 0 ? "Git 同步完成" :
+        rc == SYNC_TRANSFER_CHANGED ? "技能状态已变化，请检查后重试" : "Git 同步失败";
+    if (cb) cb(rc == 0 ? 1.0f : 0.4f, message, user);
+    return rc;
 }
 
-static int git_pull_all(sync_backend_t *self, const char *target_local_hub,
-                        sync_progress_cb cb, void *user_data) {
-    git_priv_t *priv = (git_priv_t *)self->priv_data;
-    if (!priv) return -1;
+static int git_pull_skill(sync_backend_t *self, const char *name, const char *local,
+                          sync_progress_cb cb, void *user) {
+    return git_transfer_skill(self, name, local, true, cb, user);
+}
 
-    char exp_local[512];
-    expand_path_local(target_local_hub ? target_local_hub : "~/.ai-space/skills", exp_local, sizeof(exp_local));
-    AI_MKDIR(exp_local);
+static int git_push_skill(sync_backend_t *self, const char *name, const char *local,
+                          sync_progress_cb cb, void *user) {
+    return git_transfer_skill(self, name, local, false, cb, user);
+}
 
-    if (cb) cb(0.2f, "正在获取远端 Git 最新版本库...", user_data);
-    char fetch_cmd[1024];
-    snprintf(fetch_cmd, sizeof(fetch_cmd),
-             "cd \"%s\" && git fetch origin \"%s\" 2>&1 && git reset --hard \"origin/%s\" 2>&1",
-             priv->git_cache_dir, priv->branch, priv->branch);
-    system(fetch_cmd);
+static int git_transfer_batch(sync_backend_t *self, const char *local, bool pull,
+                              sync_progress_cb cb, void *user, sync_drift_summary_t *unchanged) {
+    git_priv_t *repo = self->priv_data;
+    char root[SYNC_PATH_CAP], error[256] = "";
+    if (sync_expand(local ? local : "~/.ai-space/skills", root, sizeof(root)) != 0) return -1;
+    if (cb) cb(0.1f, "正在获取 Git 远端分支", user);
+    int revision = git_repo_refresh(repo, error, sizeof(error));
+    sync_remote_manifest_t remote = {0};
+    sync_drift_summary_t drift = {0};
+    if (revision < 0 || git_read_manifest(repo, revision, &remote, error, sizeof(error)) != 0 ||
+        sync_compare_directory(&remote, root, self->baseline, &drift, error, sizeof(error)) != 0) {
+        if (cb) cb(0.1f, error[0] ? error : "无法检查 Git 同步差异", user);
+        sync_free_manifest(&remote);
+        return -1;
+    }
+    sync_free_manifest(&remote);
 
-    DIR *d = opendir(priv->git_cache_dir);
-    if (!d) return -1;
-
-    struct dirent *ent;
-    int count = 0;
-    while ((ent = readdir(d)) != NULL) {
-        if (ent->d_name[0] == '.') continue;
-        if (strcmp(ent->d_name, "node_modules") == 0 || strcmp(ent->d_name, "__pycache__") == 0) continue;
-
-        char s_dir[1024];
-        snprintf(s_dir, sizeof(s_dir), "%s/%s", priv->git_cache_dir, ent->d_name);
-
-        struct stat st;
-        if (stat(s_dir, &st) == 0 && S_ISDIR(st.st_mode)) {
-            char skill_md[1024];
-            snprintf(skill_md, sizeof(skill_md), "%s/SKILL.md", s_dir);
-            struct stat md_st;
-            if (stat(skill_md, &md_st) == 0) {
-                char d_dir[1024];
-                snprintf(d_dir, sizeof(d_dir), "%s/%s", exp_local, ent->d_name);
-                hub_copy_dir_recursive(s_dir, d_dir);
-                count++;
+    int total = pull ? drift.remote_only_count + drift.remote_ahead_count
+                     : drift.local_only_count + drift.local_ahead_count;
+    if (!total) {
+        if (cb) cb(1.0f, "没有需要传输的技能", user);
+        if (unchanged) *unchanged = drift;
+        else sync_free_drift_summary(&drift);
+        return SYNC_BATCH_UNCHANGED;
+    }
+    if (pull) ai_mkdir_p(root);
+    int done = 0, rc = 0, last_copied = -1;
+    for (int i = 0; i < drift.count; i++) {
+        const sync_drift_item_t *item = &drift.items[i];
+        if (!sync_drift_is_candidate(item->status, pull)) continue;
+        const char *name = item->skill_name;
+        rc = git_apply_skill(repo, root, name, pull, item);
+        if (rc == 0 && !pull) {
+            last_copied = i;
+            rc = git_repo_stage(repo, name);
+        }
+        if (rc != 0) break;
+        done++;
+        if (cb) {
+            char message[192];
+            snprintf(message, sizeof(message), "已准备 Git 技能 [%s]（%d/%d）", name, done, total);
+            cb(0.2f + 0.6f * done / total, message, user);
+        }
+    }
+    if (!pull && last_copied >= 0) {
+        if (rc == 0) rc = git_repo_commit(repo, NULL, done);
+        if (rc == 0) rc = git_repo_push(repo);
+        else {
+            git_repo_restore(repo, revision);
+            for (int i = 0; i <= last_copied; i++) {
+                if (drift.items[i].status == SYNC_DRIFT_LOCAL_ONLY)
+                    git_remove_new_skill(repo, drift.items[i].skill_name);
             }
         }
     }
-    closedir(d);
-
-    char msg[128];
-    snprintf(msg, sizeof(msg), "全量拉取完成 (已同步 %d 个技能)", count);
-    if (cb) cb(1.0f, msg, user_data);
-    return 0;
+    if (cb) cb(rc == 0 ? 1.0f : 0.8f, rc == 0 ? "Git 同步完成" : "Git 批量同步未完成", user);
+    sync_free_drift_summary(&drift);
+    return rc;
 }
 
-static int git_push_all(sync_backend_t *self, const char *source_local_hub,
-                        sync_progress_cb cb, void *user_data) {
-    git_priv_t *priv = (git_priv_t *)self->priv_data;
-    if (!priv) return -1;
+static int git_pull_all(sync_backend_t *self, const char *local, sync_progress_cb cb, void *user) {
+    int rc = git_transfer_batch(self, local, true, cb, user, NULL);
+    return rc == SYNC_BATCH_UNCHANGED ? 0 : rc;
+}
 
-    char exp_local[512];
-    expand_path_local(source_local_hub ? source_local_hub : "~/.ai-space/skills", exp_local, sizeof(exp_local));
-
-    if (cb) cb(0.2f, "准备提交所有本地技能...", user_data);
-    if (ensure_git_cache_ready(priv, NULL, 0) != 0) return -1;
-
-    DIR *d = opendir(exp_local);
-    if (!d) return -1;
-
-    struct dirent *ent;
-    int count = 0;
-    while ((ent = readdir(d)) != NULL) {
-        if (ent->d_name[0] == '.') continue;
-        char s_dir[1024];
-        snprintf(s_dir, sizeof(s_dir), "%s/%s", exp_local, ent->d_name);
-        struct stat st;
-        if (stat(s_dir, &st) == 0 && S_ISDIR(st.st_mode)) {
-            char d_dir[1024];
-            snprintf(d_dir, sizeof(d_dir), "%s/%s", priv->git_cache_dir, ent->d_name);
-            hub_copy_dir_recursive(s_dir, d_dir);
-            count++;
-        }
-    }
-    closedir(d);
-
-    if (cb) cb(0.5f, "创建 Git 全量提交...", user_data);
-    char commit_cmd[2048];
-    snprintf(commit_cmd, sizeof(commit_cmd),
-             "cd \"%s\" && git add . 2>&1 && "
-             "(git diff --cached --quiet || git commit -m \"sync(all): full sync of %d skills [AI-Space]\") 2>&1",
-             priv->git_cache_dir, count);
-    system(commit_cmd);
-
-    if (cb) cb(0.8f, "正在推送到远端 Git 仓库...", user_data);
-    char push_cmd[1024];
-    snprintf(push_cmd, sizeof(push_cmd),
-             "cd \"%s\" && git push -u origin \"%s\" 2>&1",
-             priv->git_cache_dir, priv->branch);
-    int rc = system(push_cmd);
-    if (rc != 0) {
-        snprintf(push_cmd, sizeof(push_cmd),
-                 "cd \"%s\" && git pull --rebase origin \"%s\" 2>&1 && git push origin \"%s\" 2>&1",
-                 priv->git_cache_dir, priv->branch, priv->branch);
-        rc = system(push_cmd);
-    }
-
-    if (cb) cb(1.0f, rc == 0 ? "Git 全量推送完成" : "Git 全量推送失败", user_data);
-    return rc == 0 ? 0 : -1;
+static int git_push_all(sync_backend_t *self, const char *local, sync_progress_cb cb, void *user) {
+    int rc = git_transfer_batch(self, local, false, cb, user, NULL);
+    return rc == SYNC_BATCH_UNCHANGED ? 0 : rc;
 }
 
 const sync_driver_ops_t g_git_driver_ops = {
@@ -688,4 +242,5 @@ const sync_driver_ops_t g_git_driver_ops = {
     .push_skill = git_push_skill,
     .pull_all = git_pull_all,
     .push_all = git_push_all,
+    .transfer_batch = git_transfer_batch,
 };

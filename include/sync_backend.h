@@ -114,6 +114,18 @@ typedef void (*sync_progress_cb)(float percent, const char *msg, void *user_data
 /* Forward declaration */
 typedef struct sync_backend_t sync_backend_t;
 
+typedef struct {
+    char skill[128];
+    char hash[32];
+} sync_baseline_item_t;
+
+typedef struct {
+    sync_baseline_item_t *items; /* Sorted by skill name. */
+    size_t count;
+} sync_baseline_t;
+
+enum { SYNC_BATCH_UNCHANGED = 1, SYNC_TRANSFER_CHANGED = -3 };
+
 /*
  * Immutable Synchronization Primitives (同步原语 VTable 接口)
  * Regardless of backend implementation (WebDAV, NFS, Git), these primitives never change.
@@ -144,6 +156,10 @@ typedef struct sync_driver_ops_t {
     /* Batch Full Synchronization */
     int (*pull_all)(sync_backend_t *self, const char *target_local_hub, sync_progress_cb cb, void *user_data);
     int (*push_all)(sync_backend_t *self, const char *source_local_hub, sync_progress_cb cb, void *user_data);
+    /* Optional batch operation. On SYNC_BATCH_UNCHANGED, unchanged_drift receives
+       the fresh comparison (if supplied), and the caller owns its items. */
+    int (*transfer_batch)(sync_backend_t *self, const char *local_hub_dir, bool pull,
+                          sync_progress_cb cb, void *user_data, sync_drift_summary_t *unchanged_drift);
 } sync_driver_ops_t;
 
 struct sync_backend_t {
@@ -152,6 +168,8 @@ struct sync_backend_t {
     void *priv_data;
     bool is_connected;
     char status_msg[256];
+    const sync_baseline_t *baseline;
+    const sync_drift_item_t *expected_skill;
 };
 
 /* Factory and memory helpers */

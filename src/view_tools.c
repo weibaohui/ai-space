@@ -45,9 +45,6 @@ void render_tools_list_page(cui_ctx *ui, app_state_t *s) {
         s->toast_frames--;
     }
 
-    /* 1. Global Navigation Bar */
-    render_global_navbar(ui, s);
-
     cui_row(ui, .width = CUI_FILL, .gap = 12, .align = CUI_ALIGN_CENTER) {
         char scan_status[80];
         snprintf(scan_status, sizeof(scan_status), "上次扫描  %s",

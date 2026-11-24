@@ -1,16 +1,15 @@
+#include "view_about.h"
+#include "view_sync_settings.h"
+#include "app_settings.h"
 #include "view_settings.h"
 #include "view_common.h"
 #include "view_dependencies.h"
 #include "view_storage.h"
 #include "db.h"
-#include "hub_manager.h"
 #include "sync_backend.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <dirent.h>
-#include "portability.h"
 
 typedef struct {
     cui_color color;
@@ -25,81 +24,25 @@ static void paint_swatch(cui_ctx *ui, cui_rect r, void *user) {
     cui_draw_circle(ui, c, r.w / 2.0f - 4.0f, d->color);
 }
 
-static void expand_path_helper(const char *in, char *out, size_t cap) {
-    if (!in || in[0] == '\0') {
-        if (out && cap > 0) out[0] = '\0';
-        return;
-    }
-    if (in[0] == '~' && (in[1] == '/' || in[1] == '\0')) {
-        const char *home = ai_home_dir();
-        if (home && home[0]) {
-            snprintf(out, cap, "%s%s", home, in + 1);
-            return;
-        }
-    }
-    strncpy(out, in, cap - 1);
-    out[cap - 1] = '\0';
-}
-
-static void get_dir_stat_info(const char *raw_path, char *out_expanded, size_t exp_cap,
-                              char *out_info, size_t info_cap, bool *out_exists, int *out_subdirs) {
-    expand_path_helper(raw_path, out_expanded, exp_cap);
-
-    if (out_subdirs) *out_subdirs = 0;
-
-    if (!out_expanded || out_expanded[0] == '\0') {
-        if (out_info && info_cap > 0) snprintf(out_info, info_cap, "未配置路径");
-        if (out_exists) *out_exists = false;
-        return;
-    }
-
-    struct stat st;
-    if (stat(out_expanded, &st) == 0 && S_ISDIR(st.st_mode)) {
-        if (out_exists) *out_exists = true;
-
-        /* Count child directories */
-        int count = 0;
-        DIR *d = opendir(out_expanded);
-        if (d) {
-            struct dirent *ent;
-            while ((ent = readdir(d)) != NULL) {
-                if (ent->d_name[0] == '.') continue;
-                char sub_path[1024];
-                snprintf(sub_path, sizeof(sub_path), "%s/%s", out_expanded, ent->d_name);
-                struct stat sub_st;
-                if (stat(sub_path, &sub_st) == 0 && S_ISDIR(sub_st.st_mode)) {
-                    count++;
-                }
-            }
-            closedir(d);
-        }
-        if (out_subdirs) *out_subdirs = count;
-
-        if (access(out_expanded, W_OK | R_OK) == 0) {
-            snprintf(out_info, info_cap, "物理目录已就绪 (可读写，含 %d 个子目录项)", count);
-        } else {
-            snprintf(out_info, info_cap, "物理目录已存在 (读写权限受限)");
-        }
+static void describe_directory(const storage_directory_info_t *info, char *text, size_t cap) {
+    if (!info->expanded[0]) {
+        snprintf(text, cap, "未配置路径");
+    } else if (!info->exists) {
+        snprintf(text, cap, "目录尚未在磁盘创建 (保存后系统将自动初始化)");
+    } else if (!info->writable) {
+        snprintf(text, cap, "物理目录已存在 (读写权限受限)");
     } else {
-        if (out_exists) *out_exists = false;
-        snprintf(out_info, info_cap, "目录尚未在磁盘创建 (保存后系统将自动初始化)");
+        snprintf(text, cap, "物理目录已就绪 (可读写，含 %d 个子目录项)", info->subdirs);
     }
 }
 
 static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
-    char hub_expanded[512] = "";
-    char hub_info[256] = "";
-    bool hub_exists = false;
-    int hub_subdirs = 0;
-    get_dir_stat_info(s->setting_hub_dir, hub_expanded, sizeof(hub_expanded),
-                      hub_info, sizeof(hub_info), &hub_exists, &hub_subdirs);
-
-    char backup_expanded[512] = "";
-    char backup_info[256] = "";
-    bool backup_exists = false;
-    int backup_subdirs = 0;
-    get_dir_stat_info(s->setting_backup_dir, backup_expanded, sizeof(backup_expanded),
-                      backup_info, sizeof(backup_info), &backup_exists, &backup_subdirs);
+    bool busy = s->op_progress.active || s->hub_scan.is_scanning;
+    const storage_directory_info_t *hub = app_storage_directory(s, STORAGE_PATH_HUB, s->setting_hub_dir);
+    const storage_directory_info_t *backup = app_storage_directory(s, STORAGE_PATH_BACKUP, s->setting_backup_dir);
+    char hub_info[256], backup_info[256];
+    describe_directory(hub, hub_info, sizeof(hub_info));
+    describe_directory(backup, backup_info, sizeof(backup_info));
 
     cui_column(ui, .width = CUI_FILL, .gap = 20) {
         /* Section 1: Master Hub Repository Directory */
@@ -112,8 +55,8 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
                     cui_heading(ui, "主仓存储路径", 4);
                 }
                 cui_spacer(ui);
-                cui_badge(ui, hub_exists ? "已就绪" : "待初始化",
-                          .tone = hub_exists ? CUI_TONE_SUCCESS : CUI_TONE_NEUTRAL,
+                cui_badge(ui, hub->exists ? "已就绪" : "待初始化",
+                          .tone = hub->exists ? CUI_TONE_SUCCESS : CUI_TONE_NEUTRAL,
                           .size = CUI_SIZE_SM);
             }
 
@@ -123,7 +66,7 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
             /* Path input field */
             cui_input(ui, "input_setting_hub_dir", s->setting_hub_dir, sizeof(s->setting_hub_dir),
                       .placeholder = "~/.ai-space/skills",
-                      .icon = CUI_ICON_FOLDER,
+                      .icon = CUI_ICON_FOLDER, .disabled = busy,
                       .width = CUI_FILL);
 
             /* Real disk info card */
@@ -133,7 +76,7 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_INFO, 13, CUI_COLOR_TEXT_MUTED);
                     cui_text(ui, "实际磁盘解析绝对路径:", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-                    cui_text(ui, hub_expanded[0] ? hub_expanded : "(未配置)",
+                    cui_text(ui, hub->expanded[0] ? hub->expanded : "(未配置)",
                              .size = 12, .color = CUI_COLOR_FOREGROUND);
                 }
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
@@ -145,17 +88,13 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
             /* Action Buttons */
             cui_push_id(ui, "hub_path_actions");
             cui_row(ui, .width = CUI_FILL, .gap = 8, .justify = CUI_JUSTIFY_END) {
-                if (cui_button(ui, "恢复默认", .variant = CUI_BUTTON_GHOST, .icon = CUI_ICON_ROTATE_CCW)) {
+                if (cui_button(ui, "恢复默认", .variant = CUI_BUTTON_GHOST, .icon = CUI_ICON_ROTATE_CCW, .disabled = busy)) {
                     snprintf(s->setting_hub_dir, sizeof(s->setting_hub_dir), "~/.ai-space/skills");
-                    app_save_settings(s);
-                    s->hub_matrix_loaded = false;
-                    s->storage_stats.loaded = false;
+                    app_save_storage_settings(s);
                     cui_toast(ui, "已恢复默认主仓路径", .tone = CUI_TONE_SUCCESS);
                 }
-                if (cui_button(ui, "保存路径", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
-                    app_save_settings(s);
-                    s->hub_matrix_loaded = false;
-                    s->storage_stats.loaded = false;
+                if (cui_button(ui, "保存路径", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE, .disabled = busy)) {
+                    app_save_storage_settings(s);
                     cui_toast(ui, "已保存主仓路径", .tone = CUI_TONE_SUCCESS);
                 }
             }
@@ -172,8 +111,8 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
                     cui_heading(ui, "快照备份存储路径", 4);
                 }
                 cui_spacer(ui);
-                cui_badge(ui, backup_exists ? "正常" : "待初始化",
-                          .tone = backup_exists ? CUI_TONE_SUCCESS : CUI_TONE_NEUTRAL,
+                cui_badge(ui, backup->exists ? "正常" : "待初始化",
+                          .tone = backup->exists ? CUI_TONE_SUCCESS : CUI_TONE_NEUTRAL,
                           .size = CUI_SIZE_SM);
             }
 
@@ -183,7 +122,7 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
             /* Path input field */
             cui_input(ui, "input_setting_backup_dir", s->setting_backup_dir, sizeof(s->setting_backup_dir),
                       .placeholder = "~/.ai-space/backups",
-                      .icon = CUI_ICON_FOLDER,
+                      .icon = CUI_ICON_FOLDER, .disabled = busy,
                       .width = CUI_FILL);
 
             /* Real disk info card */
@@ -193,7 +132,7 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
                     cui_icon(ui, CUI_ICON_INFO, 13, CUI_COLOR_TEXT_MUTED);
                     cui_text(ui, "实际磁盘解析绝对路径:", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-                    cui_text(ui, backup_expanded[0] ? backup_expanded : "(未配置)",
+                    cui_text(ui, backup->expanded[0] ? backup->expanded : "(未配置)",
                              .size = 12, .color = CUI_COLOR_FOREGROUND);
                 }
                 cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
@@ -205,267 +144,17 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
             /* Action Buttons */
             cui_push_id(ui, "backup_path_actions");
             cui_row(ui, .width = CUI_FILL, .gap = 8, .justify = CUI_JUSTIFY_END) {
-                if (cui_button(ui, "恢复默认", .variant = CUI_BUTTON_GHOST, .icon = CUI_ICON_ROTATE_CCW)) {
+                if (cui_button(ui, "恢复默认", .variant = CUI_BUTTON_GHOST, .icon = CUI_ICON_ROTATE_CCW, .disabled = busy)) {
                     snprintf(s->setting_backup_dir, sizeof(s->setting_backup_dir), "~/.ai-space/backups");
-                    app_save_settings(s);
-                    s->storage_stats.loaded = false;
+                    app_save_storage_settings(s);
                     cui_toast(ui, "已恢复默认备份路径", .tone = CUI_TONE_SUCCESS);
                 }
-                if (cui_button(ui, "保存路径", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE)) {
-                    app_save_settings(s);
-                    s->storage_stats.loaded = false;
+                if (cui_button(ui, "保存路径", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_SAVE, .disabled = busy)) {
+                    app_save_storage_settings(s);
                     cui_toast(ui, "已保存备份路径", .tone = CUI_TONE_SUCCESS);
                 }
             }
             cui_pop_id(ui);
-        }
-    }
-}
-
-static void render_tab_remote_sync(cui_ctx *ui, app_state_t *s) {
-    static const char *backends[] = { "单机模式", "WebDAV", "SMB / NFS", "Git 仓库" };
-    static const char *backend_icons[] = { CUI_ICON_MONITOR, CUI_ICON_CLOUD, CUI_ICON_SERVER, CUI_ICON_GIT_BRANCH };
-    sync_backend_type_t active = s->sync_cfg.type;
-    const char *active_name = sync_backend_display_name(active);
-    if (active == SYNC_BACKEND_NFS) {
-        if (s->sync_cfg.share_mode == SYNC_SHARE_NFS) active_name = "NFS 直连";
-        if (s->sync_cfg.share_mode == SYNC_SHARE_SMB) active_name = "SMB 直连";
-    }
-    const char *active_icon = (active >= SYNC_BACKEND_NONE && active <= SYNC_BACKEND_GIT)
-                              ? backend_icons[active] : ICON_SYNC;
-    cui_color accent = cui_color_of(ui, CUI_COLOR_ACCENT);
-    cui_color surface = cui_color_of(ui, CUI_COLOR_SURFACE);
-    bool dark = cui_get_theme_mode(ui) == CUI_THEME_DARK;
-
-    cui_column(ui, .width = CUI_FILL, .gap = 16) {
-        cui_box(ui, .width = CUI_FILL, .radius = 12, .pad = 16,
-                .bg = cui_mix(surface, accent, dark ? 0.19f : 0.09f),
-                .border = 1, .border_color = cui_mix(cui_color_of(ui, CUI_COLOR_BORDER), accent, 0.55f)) {
-            cui_row(ui, .width = CUI_FILL, .gap = 14, .align = CUI_ALIGN_CENTER) {
-                cui_box(ui, .width = CUI_PX(46), .height = CUI_PX(46), .radius = 12,
-                        .bg = accent, .dir = CUI_STACK, .align = CUI_ALIGN_CENTER,
-                        .justify = CUI_JUSTIFY_CENTER) {
-                    cui_icon(ui, active_icon, 23, CUI_COLOR_ACCENT_FOREGROUND);
-                }
-                cui_column(ui, .width = CUI_FILL, .gap = 2) {
-                    cui_text(ui, "当前生效的后端", .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                    cui_heading(ui, active_name, 3);
-                }
-            }
-        }
-
-        cui_box(ui, .width = CUI_FILL, .radius = 8, .pad = 16, .gap = 12,
-                .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
-                .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-            cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                cui_icon(ui, ICON_SYNC, 18, CUI_COLOR_ACCENT);
-                cui_heading(ui, "选择要配置的后端", 4);
-            }
-
-            int candidate = (int)s->setting_sync_candidate_type;
-            if (cui_segmented(ui, "sync_backend_choice", backends, 4, &candidate,
-                              .size = CUI_SIZE_MD, .icons = backend_icons)) {
-                s->setting_sync_candidate_type = (sync_backend_type_t)candidate;
-                s->sync_has_checked_candidate = false;
-            }
-        }
-
-        /* Backend Specific Configuration Card */
-        cui_box(ui, .width = CUI_FILL, .radius = 8, .pad = 16, .gap = 14,
-                .bg = cui_color_of(ui, CUI_COLOR_SURFACE_RAISED),
-                .border = 1, .border_color = cui_color_of(ui, CUI_COLOR_BORDER)) {
-
-            bool is_active = (active == s->setting_sync_candidate_type);
-
-            if (s->setting_sync_candidate_type == SYNC_BACKEND_NONE) {
-                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_heading(ui, "单机本地模式", 4);
-                    cui_spacer(ui);
-                    cui_badge(ui, is_active ? "已生效" : "未激活",
-                              .tone = is_active ? CUI_TONE_SUCCESS : CUI_TONE_NEUTRAL,
-                              .size = CUI_SIZE_SM);
-                }
-
-                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                    cui_icon(ui, CUI_ICON_INFO, 16, CUI_COLOR_TEXT_MUTED);
-                    cui_text(ui, "仅在本地主仓与各个本地工具间流转，不与远端服务器同步。",
-                             .size = 12, .color = CUI_COLOR_TEXT_MUTED);
-                }
-
-                cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
-                    if (!is_active && cui_button(ui, "切换为单机模式", .variant = CUI_BUTTON_PRIMARY,
-                                                 .icon = CUI_ICON_MONITOR)) {
-                        s->sync_cfg.type = SYNC_BACKEND_NONE;
-                        app_save_settings(s);
-                        s->sync_drift_loaded = false;
-                        s->sync_status_msg[0] = '\0';
-                        app_set_toast(s, "已成功激活单机本地模式");
-                    }
-                }
-
-            } else if (s->setting_sync_candidate_type == SYNC_BACKEND_WEBDAV) {
-                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_heading(ui, "WebDAV 网盘服务配置", 4);
-                    cui_spacer(ui);
-                    cui_badge(ui, is_active ? "已生效" : "未激活",
-                              .tone = is_active ? CUI_TONE_SUCCESS : CUI_TONE_WARNING,
-                              .size = CUI_SIZE_SM);
-                }
-
-                cui_text(ui, "匿名服务可留空账号和密码。认证服务请填写账号和密码或应用授权码。",
-                         .width = CUI_FILL, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-
-                cui_input(ui, "webdav_url_input", s->sync_pending_cfg.webdav_url, sizeof(s->sync_pending_cfg.webdav_url),
-                          .label = "WebDAV 服务地址（含服务路径）",
-                          .placeholder = "https://dav.jianguoyun.com/dav/ai-space/",
-                          .width = CUI_FILL);
-
-                cui_row(ui, .width = CUI_FILL, .gap = 12) {
-                    cui_input(ui, "webdav_user_input", s->sync_pending_cfg.webdav_user, sizeof(s->sync_pending_cfg.webdav_user),
-                              .label = "用户名 / 账号:",
-                              .placeholder = "username@example.com",
-                              .width = CUI_GROW(1));
-
-                    cui_input(ui, "webdav_pass_input", s->sync_pending_cfg.webdav_pass, sizeof(s->sync_pending_cfg.webdav_pass),
-                              .label = "密码 / 应用专用授权码:",
-                              .placeholder = "••••••••",
-                              .password = true,
-                              .width = CUI_GROW(1));
-                }
-
-                cui_input(ui, "webdav_path_input", s->sync_pending_cfg.webdav_remote_path, sizeof(s->sync_pending_cfg.webdav_remote_path),
-                          .label = "同步子目录（留空使用服务地址对应目录）",
-                          .placeholder = "/ai-space/skills",
-                          .width = CUI_FILL);
-
-            } else if (s->setting_sync_candidate_type == SYNC_BACKEND_NFS) {
-                sync_config_t *cfg = &s->sync_pending_cfg;
-                is_active = is_active && cfg->share_mode == s->sync_cfg.share_mode;
-                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_heading(ui, "SMB / NFS 共享目录", 4);
-                    cui_spacer(ui);
-                    cui_badge(ui, is_active ? "已生效" : "未激活",
-                              .tone = is_active ? CUI_TONE_SUCCESS : CUI_TONE_WARNING,
-                              .size = CUI_SIZE_SM);
-                }
-
-                const char *modes[] = {"NFS 直连", "SMB 直连", "已有挂载目录"};
-                int mode = cfg->share_mode == SYNC_SHARE_MOUNTED ? 2 : cfg->share_mode - 1;
-                if (cui_segmented(ui, "sync_share_mode", modes, 3, &mode, .size = CUI_SIZE_MD)) {
-                    cfg->share_mode = mode == 2 ? SYNC_SHARE_MOUNTED : (sync_share_mode_t)(mode + 1);
-                    s->sync_has_checked_candidate = false;
-                }
-
-                if (cfg->share_mode == SYNC_SHARE_MOUNTED) {
-                    cui_input(ui, "nfs_path_input", cfg->nfs_mount_path, sizeof(cfg->nfs_mount_path),
-                              .label = "本机挂载点或挂载点下的同步目录",
-                              .placeholder = "/Volumes/nas/ai-space/skills",
-                              .icon = CUI_ICON_FOLDER, .width = CUI_FILL);
-                } else {
-                    bool nfs = cfg->share_mode == SYNC_SHARE_NFS;
-                    cui_row(ui, .width = CUI_FILL, .gap = 12) {
-                        cui_input(ui, "share_server", cfg->share_server, sizeof(cfg->share_server),
-                                  .label = "服务器 IP 或主机名", .placeholder = "192.168.0.211",
-                                  .width = CUI_GROW(1));
-                        cui_input(ui, "share_export", cfg->share_export, sizeof(cfg->share_export),
-                                  .label = nfs ? "NFS 导出路径" : "SMB 共享名",
-                                  .placeholder = nfs ? "/srv/share" : "share", .width = CUI_GROW(1));
-                    }
-                    cui_input(ui, "share_subdir", cfg->share_subdir, sizeof(cfg->share_subdir),
-                              .label = "同步子目录（选填，填写共享中已有的目录）",
-                              .placeholder = "ai-space-skills", .width = CUI_FILL);
-                    if (nfs) {
-                        cui_text(ui, "使用 NFSv3，访问权限由服务端控制。", .width = CUI_FILL,
-                                 .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                    } else {
-                        cui_row(ui, .width = CUI_FILL, .gap = 12) {
-                            cui_input(ui, "share_smb_user", cfg->smb_user, sizeof(cfg->smb_user),
-                                      .label = "用户名", .placeholder = "留空使用访客",
-                                      .width = CUI_GROW(1));
-                            cui_input(ui, "share_smb_pass", cfg->smb_pass, sizeof(cfg->smb_pass),
-                                      .label = "密码", .password = true, .width = CUI_GROW(1));
-                        }
-                    }
-                }
-
-            } else if (s->setting_sync_candidate_type == SYNC_BACKEND_GIT) {
-                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_heading(ui, "Git 远端版本库配置", 4);
-                    cui_spacer(ui);
-                    cui_badge(ui, is_active ? "已生效" : "未激活",
-                              .tone = is_active ? CUI_TONE_SUCCESS : CUI_TONE_WARNING,
-                              .size = CUI_SIZE_SM);
-                }
-
-                cui_text(ui, "以 Git 仓库作为共享源，支持 GitHub、GitLab、Gitea 等托管平台",
-                         .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-
-                sync_config_t *cfg = &s->sync_pending_cfg;
-                cui_input(ui, "git_url_input", cfg->git_repo_url, sizeof(cfg->git_repo_url),
-                          .label = "Git 远端仓库地址",
-                          .placeholder = "https://github.com/team/skills.git 或 git@github.com:team/skills.git",
-                          .width = CUI_FILL);
-
-                cui_row(ui, .width = CUI_FILL, .gap = 12) {
-                    cui_input(ui, "git_branch_input", cfg->git_branch, sizeof(cfg->git_branch),
-                              .label = "目标分支", .placeholder = "main", .width = CUI_PX(180));
-
-                    if (sync_git_uses_token(cfg->git_repo_url)) {
-                        cui_input(ui, "git_token_input", cfg->git_auth_token, sizeof(cfg->git_auth_token),
-                                  .label = "HTTPS 访问令牌", .password = true, .width = CUI_GROW(1));
-                    }
-                }
-
-                if (sync_git_uses_ssh(cfg->git_repo_url)) {
-                    cui_text(ui, "SSH 使用本机配置的密钥，可在仓库地址中指定登录用户名。",
-                             .width = CUI_FILL, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                }
-
-                static bool git_author_open = false;
-                cui_accordion(ui, "提交者信息（选填）", &git_author_open) {
-                    cui_text(ui, "填写后用于 AI-Space 推送时生成的 Git 提交记录。",
-                             .width = CUI_FILL, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
-                    cui_row(ui, .width = CUI_FILL, .gap = 12) {
-                        cui_input(ui, "git_user_input", cfg->git_user_name, sizeof(cfg->git_user_name),
-                                  .label = "提交者姓名", .placeholder = "AI-Space User", .width = CUI_GROW(1));
-                        cui_input(ui, "git_email_input", cfg->git_user_email, sizeof(cfg->git_user_email),
-                                  .label = "提交者邮箱", .placeholder = "user@example.com", .width = CUI_GROW(1));
-                    }
-                }
-            }
-
-            if (s->setting_sync_candidate_type != SYNC_BACKEND_NONE) {
-                cui_row(ui, .width = CUI_FILL, .gap = 8, .justify = CUI_JUSTIFY_END) {
-                    bool busy = s->op_progress.active;
-                    if (cui_button(ui, "测试连接", .variant = CUI_BUTTON_SECONDARY,
-                                   .icon = CUI_ICON_LINK, .disabled = busy)) {
-                        start_sync_check_available_thread(s, false);
-                    }
-                    if (cui_button(ui, "测试并启用", .variant = CUI_BUTTON_PRIMARY,
-                                   .icon = CUI_ICON_CHECK, .disabled = busy)) {
-                        start_sync_check_available_thread(s, true);
-                    }
-                }
-            }
-
-            /* Pre-activation Check Feedback Banner */
-            if (s->sync_has_checked_candidate && s->sync_candidate_check_msg[0] != '\0') {
-                cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 10, .gap = 4,
-                        .bg = s->sync_candidate_checked_ok ? cui_alpha(cui_color_of(ui, CUI_COLOR_SUCCESS), 0.12f)
-                                                           : cui_alpha(cui_color_of(ui, CUI_COLOR_DANGER), 0.12f),
-                        .border = 1,
-                        .border_color = s->sync_candidate_checked_ok ? cui_color_of(ui, CUI_COLOR_SUCCESS)
-                                                                     : cui_color_of(ui, CUI_COLOR_DANGER)) {
-                    cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, s->sync_candidate_checked_ok ? CUI_ICON_CHECK : CUI_ICON_TRIANGLE_ALERT,
-                                 15, s->sync_candidate_checked_ok ? CUI_COLOR_SUCCESS : CUI_COLOR_DANGER);
-                        cui_text(ui, s->sync_candidate_checked_ok ? "检测通过，符合激活条件：" : "检测未通过，无法激活：",
-                                 .size = 12, .color = s->sync_candidate_checked_ok ? CUI_COLOR_SUCCESS : CUI_COLOR_DANGER);
-                        cui_text(ui, s->sync_candidate_check_msg, .size = 12,
-                                 .color = s->sync_candidate_checked_ok ? CUI_COLOR_SUCCESS : CUI_COLOR_DANGER);
-                    }
-                }
-            }
         }
     }
 }

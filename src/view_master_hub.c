@@ -1,9 +1,13 @@
+#include "hub_files.h"
+#include "skill_file_tree.h"
+#include "file_preview.h"
+#include "app_hub_tasks.h"
+#include "app_diff.h"
 #include "view_master_hub.h"
 #include "view_common.h"
 #include "view_skill_tree.h"
 #include "view_hub_diff.h"
 #include "skill_scanner.h"
-#include "hub_manager.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -74,7 +78,7 @@ void open_master_skill_explorer(app_state_t *s, const char *skill_name) {
     if (stat(skill_md_path, &st) == 0) {
         strncpy(s->selected_file_path, skill_md_path, sizeof(s->selected_file_path) - 1);
         strncpy(s->selected_file_name, "SKILL.md", sizeof(s->selected_file_name) - 1);
-        s->selected_file_content = read_file_text_content(skill_md_path, 256 * 1024,
+        s->selected_file_content = read_file_preview(skill_md_path, 256 * 1024, NULL,
                                                           &s->selected_file_size,
                                                           &s->selected_file_lines,
                                                           &s->selected_file_is_binary);
@@ -93,7 +97,7 @@ static void on_master_file_select(file_node_t *node, void *user_data) {
         s->selected_file_content = NULL;
     }
 
-    s->selected_file_content = read_file_text_content(node->abs_path, 256 * 1024,
+    s->selected_file_content = read_file_preview(node->abs_path, 256 * 1024, NULL,
                                                       &s->selected_file_size,
                                                       &s->selected_file_lines,
                                                       &s->selected_file_is_binary);
@@ -326,7 +330,8 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                     hub_skill_entry_t *entry = &s->hub_matrix.skills[i];
                     if (!entry->in_hub) continue;
                     if (s->master_skill_filter == MASTER_FILTER_CHANGED &&
-                        entry->modified_count == 0 && entry->outdated_count == 0) continue;
+                        entry->modified_count == 0 && entry->outdated_count == 0 &&
+                        !entry->hub_unreadable && entry->unreadable_count == 0) continue;
                     if (s->master_skill_filter == MASTER_FILTER_UNDISTRIBUTED && entry->installed_count > 0) continue;
 
                     if (s->master_skill_search_kw[0] != '\0') {
@@ -359,7 +364,9 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                         cui_column(ui, .width = CUI_FILL, .gap = 4) {
                             cui_text(ui, entry->skill_name, .font = CUI_FONT_MEDIUM, .size = 15,
                                      .width = CUI_FILL, .nowrap = true);
-                            if (entry->modified_count > 0) {
+                            if (entry->hub_unreadable || entry->unreadable_count > 0) {
+                                cui_badge(ui, "无法比较", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
+                            } else if (entry->modified_count > 0) {
                                 cui_badge(ui, "副本有改动", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
                             } else if (entry->outdated_count > 0) {
                                 cui_badge(ui, "副本待更新", .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
@@ -417,6 +424,9 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                                 } else if (tc->status == HUB_STATUS_LOCAL_MODIFIED) {
                                     tone = CUI_TONE_WARNING;
                                     snprintf(label, sizeof(label), "%s (有改动)", tc->tool_name);
+                                } else if (tc->status == HUB_STATUS_UNREADABLE) {
+                                    tone = CUI_TONE_WARNING;
+                                    snprintf(label, sizeof(label), "%s (无法比较)", tc->tool_name);
                                 } else if (tc->status == HUB_STATUS_OUTDATED) {
                                     tone = CUI_TONE_INFO;
                                     snprintf(label, sizeof(label), "%s (落后)", tc->tool_name);
@@ -488,7 +498,7 @@ void render_remove_master_modal(cui_ctx *ui, app_state_t *s) {
                     s->show_remove_master_modal = false;
                 }
                 if (cui_button(ui, "确认移出", .variant = CUI_BUTTON_DANGER,
-                               .disabled = count == 0)) {
+                               .disabled = count == 0 || busy)) {
                     int removed = 0;
                     for (int i = 0; i < s->hub_matrix.skill_count; i++) {
                         hub_skill_entry_t *entry = &s->hub_matrix.skills[i];
@@ -507,6 +517,7 @@ void render_remove_master_modal(cui_ctx *ui, app_state_t *s) {
                     }
                     cui_toast(ui, result, .tone = removed == count ? CUI_TONE_SUCCESS : CUI_TONE_WARNING);
                     s->show_remove_master_modal = false;
+                    app_storage_invalidate(s);
                     start_hub_scan_thread(s);
                 }
             }

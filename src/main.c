@@ -1,3 +1,12 @@
+#include "hub_paths.h"
+#include "skill_file_tree.h"
+#include "app_sync.h"
+#include "view_uninstall.h"
+#include "view_distribute.h"
+#include "view_progress.h"
+#include "app_settings.h"
+#include "app_hub_tasks.h"
+#include "app_diff.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,6 +32,10 @@ const char *const g_ai_space_version = AI_SPACE_VERSION;
 
 static void frame(cui_ctx *ui, void *user) {
     app_state_t *s = (app_state_t *)user;
+
+    app_storage_begin_frame(s);
+    app_sync_poll(s);
+    app_hub_tasks_poll(s);
 
     /* Global keyboard shortcut: Ctrl+J (or Cmd+J) toggles Dark / Light theme */
     if (!cui_wants_keyboard(ui)) {
@@ -162,12 +175,7 @@ int main(int argc, char **argv) {
     } else if (start_page && strcmp(start_page, "sync") == 0) {
         s.current_page = PAGE_SYNC_MANAGER;
         if (getenv("CUI_SYNC_CHECK")) {
-            if (s.sync_backend && s.sync_backend->ops->check_drift) {
-                s.sync_drift_loaded = s.sync_backend->ops->check_drift(
-                    s.sync_backend, s.setting_hub_dir, &s.sync_drift,
-                    s.sync_status_msg, sizeof(s.sync_status_msg)) == 0;
-                if (s.sync_drift_loaded) s.sync_status_msg[0] = '\0';
-            }
+            app_sync_check_now(&s);
         }
     } else if (start_page && strcmp(start_page, "settings") == 0) {
         s.current_page = PAGE_SETTINGS;
@@ -262,6 +270,8 @@ int main(int argc, char **argv) {
     });
 
     if (!app) {
+        app_sync_shutdown(&s);
+        app_hub_tasks_shutdown(&s);
         db_close(s.db);
         if (s.records) free(s.records);
         return 1;
@@ -307,6 +317,8 @@ int main(int argc, char **argv) {
         frame(ui, &s);
     }
 
+    app_sync_shutdown(&s);
+    app_hub_tasks_shutdown(&s);
     cui_app_destroy(app);
 
     if (s.records) {

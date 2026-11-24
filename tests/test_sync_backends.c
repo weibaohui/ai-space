@@ -1,4 +1,6 @@
 #include "sync_directory.h"
+#include "sync_baseline.h"
+#include "db.h"
 #include "portability.h"
 
 #include <assert.h>
@@ -64,6 +66,55 @@ static void check_drift(sync_backend_t *backend, const char *local, int expected
     sync_free_drift_summary(&drift);
 }
 
+static void check_conflict_guards(sync_backend_t *backend, const char *a, const char *b,
+                                  const char *name, time_t old) {
+    sqlite3 *db = NULL;
+    assert(db_init(":memory:", &db) == 0);
+    char scope[SYNC_SCOPE_CAP];
+    assert(sync_baseline_scope(&backend->cfg, a, scope, sizeof(scope)) == 0);
+    sync_baseline_t baseline = {0};
+    backend->baseline = &baseline;
+    sync_drift_summary_t drift = {0};
+    assert(backend->ops->check_drift(backend, a, &drift, NULL, 0) == 0);
+    assert(drift.in_sync_count == 1);
+    assert(sync_baseline_record(db, scope, &drift) == 0);
+    sync_free_drift_summary(&drift);
+    assert(sync_baseline_load(db, scope, &baseline) == 0 && baseline.count == 1);
+
+    char skill[SYNC_PATH_CAP], a_doc[SYNC_PATH_CAP], b_doc[SYNC_PATH_CAP];
+    path_join(skill, a, name);
+    path_join(a_doc, skill, "SKILL.md");
+    path_join(skill, b, name);
+    path_join(b_doc, skill, "SKILL.md");
+    write_file(a_doc, "independent A edit\n", old + 10);
+    check_drift(backend, a, 0, 0, 0, 0, 1);
+    write_file(b_doc, "independent B edit\n", old + 20);
+    assert(backend->ops->push_skill(backend, name, b, NULL, NULL) == 0);
+    assert(backend->ops->transfer_batch(backend, a, false, NULL, NULL, &drift) == SYNC_BATCH_UNCHANGED);
+    assert(drift.conflict_count == 1 && drift.count == 1);
+    assert(backend->ops->pull_all(backend, a, NULL, NULL) == 0);
+
+    write_file(b_doc, "remote changed after conflict was shown\n", old + 30);
+    assert(backend->ops->push_skill(backend, name, b, NULL, NULL) == 0);
+    backend->expected_skill = &drift.items[0];
+    assert(backend->ops->push_skill(backend, name, a, NULL, NULL) == SYNC_TRANSFER_CHANGED);
+    backend->expected_skill = NULL;
+    write_file(b_doc, "independent B edit\n", old + 20);
+    assert(backend->ops->push_skill(backend, name, b, NULL, NULL) == 0);
+
+    backend->expected_skill = &drift.items[0];
+    write_file(a_doc, "changed after conflict was shown\n", old + 30);
+    assert(backend->ops->pull_skill(backend, name, a, NULL, NULL) == SYNC_TRANSFER_CHANGED);
+    write_file(a_doc, "independent A edit\n", old + 10);
+    assert(backend->ops->pull_skill(backend, name, a, NULL, NULL) == 0);
+    backend->expected_skill = NULL;
+    sync_free_drift_summary(&drift);
+    check_drift(backend, a, 1, 0, 0, 0, 0);
+    backend->baseline = NULL;
+    free(baseline.items);
+    db_close(db);
+}
+
 /* Supply an isolated remote directory and two empty, disposable local roots. */
 int main(int argc, char **argv) {
     if (argc < 5 || argc > 7) {
@@ -105,13 +156,23 @@ int main(int argc, char **argv) {
         assert(binary);
         for (unsigned i = 0; i < 170000; i++) assert(fputc(i % 251, binary) != EOF);
         assert(fclose(binary) == 0);
+        assert(sync_set_mtime(binary_path, old) == 0);
     }
+    assert(sync_set_mtime(empty, old) == 0);
+    assert(sync_set_mtime(refs, old) == 0);
 
     check_drift(backend, a, 0, 0, 1, 0, 0);
+    sync_drift_summary_t unchanged = {0};
+    assert(backend->ops->transfer_batch(backend, a, true, NULL, NULL, &unchanged) == SYNC_BATCH_UNCHANGED);
+    assert(unchanged.count == 1 && unchanged.local_only_count == 1 &&
+           unchanged.items[0].status == SYNC_DRIFT_LOCAL_ONLY &&
+           strcmp(unchanged.items[0].skill_name, name) == 0);
+    sync_free_drift_summary(&unchanged);
     assert(backend->ops->push_skill(backend, name, a, progress, NULL) == 0);
     check_drift(backend, b, 0, 1, 0, 0, 0);
     assert(backend->ops->pull_all(backend, b, progress, NULL) == 0);
     check_drift(backend, b, 1, 0, 0, 0, 0);
+    assert(backend->ops->push_all(backend, b, NULL, NULL) == 0);
     path_join(skill_path, b, name);
     path_join(refs, skill_path, "references");
     path_join(extra, refs, "a + b% & # 中文.txt");
@@ -134,7 +195,8 @@ int main(int argc, char **argv) {
     assert(stat(extra, &st) != 0);
     assert(backend->ops->pull_skill(backend, "missing-skill", a, NULL, NULL) != 0);
     assert(backend->ops->push_skill(backend, "missing-skill", a, NULL, NULL) != 0);
+    check_conflict_guards(backend, a, b, name, old);
     sync_backend_destroy(backend);
-    puts("PASS: read/write, drift, single/batch transfer, nested names, deletion, convergence");
+    puts("PASS: read/write, drift, single/batch transfer, deletion, conflict guards, convergence");
     return 0;
 }

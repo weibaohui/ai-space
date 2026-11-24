@@ -1,3 +1,6 @@
+#include "hub_files.h"
+#include "app_hub_tasks.h"
+#include "app_diff.h"
 #include "view_hub_matrix.h"
 #include "view_common.h"
 #include "view_hub_diff.h"
@@ -11,13 +14,27 @@ static bool matches_skill_filter(const app_state_t *s, const hub_skill_entry_t *
         return false;
     }
 
-    bool changed = skill->modified_count > 0 || skill->outdated_count > 0;
+    bool unreadable = skill->hub_unreadable || skill->unreadable_count > 0;
+    bool changed = skill->modified_count > 0 || skill->outdated_count > 0 || unreadable;
     switch (s->hub_filter_mode) {
     case SKILL_FILTER_CHANGED: return skill->in_hub && changed;
     case SKILL_FILTER_UNCOLLECTED: return !skill->in_hub;
     case SKILL_FILTER_MATCHED: return skill->in_hub && !changed && skill->installed_count > 0;
     default: return true;
     }
+}
+
+static bool render_scan_failure(cui_ctx *ui, app_state_t *s) {
+    if (!s->hub_scan.failed || s->hub_scan.is_scanning || s->hub_matrix_loaded) return false;
+    cui_card(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 24) {
+        cui_column(ui, .width = CUI_FILL, .height = CUI_FILL, .gap = 12,
+                   .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
+            cui_text(ui, "无法完成技能扫描，请检查目录是否可读。");
+            if (cui_button(ui, "重新扫描", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_REFRESH_CW))
+                start_hub_scan_thread(s);
+        }
+    }
+    return true;
 }
 
 /* ========================================================================== */
@@ -27,9 +44,6 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
     if (s->toast_frames > 0) {
         s->toast_frames--;
     }
-
-    /* 1. Global Navigation Bar */
-    render_global_navbar(ui, s);
 
     /* 2. Check Subview: Diff View or Master Explorer View */
     if (s->hub_subview == HUB_SUBVIEW_DIFF) {
@@ -42,6 +56,7 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
     }
 
     /* 3. Loading State with Radar Spinner & Progress */
+    if (render_scan_failure(ui, s)) return;
     if (s->hub_scan.is_scanning || !s->hub_matrix_loaded) {
         if (!s->hub_scan.is_scanning && !s->hub_matrix_loaded) {
             start_hub_scan_thread(s);
@@ -214,6 +229,8 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                     cui_table_cell(ui);
                     if (!e->in_hub) {
                         cui_badge(ui, "未收录", .tone = CUI_TONE_VIOLET, .size = CUI_SIZE_SM);
+                    } else if (e->hub_unreadable || e->unreadable_count > 0) {
+                        cui_badge(ui, "无法比较", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
                     } else if (e->modified_count > 0) {
                         char mod_buf[32];
                         snprintf(mod_buf, sizeof(mod_buf), "%d处改动", e->modified_count);
@@ -239,6 +256,10 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                                     char t_lbl[80];
                                     snprintf(t_lbl, sizeof(t_lbl), "%s*", tc->tool_name);
                                     cui_badge(ui, t_lbl, .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
+                                } else if (tc->status == HUB_STATUS_UNREADABLE) {
+                                    char label[96];
+                                    snprintf(label, sizeof(label), "%s · 无法比较", tc->tool_name);
+                                    cui_badge(ui, label, .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
                                 } else if (tc->status == HUB_STATUS_OUTDATED) {
                                     char t_lbl[80];
                                     snprintf(t_lbl, sizeof(t_lbl), "%s↓", tc->tool_name);
@@ -308,9 +329,6 @@ void render_hub_matrix_page(cui_ctx *ui, app_state_t *s) {
         s->toast_frames--;
     }
 
-    /* 1. Global Navigation Bar */
-    render_global_navbar(ui, s);
-
     /* 2. Check Subview: Diff View or Master Explorer View */
     if (s->hub_subview == HUB_SUBVIEW_DIFF) {
         render_hub_diff_subview(ui, s);
@@ -322,6 +340,7 @@ void render_hub_matrix_page(cui_ctx *ui, app_state_t *s) {
     }
 
     /* 3. Loading State with Radar Spinner & Progress */
+    if (render_scan_failure(ui, s)) return;
     if (s->hub_scan.is_scanning || !s->hub_matrix_loaded) {
         if (!s->hub_scan.is_scanning && !s->hub_matrix_loaded) {
             start_hub_scan_thread(s);

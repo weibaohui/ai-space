@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern const sync_driver_ops_t g_nfs_driver_ops;
+extern const sync_driver_ops_t g_share_driver_ops;
 extern const sync_driver_ops_t g_webdav_driver_ops;
 extern const sync_driver_ops_t g_git_driver_ops;
 
@@ -104,7 +104,7 @@ int sync_backend_create(const sync_config_t *cfg, sync_backend_t **out_backend) 
             backend->ops = &g_webdav_driver_ops;
             break;
         case SYNC_BACKEND_NFS:
-            backend->ops = &g_nfs_driver_ops;
+            backend->ops = &g_share_driver_ops;
             break;
         case SYNC_BACKEND_GIT:
             backend->ops = &g_git_driver_ops;

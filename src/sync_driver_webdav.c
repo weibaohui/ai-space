@@ -1,8 +1,8 @@
+#include "sync_webdav_listing.h"
+#include "skill_metadata.h"
 #include "sync_directory.h"
-#include "hub_manager.h"
 #include "portability.h"
 
-#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <sqlite3.h>
@@ -14,25 +14,12 @@
 extern char **environ;
 #endif
 
-#define DAV_URL_CAP 4096
 #define DAV_LIST_LIMIT (16L * 1024 * 1024)
 
 typedef struct {
     char base[DAV_URL_CAP];
     char root[DAV_URL_CAP];
 } dav_state_t;
-
-typedef struct {
-    char name[256];
-    bool collection;
-    time_t modified;
-} dav_entry_t;
-
-typedef struct {
-    dav_entry_t *entries;
-    size_t count;
-    time_t modified;
-} dav_listing_t;
 
 static bool dav_child_url(char *out, size_t cap, const char *parent, const char *name) {
     static const char hex[] = "0123456789ABCDEF";
@@ -101,8 +88,8 @@ static int run_curl(const char *path) {
 }
 
 /* curl settings, including credentials, never enter the shell or process arguments. */
-static int dav_request(const sync_backend_t *self, const char *method, const char *url,
-                       const char *header, const char *input, const char *output) {
+static int dav_request_headers(const sync_backend_t *self, const char *method, const char *url,
+                               const char *header, const char *extra, const char *input, const char *output) {
     char stage[SYNC_PATH_CAP], config[SYNC_PATH_CAP], headers[SYNC_PATH_CAP];
     if (dav_stage(stage, sizeof(stage)) != 0) return 0;
     int status = 0;
@@ -118,6 +105,7 @@ static int dav_request(const sync_backend_t *self, const char *method, const cha
     curl_option(file, "output", output ? output : AI_DEVNULL);
     curl_option(file, "dump-header", headers);
     if (header) curl_option(file, "header", header);
+    if (extra) curl_option(file, "header", extra);
     curl_option(file, "header", "Expect:");
     if (strcmp(method, "PROPFIND") == 0) {
         curl_option(file, "header", "Content-Type: application/xml");
@@ -150,6 +138,11 @@ done:
     return status;
 }
 
+static int dav_request(const sync_backend_t *self, const char *method, const char *url,
+                       const char *header, const char *input, const char *output) {
+    return dav_request_headers(self, method, url, header, NULL, input, output);
+}
+
 static bool dav_success(int code) {
     return code >= 200 && code < 300 && code != 207;
 }
@@ -163,162 +156,6 @@ static void dav_error(char *error, size_t cap, const char *operation, int code) 
 }
 
 /* Locate DAV XML elements by their local names, independent of the namespace prefix. */
-static const char *xml_tag(const char *p, const char *end, const char *name, bool closing,
-                           const char **after) {
-    size_t wanted = strlen(name);
-    while (p < end) {
-        p = memchr(p, '<', (size_t)(end - p));
-        if (!p || p + 1 >= end) break;
-        const char *tag = p++;
-        if (end - p >= 3 && memcmp(p, "!--", 3) == 0) {
-            const char *tail = strstr(p + 3, "-->");
-            if (!tail || tail >= end) break;
-            p = tail + 3;
-            continue;
-        }
-        bool close = *p == '/';
-        if (close) p++;
-        const char *local = p;
-        while (p < end && !isspace((unsigned char)*p) && *p != '>' && *p != '/' && *p != '<') {
-            if (*p == ':') local = p + 1;
-            p++;
-        }
-        if (close == closing && (size_t)(p - local) == wanted && memcmp(local, name, wanted) == 0) {
-            const char *finish = memchr(p, '>', (size_t)(end - p));
-            if (!finish) break;
-            if (after) *after = finish + 1;
-            return tag;
-        }
-    }
-    return NULL;
-}
-
-static int hex_digit(unsigned char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    return -1;
-}
-
-static bool decode_path(const char *input, const char *end, char *out, size_t cap) {
-    size_t n = 0;
-    while (input < end) {
-        unsigned char c = *input++;
-        if (c == '%') {
-            if (end - input < 2) return false;
-            int hi = hex_digit(input[0]), lo = hex_digit(input[1]);
-            if (hi < 0 || lo < 0) return false;
-            c = (unsigned char)(hi * 16 + lo);
-            input += 2;
-        } else if (c == '&') {
-            static const struct { const char *ref; char value; } entities[] = {
-                {"amp;", '&'}, {"lt;", '<'}, {"gt;", '>'}, {"quot;", '"'}, {"apos;", '\''},
-            };
-            bool found = false;
-            for (size_t i = 0; i < sizeof(entities) / sizeof(entities[0]); i++) {
-                size_t len = strlen(entities[i].ref);
-                if ((size_t)(end - input) >= len && memcmp(input, entities[i].ref, len) == 0) {
-                    c = (unsigned char)entities[i].value;
-                    input += len;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) return false;
-        }
-        if (c < 32 || c == 127 || n + 1 >= cap) return false;
-        out[n++] = (char)c;
-    }
-    while (n > 1 && out[n - 1] == '/') n--;
-    out[n] = '\0';
-    return true;
-}
-
-static const char *url_path(const char *url) {
-    const char *scheme = strstr(url, "://");
-    if (!scheme) return url;
-    const char *path = strchr(scheme + 3, '/');
-    return path ? path : "/";
-}
-
-static time_t dav_modified(const char *p, const char *end) {
-    const char *value;
-    if (!xml_tag(p, end, "getlastmodified", false, &value)) return 0;
-    int day, year, hour, min, sec;
-    char month[4];
-    if (sscanf(value, "%*3s, %d %3s %d %d:%d:%d", &day, month, &year, &hour, &min, &sec) != 6 ||
-        year < 1970 || year > 9999 || day < 1 || day > 31 ||
-        hour < 0 || hour > 23 || min < 0 || min > 59 || sec < 0 || sec > 60) return 0;
-    static const char months[][4] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-    static const int starts[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
-    int m = 0;
-    while (m < 12 && strcmp(month, months[m]) != 0) m++;
-    if (m == 12) return 0;
-    int previous = year - 1;
-    int days = (year - 1970) * 365 + previous / 4 - previous / 100 + previous / 400 - 477;
-    if (m >= 2 && year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) days++;
-    return (time_t)((int64_t)(days + starts[m] + day - 1) * 86400 + hour * 3600 + min * 60 + sec);
-}
-
-static bool parse_listing(const char *xml, size_t size, const char *url, dav_listing_t *listing) {
-    char parent[DAV_URL_CAP];
-    const char *path = url_path(url);
-    if (!decode_path(path, path + strlen(path), parent, sizeof(parent))) return false;
-    size_t parent_len = strlen(parent), capacity = 0;
-    const char *p = xml, *end = xml + size;
-    bool has_root = false;
-    while (xml_tag(p, end, "response", false, &p)) {
-        const char *next;
-        const char *response_end = xml_tag(p, end, "response", true, &next);
-        const char *value;
-        if (!response_end || !xml_tag(p, response_end, "href", false, &value)) return false;
-        const char *href_end = xml_tag(value, response_end, "href", true, NULL);
-        if (!href_end || (size_t)(href_end - value) >= DAV_URL_CAP) return false;
-        char raw[DAV_URL_CAP], decoded[DAV_URL_CAP];
-        size_t len = (size_t)(href_end - value);
-        memcpy(raw, value, len);
-        raw[len] = '\0';
-        const char *href = url_path(raw);
-        if (!decode_path(href, raw + len, decoded, sizeof(decoded))) return false;
-
-        const char *properties;
-        bool collection = false;
-        if (xml_tag(p, response_end, "resourcetype", false, &properties)) {
-            const char *property_end = xml_tag(properties, response_end, "resourcetype", true, NULL);
-            if (property_end) collection = xml_tag(properties, property_end, "collection", false, NULL) != NULL;
-        }
-        time_t modified = dav_modified(p, response_end);
-        p = next;
-
-        if (strcmp(parent, decoded) == 0) {
-            has_root = collection;
-            listing->modified = modified;
-            continue;
-        }
-        if (strncmp(parent, decoded, parent_len) != 0) continue;
-        const char *name = decoded + parent_len;
-        if (strcmp(parent, "/") != 0) {
-            if (*name++ != '/') continue;
-        }
-        if (!sync_valid_component(name) || sync_skip_name(name)) continue;
-        if (strlen(name) >= sizeof(listing->entries[0].name)) return false;
-
-        if (listing->count == capacity) {
-            capacity = capacity ? capacity * 2 : 16;
-            dav_entry_t *entries = realloc(listing->entries, capacity * sizeof(*entries));
-            if (!entries) return false;
-            listing->entries = entries;
-        }
-        dav_entry_t *entry = &listing->entries[listing->count++];
-        snprintf(entry->name, sizeof(entry->name), "%s", name);
-        entry->collection = collection;
-        entry->modified = modified;
-    }
-    return has_root;
-}
-
-/* HTTP 207 denotes a validated collection; 0 denotes a failed local/HTTP operation. */
 static int dav_list(const sync_backend_t *self, const char *url, int depth, dav_listing_t *listing) {
     *listing = (dav_listing_t){0};
     char stage[SYNC_PATH_CAP], file_path[SYNC_PATH_CAP], collection[DAV_URL_CAP];
@@ -339,7 +176,7 @@ static int dav_list(const sync_backend_t *self, const char *url, int depth, dav_
             if (xml) {
                 if (fread(xml, 1, (size_t)size, file) == (size_t)size) {
                     xml[size] = '\0';
-                    if (parse_listing(xml, (size_t)size, collection, listing)) rc = 207;
+                    if (dav_parse_listing(xml, (size_t)size, collection, listing)) rc = 207;
                 }
                 free(xml);
             }
@@ -446,12 +283,12 @@ static int dav_delete_collection(const sync_backend_t *self, const char *url) {
     return dav_request(self, "DELETE", collection, NULL, NULL, NULL);
 }
 
-static int dav_move_collection(const sync_backend_t *self, const char *source, const char *target) {
+static int dav_move_collection(const sync_backend_t *self, const char *source, const char *target, bool overwrite) {
     char collection[DAV_URL_CAP + 1];
     snprintf(collection, sizeof(collection), "%s/", source);
     char header[DAV_URL_CAP + 16];
     snprintf(header, sizeof(header), "Destination: %s/", target);
-    return dav_request(self, "MOVE", collection, header, NULL, NULL);
+    return dav_request_headers(self, "MOVE", collection, header, overwrite ? NULL : "Overwrite: F", NULL, NULL);
 }
 
 static int dav_check_available(sync_backend_t *self, char *error, size_t cap) {
@@ -493,7 +330,7 @@ static int dav_check_available(sync_backend_t *self, char *error, size_t cap) {
 
     status = dav_request(self, "MKCOL", from, NULL, NULL, NULL);
     if (dav_success(status)) status = dav_request(self, "PUT", upload, NULL, local, NULL);
-    if (dav_success(status)) status = dav_move_collection(self, from, to);
+    if (dav_success(status)) status = dav_move_collection(self, from, to, false);
     if (dav_success(status)) status = dav_request(self, "GET", download, NULL, NULL, result);
     int removed = dav_delete_collection(self, scratch);
     if (!dav_success(status) || !dav_success(removed)) {
@@ -516,7 +353,7 @@ done:
 
 static bool has_skill_file(const dav_listing_t *listing) {
     for (size_t i = 0; i < listing->count; i++) {
-        if (!listing->entries[i].collection && strcmp(listing->entries[i].name, "SKILL.md") == 0) return true;
+        if (!listing->entries[i].collection && strcmp(listing->entries[i].name, SKILL_DOCUMENT) == 0) return true;
     }
     return false;
 }
@@ -588,7 +425,7 @@ static int dav_drift(sync_backend_t *self, const char *local, sync_drift_summary
                      char *error, size_t cap) {
     sync_remote_manifest_t manifest;
     if (dav_fetch(self, &manifest, error, cap) != 0) return -1;
-    int rc = sync_compare_directory(&manifest, local, out, error, cap);
+    int rc = sync_compare_directory(&manifest, local, self->baseline, out, error, cap);
     sync_free_manifest(&manifest);
     return rc;
 }
@@ -597,7 +434,7 @@ static int dav_pull(sync_backend_t *self, const char *name, const char *local,
                     sync_progress_cb cb, void *user) {
     const dav_state_t *dav = self->priv_data;
     char url[DAV_URL_CAP], root[SYNC_PATH_CAP], stage[SYNC_PATH_CAP];
-    if (!dav->root[0] || !sync_valid_component(name) || sync_skip_name(name) ||
+    if (!dav->root[0] || !sync_valid_component(name) || skill_skip_name(name) ||
         !dav_child_url(url, sizeof(url), dav->root, name) ||
         sync_expand(local ? local : "~/.ai-space/skills", root, sizeof(root)) != 0) return -1;
     ai_mkdir_p(root);
@@ -611,12 +448,16 @@ static int dav_pull(sync_backend_t *self, const char *name, const char *local,
         int status = dav_list(self, url, 1, &listing);
         if (status == 207 && has_skill_file(&listing) &&
             dav_success(dav_download(self, url, replacement, &listing, 0))) {
-            rc = sync_replace_tree(stage, replacement, target);
+            const sync_drift_item_t *expected = self->expected_skill;
+            if (!expected || (sync_skill_matches(replacement, expected->remote_hash) &&
+                              sync_skill_matches(target, expected->local_hash)))
+                rc = sync_replace_tree(stage, replacement, target);
+            else rc = SYNC_TRANSFER_CHANGED;
         }
         free(listing.entries);
     }
     if (rc != -2) sync_remove_tree(stage);
-    if (cb) cb(rc == 0 ? 1.0f : 0.2f, rc == 0 ? "WebDAV 拉取完成" : "WebDAV 拉取失败", user);
+    if (cb) cb(rc == 0 ? 1.0f : 0.2f, rc == 0 ? "WebDAV 拉取完成" : rc == SYNC_TRANSFER_CHANGED ? "技能状态已变化，请检查后重试" : "WebDAV 拉取失败", user);
     return rc;
 }
 
@@ -632,7 +473,7 @@ static int dav_upload_contents(const sync_backend_t *self, const char *local, co
             if (errno) status = 0;
             break;
         }
-        if (sync_skip_name(entry->d_name)) continue;
+        if (skill_skip_name(entry->d_name)) continue;
         char child[SYNC_PATH_CAP], target[DAV_URL_CAP];
         struct stat st;
         if (sync_join(child, sizeof(child), local, entry->d_name) != 0 ||
@@ -652,37 +493,60 @@ static int dav_upload_contents(const sync_backend_t *self, const char *local, co
     return status;
 }
 
+static bool dav_skill_matches(const sync_backend_t *self, const char *url, const char *hash) {
+    dav_listing_t listing;
+    int status = dav_list(self, url, 1, &listing);
+    bool matches = !hash[0] && status == 404;
+    char stage[SYNC_PATH_CAP], path[SYNC_PATH_CAP];
+    if (hash[0] && status == 207 && has_skill_file(&listing) && dav_stage(stage, sizeof(stage)) == 0) {
+        matches = sync_join(path, sizeof(path), stage, "check") == 0 &&
+                  dav_success(dav_download(self, url, path, &listing, 0)) && sync_skill_matches(path, hash);
+        sync_remove_tree(stage);
+    }
+    free(listing.entries);
+    return matches;
+}
+
 static int dav_push(sync_backend_t *self, const char *name, const char *local,
                     sync_progress_cb cb, void *user) {
     const dav_state_t *dav = self->priv_data;
     char root[SYNC_PATH_CAP], source[SYNC_PATH_CAP], stage[DAV_URL_CAP], target[DAV_URL_CAP];
-    if (!dav->root[0] || !sync_valid_component(name) || sync_skip_name(name) ||
+    if (!dav->root[0] || !sync_valid_component(name) || skill_skip_name(name) ||
         sync_expand(local ? local : "~/.ai-space/skills", root, sizeof(root)) != 0 ||
-        sync_join(source, sizeof(source), root, name) != 0 || !sync_is_skill(source) ||
+        sync_join(source, sizeof(source), root, name) != 0 || !skill_is_directory(source) ||
         !dav_child_url(target, sizeof(target), dav->root, name) ||
         !dav_scratch_url(stage, sizeof(stage), dav->root)) return -1;
     if (cb) cb(0.2f, "正在向 WebDAV 上传技能", user);
+    const sync_drift_item_t *expected = self->expected_skill;
     int status = dav_request(self, "MKCOL", stage, NULL, NULL, NULL);
     if (dav_success(status)) {
         status = dav_upload_contents(self, source, stage, 0);
-        if (dav_success(status)) status = dav_move_collection(self, stage, target);
+        if (dav_success(status) && expected &&
+            (!dav_skill_matches(self, stage, expected->local_hash) ||
+             !dav_skill_matches(self, target, expected->remote_hash))) status = SYNC_TRANSFER_CHANGED;
+        if (dav_success(status)) status = dav_move_collection(self, stage, target,
+                                                             !expected || expected->remote_hash[0]);
         if (!dav_success(status)) dav_delete_collection(self, stage);
     }
     bool ok = dav_success(status);
     if (cb) {
         char msg[160] = "WebDAV 推送完成";
-        if (!ok) dav_error(msg, sizeof(msg), "WebDAV 推送", status);
+        if (status == SYNC_TRANSFER_CHANGED || status == 412)
+            snprintf(msg, sizeof(msg), "技能状态已变化，请检查后重试");
+        else if (!ok) dav_error(msg, sizeof(msg), "WebDAV 推送", status);
         cb(ok ? 1.0f : 0.2f, msg, user);
     }
-    return ok ? 0 : -1;
+    return ok ? 0 : status == SYNC_TRANSFER_CHANGED || status == 412 ? SYNC_TRANSFER_CHANGED : -1;
 }
 
 static int dav_pull_all(sync_backend_t *self, const char *local, sync_progress_cb cb, void *user) {
-    return sync_transfer_batch(self, local, true, cb, user);
+    int rc = sync_transfer_batch(self, local, true, cb, user, NULL);
+    return rc == SYNC_BATCH_UNCHANGED ? 0 : rc;
 }
 
 static int dav_push_all(sync_backend_t *self, const char *local, sync_progress_cb cb, void *user) {
-    return sync_transfer_batch(self, local, false, cb, user);
+    int rc = sync_transfer_batch(self, local, false, cb, user, NULL);
+    return rc == SYNC_BATCH_UNCHANGED ? 0 : rc;
 }
 
 const sync_driver_ops_t g_webdav_driver_ops = {
@@ -699,4 +563,5 @@ const sync_driver_ops_t g_webdav_driver_ops = {
     .push_skill = dav_push,
     .pull_all = dav_pull_all,
     .push_all = dav_push_all,
+    .transfer_batch = sync_transfer_batch,
 };

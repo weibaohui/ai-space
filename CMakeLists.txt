@@ -33,12 +33,33 @@ endif()
 
 set(AI_SPACE_SRCS
     src/main.c
+    src/storage_manager.c
+    src/app_storage.c
+    src/skill_metadata.c
+    src/skill_file_tree.c
+    src/file_preview.c
+    src/sync_webdav_listing.c
+    src/sync_git_repository.c
+    src/sync_git_process.c
+    src/app_task.c
+    src/app_settings.c
+    src/app_sync.c
+    src/sync_baseline.c
+    src/app_hub_tasks.c
+    src/app_diff.c
+    src/skill_diff.c
+    src/view_about.c
+    src/view_progress.c
+    src/view_distribute.c
+    src/view_uninstall.c
+    src/view_sync_settings.c
     src/view_dashboard.c
     src/view_common.c
     src/view_tools.c
     src/view_tool_skills.c
     src/view_hub_matrix.c
     src/view_hub_diff.c
+    src/view_hub_diff_preview.c
     src/view_master_hub.c
     src/view_skill_tree.c
     src/view_settings.c
@@ -47,13 +68,18 @@ set(AI_SPACE_SRCS
     src/view_dependencies.c
     src/sync_manager.c
     src/sync_directory.c
-    src/sync_driver_nfs.c
+    src/sync_driver_share.c
     src/sync_network_share.c
     src/sync_driver_webdav.c
     src/sync_driver_git.c
     src/db.c
     src/scanner.c
     src/skill_scanner.c
+    src/file_tree.c
+    src/hub_files.c
+    src/hub_paths.c
+    src/hub_bulk.c
+    src/skill_fingerprint.c
     src/hub_manager.c)
 
 add_executable(ai_space ${AI_SPACE_SRCS})

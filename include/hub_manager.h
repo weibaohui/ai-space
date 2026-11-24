@@ -11,6 +11,7 @@
 #define HUB_STATUS_OUTDATED       2   /* 🔵 该工具副本落后于主仓（主仓更新） */
 #define HUB_STATUS_NO_HUB         3   /* 🟣 仅存在于该工具，主仓尚未收录 */
 #define HUB_STATUS_NOT_INSTALLED  4   /* ⚪ 该工具未安装此技能 */
+#define HUB_STATUS_UNREADABLE     5   /* 读取失败，无法比较 */
 
 /* Status of a skill in a specific tool */
 typedef struct {
@@ -28,6 +29,7 @@ typedef struct {
     char skill_name[128];
     char hub_path[1024];
     bool in_hub;
+    bool hub_unreadable;
     char hub_hash[32];
     time_t hub_mtime;
     char description[256];
@@ -35,6 +37,7 @@ typedef struct {
     int installed_count;        /* count of tools that have this skill */
     int modified_count;         /* count of tools where copy is modified */
     int outdated_count;         /* count of tools where copy is outdated */
+    int unreadable_count;       /* count of tool copies that could not be compared */
 
     tool_copy_status_t *tool_copies;
     int tool_count;
@@ -62,74 +65,11 @@ typedef struct {
 /* Progress callback for long-running operations */
 typedef void (*hub_progress_cb)(float percent, const char *status_msg, void *user_data);
 
-/* Initialize central hub directories (~/.ai-space/skills, ~/.ai-space/backups) */
-int hub_init_dirs(char *out_hub_dir, size_t hub_cap, char *out_backup_dir, size_t backup_cap);
-
-/* Custom directory configuration (can be loaded from settings) */
-void hub_set_custom_dirs(const char *hub_dir, const char *backup_dir);
-void hub_get_custom_dirs(char *out_hub_dir, size_t hub_cap, char *out_backup_dir, size_t backup_cap);
-
 /* Scan all registered tools and the Master Hub, build the full relation & status matrix */
 int hub_scan_matrix(sqlite3 *db, hub_matrix_t *out_matrix);
 int hub_scan_matrix_ex(sqlite3 *db, hub_matrix_t *out_matrix, hub_progress_cb cb, void *user_data);
 
 /* Free memory in hub_matrix_t */
 void hub_free_matrix(hub_matrix_t *matrix);
-
-/*
- * Physically copy Tool's skill -> Master Hub (~/.ai-space/skills/<name>/)
- * Promotes this tool's version to the canonical master version.
- */
-int hub_promote_to_master(const char *tool_skills_path, const char *skill_name);
-
-/*
- * Physically copy Master Hub -> Tool's skill directory (~/.<tool>/skills/<name>/)
- * Updates the tool's copy to match the master version. Automatically creates a backup first.
- */
-int hub_sync_master_to_tool(const char *tool_skills_path, const char *skill_name, const char *tool_name);
-
-/*
- * Broadcast Master Hub's version of a skill to all tools where this skill is currently installed.
- */
-int hub_broadcast_skill(const hub_matrix_t *matrix, const char *skill_name, int *out_synced_count);
-
-/*
- * Distribute Master Hub's version of a skill to all registered tools (installs if missing, updates if exists)
- */
-int hub_distribute_skill_to_all_tools(const hub_matrix_t *matrix, const char *skill_name, int *out_synced_count);
-
-/*
- * Batch distribute all Master Hub skills to all registered tools
- */
-int hub_distribute_all_to_all_tools(const hub_matrix_t *matrix, int *out_distributed_count,
-                                    hub_progress_cb cb, void *user_data);
-
-/*
- * Uninstall / remove a skill from a specific tool
- */
-int hub_uninstall_skill_from_tool(const char *tool_skills_path, const char *skill_name, const char *tool_name);
-
-/*
- * Uninstall / remove a skill from ALL registered tools
- */
-int hub_uninstall_skill_from_all_tools(const hub_matrix_t *matrix, const char *skill_name);
-
-/*
- * Adopt all unmanaged skills from all tools into the Master Hub (one-click initial sync)
- */
-int hub_adopt_all_to_master(const hub_matrix_t *matrix, int *out_adopted_count);
-int hub_adopt_all_to_master_ex(const hub_matrix_t *matrix, int *out_adopted_count, hub_progress_cb cb, void *user_data);
-
-/*
- * Delete a skill from the Master Hub (~/.ai-space/skills/<name>/).
- * Creates a safety backup in ~/.ai-space/backups/ before deletion.
- */
-int hub_delete_master_skill(const char *skill_name);
-
-/* Recursive directory copy */
-int hub_copy_dir_recursive(const char *src_dir, const char *dst_dir);
-
-/* Compute deterministic content hash for a skill directory */
-int hub_compute_skill_hash(const char *dir_path, char *out_hash_hex, size_t max_len, time_t *out_mtime);
 
 #endif /* HUB_MANAGER_H */
