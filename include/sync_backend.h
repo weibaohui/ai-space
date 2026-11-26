@@ -19,7 +19,7 @@ typedef enum {
 } sync_backend_type_t;
 
 /*
- * Drift status between Local Master Hub (~/.ai-space/skills/) and Remote Shared Backend
+ * Drift status between Local Master Hub (~/.skillboard/skills/) and Remote Shared Backend
  */
 typedef enum {
     SYNC_DRIFT_IN_SYNC = 0,       /* 🟢 两端内容完全一致 */
@@ -108,7 +108,7 @@ typedef struct {
     char git_auth_token[256];
     char git_user_name[128];
     char git_user_email[128];
-    char git_cache_dir[512];       /* Local clone/cache staging directory (optional, default ~/.ai-space/cache/git_remote) */
+    char git_cache_dir[512];       /* Local clone/cache staging directory (optional, default ~/.skillboard/cache/git_remote) */
 } sync_config_t;
 
 /* Progress callback for remote sync transfers */

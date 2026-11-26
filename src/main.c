@@ -26,7 +26,7 @@
 #include "view_dashboard.h"
 
 /* 全局发布的统一版本变量 */
-const char *const g_ai_space_version = AI_SPACE_VERSION;
+const char *const g_skillboard_version = SKILLBOARD_VERSION;
 
 /* -------------------- Main Frame Dispatcher -------------------- */
 
@@ -100,17 +100,17 @@ int main(int argc, char **argv) {
     static app_state_t s = {0};
 
     /* data/ beside the working directory when writable (dev layout); otherwise
-     * fall back to ~/.ai-space (e.g. Finder-launched .app has CWD "/") */
+     * fall back to ~/.skillboard (e.g. Finder-launched .app has CWD "/") */
     if (AI_ACCESS("data", W_OK) == 0 || AI_MKDIR("data") == 0) {
-        strncpy(s.db_path, "data/ai_space.db", sizeof(s.db_path) - 1);
+        strncpy(s.db_path, "data/skillboard.db", sizeof(s.db_path) - 1);
     } else {
-        snprintf(s.db_path, sizeof(s.db_path), "%s/.ai-space/ai_space.db", ai_home_dir());
+        snprintf(s.db_path, sizeof(s.db_path), "%s/.skillboard/skillboard.db", ai_home_dir());
     }
 
-    const char *custom_hub = getenv("AI_SPACE_HUB_DIR");
-    const char *custom_backup = getenv("AI_SPACE_BACKUP_DIR");
-    const char *custom_title = getenv("AI_SPACE_TITLE");
-    const char *custom_db = getenv("AI_SPACE_DB");
+    const char *custom_hub = getenv("SKILLBOARD_HUB_DIR");
+    const char *custom_backup = getenv("SKILLBOARD_BACKUP_DIR");
+    const char *custom_title = getenv("SKILLBOARD_TITLE");
+    const char *custom_db = getenv("SKILLBOARD_DB");
 
     if (custom_db && custom_db[0] != '\0') {
         strncpy(s.db_path, custom_db, sizeof(s.db_path) - 1);
@@ -260,8 +260,8 @@ int main(int argc, char **argv) {
     }
 
     cui_app *app = cui_app_create(&(cui_app_desc){
-        .title = custom_title ? custom_title : "AI-Space 本地工具与技能管理器",
-        .app_id = "com.weibaohui.ai-space",
+        .title = custom_title ? custom_title : "SkillBoard 本地工具与技能管理器",
+        .app_id = "com.weibaohui.skillboard",
         .width = 1260,
         .height = 780,
         .min_width = 960,
@@ -279,7 +279,7 @@ int main(int argc, char **argv) {
     }
 
     /* Resolve the CJK fallback font: working directory first (dev layout), then
-     * beside the executable, then .app-bundle Resources/, then ~/.ai-space */
+     * beside the executable, then .app-bundle Resources/, then ~/.skillboard */
     char font_file[1024] = "";
     if (AI_ACCESS("fonts/NotoSansSC-Regular.otf", R_OK) == 0) {
         strncpy(font_file, "fonts/NotoSansSC-Regular.otf", sizeof(font_file) - 1);
@@ -294,7 +294,7 @@ int main(int argc, char **argv) {
         }
         if (AI_ACCESS(font_file, R_OK) != 0) {
             snprintf(font_file, sizeof(font_file),
-                     "%s/.ai-space/fonts/NotoSansSC-Regular.otf", ai_home_dir());
+                     "%s/.skillboard/fonts/NotoSansSC-Regular.otf", ai_home_dir());
         }
     }
 

@@ -85,7 +85,7 @@ static int shared_transfer(sync_backend_t *self, const char *name, const char *l
     if (!priv->path[0] || !sync_valid_component(name) || skill_skip_name(name)) return -1;
 
     char local_root[SYNC_PATH_CAP];
-    if (sync_expand(local ? local : "~/.ai-space/skills", local_root, sizeof(local_root)) != 0) return -1;
+    if (sync_expand(local ? local : "~/.skillboard/skills", local_root, sizeof(local_root)) != 0) return -1;
     if (cb) cb(0.2f, pull ? "正在读取共享目录" : "正在写入共享目录", user);
     int rc = sync_copy_local_skill(local_root, priv->path, name, self->expected_skill, pull);
     if (cb) cb(rc == 0 ? 1.0f : 0.2f, rc == 0 ? "共享目录同步完成" : rc == SYNC_TRANSFER_CHANGED ? "技能状态已变化，请检查后重试" : "共享目录传输失败", user);

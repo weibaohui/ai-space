@@ -143,7 +143,7 @@ int sync_compare_directory(const sync_remote_manifest_t *remote, const char *loc
                            sync_drift_summary_t *out, char *error, size_t cap) {
     *out = (sync_drift_summary_t){0};
     char path[SYNC_PATH_CAP];
-    if (sync_expand(local ? local : "~/.ai-space/skills", path, sizeof(path)) != 0) return -1;
+    if (sync_expand(local ? local : "~/.skillboard/skills", path, sizeof(path)) != 0) return -1;
     sync_remote_manifest_t local_manifest;
     if (sync_scan_directory(path, true, &local_manifest, error, cap) != 0) return -1;
 

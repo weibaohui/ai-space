@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=AI-Space
+Name=SkillBoard
 Comment=本地优先的多智能体技能管理与多主机同步工作台
-Exec=ai_space
-Icon=com.weibaohui.ai-space
+Exec=skillboard
+Icon=com.weibaohui.skillboard
 Categories=Development;Utility;
 Terminal=false

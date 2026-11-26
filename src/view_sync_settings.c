@@ -152,11 +152,11 @@ static void render_git_form(cui_ctx *ui, app_state_t *s, bool is_active) {
 
     static bool git_author_open = false;
     cui_accordion(ui, "提交者信息（选填）", &git_author_open) {
-        cui_text(ui, "填写后用于 AI-Space 推送时生成的 Git 提交记录。",
+        cui_text(ui, "填写后用于 SkillBoard 推送时生成的 Git 提交记录。",
                  .width = CUI_FILL, .size = 12, .color = CUI_COLOR_TEXT_SECONDARY);
         cui_row(ui, .width = CUI_FILL, .gap = 12) {
             cui_input(ui, "git_user_input", cfg->git_user_name, sizeof(cfg->git_user_name),
-                      .label = "提交者姓名", .placeholder = "AI-Space User", .width = CUI_GROW(1));
+                      .label = "提交者姓名", .placeholder = "SkillBoard User", .width = CUI_GROW(1));
             cui_input(ui, "git_email_input", cfg->git_user_email, sizeof(cfg->git_user_email),
                       .label = "提交者邮箱", .placeholder = "user@example.com", .width = CUI_GROW(1));
         }

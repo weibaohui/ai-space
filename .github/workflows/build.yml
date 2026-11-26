@@ -1,6 +1,6 @@
 name: build
 
-# Cross-platform CI for ai_space: builds the GUI executable for
+# Cross-platform CI for skillboard: builds the GUI executable for
 # Linux / macOS / Windows, x64 & arm64, uploads archives as workflow
 # artifacts on every push, and attaches them to a GitHub Release on v* tags.
 # Reference: weibaohui/k8m build-release.yml + CUI's own CI matrix.
@@ -149,7 +149,7 @@ jobs:
       - name: Assert glibc baseline (Linux)
         if: matrix.zig_target != ''
         run: |
-          for binary in build/ai_space build/libnfs.so build/libsmb2.so; do
+          for binary in build/skillboard build/libnfs.so build/libsmb2.so; do
             MAX=$(objdump -T "$binary" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
             echo "$binary highest glibc symbol version: $MAX"
             if [ "$(printf 'GLIBC_2.17\n%s\n' "$MAX" | sort -V | tail -1)" != "GLIBC_2.17" ]; then
@@ -162,24 +162,24 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           xvfb-run -a -s "-screen 0 1400x1000x24" \
-            env CUI_SCREENSHOT=smoke.png CUI_SCREENSHOT_FRAMES=30 ./build/ai_space
+            env CUI_SCREENSHOT=smoke.png CUI_SCREENSHOT_FRAMES=30 ./build/skillboard
           test -s smoke.png
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          NAME="ai_space-${PKG_REF}-${{ matrix.name }}"
-          mkdir -p pack/ai_space
-          cmake --install build --component ai_space_runtime --prefix "$PWD/pack/ai_space"
-          strip pack/ai_space/ai_space || true
-          cp -r fonts pack/ai_space/fonts
-          cp README.md pack/ai_space/README.md
-          cmake --install build --component ai_space_licenses --prefix "$PWD/pack/ai_space"
+          NAME="skillboard-${PKG_REF}-${{ matrix.name }}"
+          mkdir -p pack/skillboard
+          cmake --install build --component skillboard_runtime --prefix "$PWD/pack/skillboard"
+          strip pack/skillboard/skillboard || true
+          cp -r fonts pack/skillboard/fonts
+          cp README.md pack/skillboard/README.md
+          cmake --install build --component skillboard_licenses --prefix "$PWD/pack/skillboard"
           # desktop integration: icon + .desktop file, see README for install paths
-          cp assets/icon_256.png pack/ai_space/com.weibaohui.ai-space.png
-          cp assets/com.weibaohui.ai-space.desktop pack/ai_space/
-          tar czf "pack/${NAME}.tar.gz" -C pack ai_space
+          cp assets/icon_256.png pack/skillboard/com.weibaohui.skillboard.png
+          cp assets/com.weibaohui.skillboard.desktop pack/skillboard/
+          tar czf "pack/${NAME}.tar.gz" -C pack skillboard
 
           # ---- AppImage: self-contained bundle for any distro -------------------
           # linuxdeploy scans the binary's ELF deps and bundles the app-level
@@ -191,20 +191,20 @@ jobs:
             "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${ARCH}.AppImage"
           chmod +x linuxdeploy.AppImage
 
-          APPDIR=AI-Space.AppDir
+          APPDIR=SkillBoard.AppDir
           mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
-          cmake --install build --component ai_space_runtime --prefix "$PWD/$APPDIR/usr/bin"
-          cmake --install build --component ai_space_licenses --prefix "$PWD/$APPDIR/usr/share/doc/ai_space"
-          strip "$APPDIR/usr/bin/ai_space" || true
+          cmake --install build --component skillboard_runtime --prefix "$PWD/$APPDIR/usr/bin"
+          cmake --install build --component skillboard_licenses --prefix "$PWD/$APPDIR/usr/share/doc/skillboard"
+          strip "$APPDIR/usr/bin/skillboard" || true
           cp -r fonts "$APPDIR/usr/bin/fonts"   # CJK font, resolved beside the exe
           # icon placed manually to match the desktop Icon= entry exactly
           cp assets/icon_256.png \
-            "$APPDIR/usr/share/icons/hicolor/256x256/apps/com.weibaohui.ai-space.png"
+            "$APPDIR/usr/share/icons/hicolor/256x256/apps/com.weibaohui.skillboard.png"
           ./linuxdeploy.AppImage --appdir "$APPDIR" \
-            -e "$APPDIR/usr/bin/ai_space" \
-            -d assets/com.weibaohui.ai-space.desktop \
+            -e "$APPDIR/usr/bin/skillboard" \
+            -d assets/com.weibaohui.skillboard.desktop \
             --output appimage
-          mv AI-Space-*.AppImage "pack/${NAME}.AppImage"
+          mv SkillBoard-*.AppImage "pack/${NAME}.AppImage"
 
           # smoke test: the AppImage itself must run under Xvfb and render
           env CUI_SCREENSHOT=appimage_smoke.png CUI_SCREENSHOT_FRAMES=30 \
@@ -216,13 +216,13 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          VER=$(sed -n 's/^#define AI_SPACE_VERSION "\(.*\)".*/\1/p' include/version.h)
-          NAME="ai_space-${PKG_REF}-${{ matrix.name }}"
+          VER=$(sed -n 's/^#define SKILLBOARD_VERSION "\(.*\)".*/\1/p' include/version.h)
+          NAME="skillboard-${PKG_REF}-${{ matrix.name }}"
           STAGE="pack/${NAME}"
-          APP="$STAGE/AI-Space.app"
+          APP="$STAGE/SkillBoard.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-          cmake --install build --component ai_space_runtime --prefix "$PWD/$APP/Contents/MacOS"
-          strip "$APP/Contents/MacOS/ai_space" || true
+          cmake --install build --component skillboard_runtime --prefix "$PWD/$APP/Contents/MacOS"
+          strip "$APP/Contents/MacOS/skillboard" || true
           cp assets/icon.icns "$APP/Contents/Resources/AppIcon.icns"
           # CJK font travels inside the bundle as a resource (MacOS/ must hold code
           # only, or codesign rejects the bundle); resolved via ../Resources fallback
@@ -234,7 +234,7 @@ jobs:
           find "$APP/Contents/MacOS" -name '*.dylib' -exec codesign --force --sign - {} +
           codesign --force --sign - "$APP"
           cp README.md "$STAGE/README.md"
-          cmake --install build --component ai_space_licenses --prefix "$PWD/$STAGE"
+          cmake --install build --component skillboard_licenses --prefix "$PWD/$STAGE"
           ditto -c -k --sequesterRsrc "$STAGE" "pack/${NAME}.zip"
           ls -l pack
 
@@ -242,21 +242,21 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          NAME="ai_space-${PKG_REF}-${{ matrix.name }}"
-          mkdir -p pack/ai_space
-          cmake --install build --component ai_space_runtime --prefix "$PWD/pack/ai_space"
-          cp -r fonts pack/ai_space/fonts
-          cp README.md pack/ai_space/README.md
-          cmake --install build --component ai_space_licenses --prefix "$PWD/pack/ai_space"
+          NAME="skillboard-${PKG_REF}-${{ matrix.name }}"
+          mkdir -p pack/skillboard
+          cmake --install build --component skillboard_runtime --prefix "$PWD/pack/skillboard"
+          cp -r fonts pack/skillboard/fonts
+          cp README.md pack/skillboard/README.md
+          cmake --install build --component skillboard_licenses --prefix "$PWD/pack/skillboard"
           cd pack
-          powershell -NoProfile -Command "Compress-Archive -Path ai_space -DestinationPath '${NAME}.zip' -Force"
+          powershell -NoProfile -Command "Compress-Archive -Path skillboard -DestinationPath '${NAME}.zip' -Force"
           ls -l
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ai_space-${{ matrix.name }}
-          path: pack/ai_space-*
+          name: skillboard-${{ matrix.name }}
+          path: pack/skillboard-*
           if-no-files-found: error
 
       - name: Upload to GitHub Release (tags only)
@@ -264,7 +264,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: pack/ai_space-${{ github.ref_name }}-*
+          file: pack/skillboard-${{ github.ref_name }}-*
           tag: ${{ github.ref }}
           release_name: Release ${{ github.ref_name }}
           overwrite: true

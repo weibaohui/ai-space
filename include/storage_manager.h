@@ -37,9 +37,9 @@ typedef struct {
 } storage_stats_t;
 
 
-#define STORAGE_DEFAULT_BACKUP "~/.ai-space/backups"
-#define STORAGE_DEFAULT_HUB "~/.ai-space/skills"
-#define STORAGE_DEFAULT_CACHE "~/.ai-space/cache"
+#define STORAGE_DEFAULT_BACKUP "~/.skillboard/backups"
+#define STORAGE_DEFAULT_HUB "~/.skillboard/skills"
+#define STORAGE_DEFAULT_CACHE "~/.skillboard/cache"
 
 typedef struct {
     char expanded[1024];

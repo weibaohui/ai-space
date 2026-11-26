@@ -56,7 +56,7 @@ int hub_init_dirs(char *out_hub_dir, size_t hub_cap, char *out_backup_dir, size_
     if (!home) return -1;
 
     char base[512];
-    snprintf(base, sizeof(base), "%s/.ai-space", home);
+    snprintf(base, sizeof(base), "%s/.skillboard", home);
     AI_MKDIR(base);
 
     char hub[512];
@@ -64,7 +64,7 @@ int hub_init_dirs(char *out_hub_dir, size_t hub_cap, char *out_backup_dir, size_
         strncpy(hub, g_custom_hub_dir, sizeof(hub) - 1);
         hub[sizeof(hub) - 1] = '\0';
     } else {
-        snprintf(hub, sizeof(hub), "%s/.ai-space/skills", home);
+        snprintf(hub, sizeof(hub), "%s/.skillboard/skills", home);
     }
     AI_MKDIR(hub);
 
@@ -73,7 +73,7 @@ int hub_init_dirs(char *out_hub_dir, size_t hub_cap, char *out_backup_dir, size_
         strncpy(backup, g_custom_backup_dir, sizeof(backup) - 1);
         backup[sizeof(backup) - 1] = '\0';
     } else {
-        snprintf(backup, sizeof(backup), "%s/.ai-space/backups", home);
+        snprintf(backup, sizeof(backup), "%s/.skillboard/backups", home);
     }
     AI_MKDIR(backup);
 

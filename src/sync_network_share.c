@@ -250,7 +250,7 @@ static int share_mtime(share_t *share, const char *path, time_t mtime, bool dir)
 static int share_stage(share_t *share, char *stage) {
     for (int attempt = 0; attempt < 128; attempt++) {
         char name[96];
-        snprintf(name, sizeof(name), ".ai-space-stage-%lld-%ld-%d",
+        snprintf(name, sizeof(name), ".skillboard-stage-%lld-%ld-%d",
                  (long long)time(NULL), (long)getpid(), attempt);
         if (share_path(stage, share->root, name) != 0) return -1;
         int rc = share_mkdir(share, stage, true);
@@ -540,7 +540,7 @@ int sync_network_transfer(const sync_config_t *cfg, const char *name, const char
                           bool pull, const sync_drift_item_t *expected, sync_progress_cb cb, void *user) {
     if (!sync_valid_component(name) || skill_skip_name(name)) return -1;
     char root[SYNC_PATH_CAP], path[SYNC_PATH_CAP], remote[SYNC_PATH_CAP];
-    if (sync_expand(local ? local : "~/.ai-space/skills", root, sizeof(root)) != 0 ||
+    if (sync_expand(local ? local : "~/.skillboard/skills", root, sizeof(root)) != 0 ||
         sync_join(path, sizeof(path), root, name) != 0) return -1;
 
     share_t share = {0};

@@ -21,7 +21,7 @@ void render_app_top_bar(cui_ctx *ui, app_state_t *s) {
                 cui_icon(ui, CUI_ICON_BOX, 18, CUI_COLOR_ACCENT_FOREGROUND);
             }
 
-            cui_text(ui, "AI-Space", .font = CUI_FONT_DISPLAY, .size = 16);
+            cui_text(ui, "SkillBoard", .font = CUI_FONT_DISPLAY, .size = 16);
         }
 
         cui_spacer(ui);
@@ -37,7 +37,7 @@ void render_app_top_bar(cui_ctx *ui, app_state_t *s) {
             cui_separator(ui);
 
             /* 2. Version */
-            cui_text(ui, g_ai_space_version, .size = 12, .color = CUI_COLOR_TEXT_MUTED);
+            cui_text(ui, g_skillboard_version, .size = 12, .color = CUI_COLOR_TEXT_MUTED);
 
             cui_separator(ui);
 

@@ -19,21 +19,23 @@ int git_repo_configure(git_priv_t *priv, const sync_config_t *cfg) {
     strncpy(priv->repo_url, cfg->git_repo_url, sizeof(priv->repo_url) - 1);
     strncpy(priv->branch, cfg->git_branch[0] ? cfg->git_branch : "main", sizeof(priv->branch) - 1);
     strncpy(priv->auth_token, cfg->git_auth_token, sizeof(priv->auth_token) - 1);
-    strncpy(priv->user_name, cfg->git_user_name[0] ? cfg->git_user_name : "AI-Space User", sizeof(priv->user_name) - 1);
+    strncpy(priv->user_name, cfg->git_user_name[0] ? cfg->git_user_name : "SkillBoard User", sizeof(priv->user_name) - 1);
     strncpy(priv->user_email, cfg->git_user_email[0] ? cfg->git_user_email : "user@example.com", sizeof(priv->user_email) - 1);
 
     char raw_cache[512] = "";
     if (cfg->git_cache_dir[0] != '\0') {
         strncpy(raw_cache, cfg->git_cache_dir, sizeof(raw_cache) - 1);
     } else {
-        const char *env_cache = getenv("AI_SPACE_GIT_CACHE");
+        const char *env_cache = getenv("SKILLBOARD_GIT_CACHE");
         if (env_cache && env_cache[0] != '\0') {
             strncpy(raw_cache, env_cache, sizeof(raw_cache) - 1);
         } else {
             /* 自定义主仓的缓存放在主仓的同级 cache 目录。 */
             char custom_hub[512] = "";
             hub_get_custom_dirs(custom_hub, sizeof(custom_hub), NULL, 0);
-            if (custom_hub[0] != '\0' && strstr(custom_hub, ".ai-space/skills") == NULL) {
+            if (custom_hub[0] != '\0' &&
+                strstr(custom_hub, ".skillboard/skills") == NULL &&
+                strstr(custom_hub, ".ai-space/skills") == NULL) {
                 char tmp[512];
                 strncpy(tmp, custom_hub, sizeof(tmp) - 1);
                 tmp[sizeof(tmp) - 1] = '\0';
@@ -41,7 +43,7 @@ int git_repo_configure(git_priv_t *priv, const sync_config_t *cfg) {
                 if (slash) *slash = '\0';
                 snprintf(raw_cache, sizeof(raw_cache), "%s/cache/git_remote", tmp);
             } else {
-                strncpy(raw_cache, "~/.ai-space/cache/git_remote", sizeof(raw_cache) - 1);
+                strncpy(raw_cache, "~/.skillboard/cache/git_remote", sizeof(raw_cache) - 1);
             }
         }
     }
@@ -246,8 +248,8 @@ int git_repo_commit(const git_priv_t *repo, const char *skill_name, int count) {
     if (dirty != 1) return -1;
 
     char message[256];
-    if (skill_name) snprintf(message, sizeof(message), "sync(skill): update %.127s [AI-Space]", skill_name);
-    else snprintf(message, sizeof(message), "sync(all): full sync of %d skills [AI-Space]", count);
+    if (skill_name) snprintf(message, sizeof(message), "sync(skill): update %.127s [SkillBoard]", skill_name);
+    else snprintf(message, sizeof(message), "sync(all): full sync of %d skills [SkillBoard]", count);
     return git_repo_commit_message(repo, dir, message);
 }
 

@@ -82,7 +82,7 @@ void render_uninstall_all_modal(cui_ctx *ui, app_state_t *s) {
             /* 3. Safety Notice */
             cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                 cui_icon(ui, CUI_ICON_SHIELD, 14, CUI_COLOR_TEXT_MUTED);
-                cui_text(ui, "安全保障：卸载前系统已自动在 ~/.ai-space/backups/ 保存备份快照",
+                cui_text(ui, "安全保障：卸载前系统已自动在 ~/.skillboard/backups/ 保存备份快照",
                          .size = 11, .color = CUI_COLOR_TEXT_MUTED);
             }
 
@@ -156,7 +156,7 @@ void render_uninstall_tool_modal(cui_ctx *ui, app_state_t *s) {
             /* 3. Safety Notice */
             cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
                 cui_icon(ui, CUI_ICON_SHIELD, 14, CUI_COLOR_TEXT_MUTED);
-                cui_text(ui, "安全保障：卸载前系统已自动在 ~/.ai-space/backups/ 保存备份快照",
+                cui_text(ui, "安全保障：卸载前系统已自动在 ~/.skillboard/backups/ 保存备份快照",
                          .size = 11, .color = CUI_COLOR_TEXT_MUTED);
             }
 

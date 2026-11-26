@@ -24,8 +24,8 @@ static void setup_git_config(sync_config_t *cfg, const char *url, const char *br
     strncpy(cfg->git_branch, branch ? branch : "main", sizeof(cfg->git_branch) - 1);
     if (cache_dir) strncpy(cfg->git_cache_dir, cache_dir, sizeof(cfg->git_cache_dir) - 1);
     if (token) strncpy(cfg->git_auth_token, token, sizeof(cfg->git_auth_token) - 1);
-    strncpy(cfg->git_user_name, "AI-Space Sync Tester", sizeof(cfg->git_user_name) - 1);
-    strncpy(cfg->git_user_email, "tester@ai-space.local", sizeof(cfg->git_user_email) - 1);
+    strncpy(cfg->git_user_name, "SkillBoard Sync Tester", sizeof(cfg->git_user_name) - 1);
+    strncpy(cfg->git_user_email, "tester@skillboard.local", sizeof(cfg->git_user_email) - 1);
 }
 
 int main(int argc, char *argv[]) {

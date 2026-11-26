@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 # Cross-platform build used by GitHub Actions (Linux/macOS/Windows, x64 & arm64).
 # Local macOS development can keep using the Makefile; this file mirrors it.
-project(ai_space
+project(skillboard
     VERSION 1.11.0
     DESCRIPTION "Local-First Agent Skills Manager & Multi-Host Sync Hub"
     LANGUAGES C)
@@ -84,38 +84,38 @@ set(AI_SPACE_SRCS
     src/skill_fingerprint.c
     src/hub_manager.c)
 
-add_executable(ai_space ${AI_SPACE_SRCS})
+add_executable(skillboard ${AI_SPACE_SRCS})
 
 # Window/taskbar icon on Windows: CUI's win32 backend loads resource ID 1
 if(WIN32)
-    target_sources(ai_space PRIVATE assets/app.rc)
+    target_sources(skillboard PRIVATE assets/app.rc)
 endif()
 
-target_include_directories(ai_space PRIVATE include CUI/include CUI/src)
+target_include_directories(skillboard PRIVATE include CUI/include CUI/src)
 
-target_link_libraries(ai_space PRIVATE cui::cui ${AI_SPACE_SQLITE_LIB} nfs smb2)
+target_link_libraries(skillboard PRIVATE cui::cui ${AI_SPACE_SQLITE_LIB} nfs smb2)
 
 if(APPLE)
-    set_target_properties(ai_space PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "@executable_path")
+    set_target_properties(skillboard PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "@executable_path")
 elseif(UNIX)
-    set_target_properties(ai_space PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "$ORIGIN")
+    set_target_properties(skillboard PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "$ORIGIN")
 endif()
 
 # Window app niceties: no console window on Windows, gc-sections/dead_strip in release
-cui_app_target(ai_space)
+cui_app_target(skillboard)
 
 if(MSVC)
-    target_compile_options(ai_space PRIVATE /W3 /utf-8)
+    target_compile_options(skillboard PRIVATE /W3 /utf-8)
 else()
-    target_compile_options(ai_space PRIVATE -Wall -Wextra)
+    target_compile_options(skillboard PRIVATE -Wall -Wextra)
 endif()
 
-install(TARGETS ai_space nfs smb2
-    RUNTIME DESTINATION . COMPONENT ai_space_runtime
-    LIBRARY DESTINATION . COMPONENT ai_space_runtime)
-install(FILES vendor/README.md DESTINATION licenses COMPONENT ai_space_licenses)
+install(TARGETS skillboard nfs smb2
+    RUNTIME DESTINATION . COMPONENT skillboard_runtime
+    LIBRARY DESTINATION . COMPONENT skillboard_runtime)
+install(FILES vendor/README.md DESTINATION licenses COMPONENT skillboard_licenses)
 install(FILES vendor/libnfs/COPYING vendor/libnfs/LICENCE-LGPL-2.1.txt
               vendor/libnfs/LICENCE-BSD.txt
-        DESTINATION licenses/libnfs COMPONENT ai_space_licenses)
+        DESTINATION licenses/libnfs COMPONENT skillboard_licenses)
 install(FILES vendor/libsmb2/COPYING vendor/libsmb2/LICENCE-LGPL-2.1.txt
-        DESTINATION licenses/libsmb2 COMPONENT ai_space_licenses)
+        DESTINATION licenses/libsmb2 COMPONENT skillboard_licenses)

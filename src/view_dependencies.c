@@ -95,7 +95,7 @@ static void build_ai_prompt(dep_check_state_t *st) {
 
     if (total_missing > 0) {
         off += snprintf(buf + off, sizeof(buf) - off,
-                        "请帮我安装并配置 AI-Space 所缺失的本地运行环境依赖：\n\n"
+                        "请帮我安装并配置 SkillBoard 所缺失的本地运行环境依赖：\n\n"
                         "【操作系统环境】\n"
                         "%s\n\n"
                         "【检测到缺失的软件清单】\n", os_name);
@@ -118,9 +118,9 @@ static void build_ai_prompt(dep_check_state_t *st) {
                         "4. 安装完成后，分别输出工具的版本号（如 git --version、curl --version、node -v 等）以验证安装成功。");
     } else {
         off += snprintf(buf + off, sizeof(buf) - off,
-                        "【AI-Space 环境检测健康报告】\n\n"
+                        "【SkillBoard 环境检测健康报告】\n\n"
                         "当前操作系统：%s\n"
-                        "AI-Space 运行所需的所有核心依赖与推荐环境已全部就绪：\n\n", os_name);
+                        "SkillBoard 运行所需的所有核心依赖与推荐环境已全部就绪：\n\n", os_name);
 
         for (int i = 0; i < st->count; i++) {
             dep_item_t *it = &st->items[i];

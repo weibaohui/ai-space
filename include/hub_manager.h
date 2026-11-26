@@ -46,8 +46,8 @@ typedef struct {
 
 /* Aggregate matrix of all unique skills and all tools */
 typedef struct {
-    char hub_dir[512];          /* ~/.ai-space/skills */
-    char backup_dir[512];       /* ~/.ai-space/backups */
+    char hub_dir[512];          /* ~/.skillboard/skills */
+    char backup_dir[512];       /* ~/.skillboard/backups */
 
     char **tools;               /* array of tool names */
     char **tool_paths;          /* array of tool skills paths */

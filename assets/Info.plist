@@ -2,11 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>AI-Space</string>
-    <key>CFBundleDisplayName</key><string>AI-Space</string>
-    <key>CFBundleExecutable</key><string>ai_space</string>
+    <key>CFBundleName</key><string>SkillBoard</string>
+    <key>CFBundleDisplayName</key><string>SkillBoard</string>
+    <key>CFBundleExecutable</key><string>skillboard</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
-    <key>CFBundleIdentifier</key><string>com.weibaohui.ai-space</string>
+    <key>CFBundleIdentifier</key><string>com.weibaohui.skillboard</string>
     <key>CFBundleShortVersionString</key><string>__VERSION__</string>
     <key>CFBundleVersion</key><string>__VERSION__</string>
     <key>CFBundlePackageType</key><string>APPL</string>

@@ -53,7 +53,7 @@ static bool draft_stage(const git_priv_t *repo, const sync_git_draft_t *draft, c
     if (strncmp(draft->workspace, root, length) != 0 || draft->workspace[length] != '/') return false;
     const char *name = draft->workspace + length + 1;
     const char *leaf = strchr(name, '/');
-    const char *prefix = ".ai-space-stage-";
+    const char *prefix = ".skillboard-stage-";
     if (!leaf || strcmp(leaf, "/work") != 0 || strncmp(name, prefix, strlen(prefix)) != 0) return false;
     for (const char *p = name + strlen(prefix); p < leaf; p++)
         if ((*p < '0' || *p > '9') && *p != '-') return false;

@@ -257,7 +257,7 @@ static bool dav_scratch_url(char *out, size_t cap, const char *root) {
     unsigned char bytes[8];
     sqlite3_randomness((int)sizeof(bytes), bytes);
     char name[32];
-    const char *prefix = ".ai-space-";
+    const char *prefix = ".skillboard-";
     size_t offset = strlen(prefix);
     memcpy(name, prefix, offset);
     for (size_t i = 0; i < sizeof(bytes); i++) {
@@ -300,7 +300,7 @@ static int dav_check_available(sync_backend_t *self, char *error, size_t cap) {
         sync_join(result, sizeof(result), stage, "result") != 0) goto done;
     FILE *file = fopen(local, "wb");
     if (!file) goto done;
-    const char *probe = "AI-Space WebDAV";
+    const char *probe = "SkillBoard WebDAV";
     bool wrote = fputs(probe, file) >= 0;
     if (fclose(file) != 0 || !wrote) goto done;
 
@@ -417,7 +417,7 @@ static int dav_pull(sync_backend_t *self, const char *name, const char *local,
     char url[DAV_URL_CAP], root[SYNC_PATH_CAP], stage[SYNC_PATH_CAP];
     if (!dav->root[0] || !sync_valid_component(name) || skill_skip_name(name) ||
         !dav_child_url(url, sizeof(url), dav->root, name) ||
-        sync_expand(local ? local : "~/.ai-space/skills", root, sizeof(root)) != 0) return -1;
+        sync_expand(local ? local : "~/.skillboard/skills", root, sizeof(root)) != 0) return -1;
     ai_mkdir_p(root);
     if (sync_make_stage(root, stage, sizeof(stage)) != 0) return -1;
     if (cb) cb(0.2f, "正在从 WebDAV 拉取技能", user);
@@ -489,7 +489,7 @@ static int dav_push(sync_backend_t *self, const char *name, const char *local,
     const dav_state_t *dav = self->priv_data;
     char root[SYNC_PATH_CAP], source[SYNC_PATH_CAP], stage[DAV_URL_CAP], target[DAV_URL_CAP];
     if (!dav->root[0] || !sync_valid_component(name) || skill_skip_name(name) ||
-        sync_expand(local ? local : "~/.ai-space/skills", root, sizeof(root)) != 0 ||
+        sync_expand(local ? local : "~/.skillboard/skills", root, sizeof(root)) != 0 ||
         sync_join(source, sizeof(source), root, name) != 0 || !skill_is_directory(source) ||
         !dav_child_url(target, sizeof(target), dav->root, name) ||
         !dav_scratch_url(stage, sizeof(stage), dav->root)) return -1;

@@ -32,7 +32,8 @@ static int load_tools(sqlite3 *db, hub_matrix_t *matrix) {
         const char *name = (const char *)sqlite3_column_text(stmt, 0);
         const char *path = (const char *)sqlite3_column_text(stmt, 1);
         if (!name || !path) { rc = SQLITE_ERROR; break; }
-        if (strcmp(name, "ai-space") == 0 || strcmp(name, ".ai-space") == 0) continue;
+        if (strcmp(name, "skillboard") == 0 || strcmp(name, ".skillboard") == 0 ||
+            strcmp(name, "ai-space") == 0 || strcmp(name, ".ai-space") == 0) continue;
         if (matrix->tool_count == capacity) {
             if (capacity > INT_MAX / 2) { rc = SQLITE_TOOBIG; break; }
             capacity = capacity ? capacity * 2 : 16;

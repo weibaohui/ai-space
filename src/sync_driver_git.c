@@ -83,7 +83,7 @@ static int git_transfer_skill(sync_backend_t *self, const char *name, const char
     git_priv_t *repo = self->priv_data;
     char root[SYNC_PATH_CAP], error[256] = "";
     if (!sync_valid_component(name) || skill_skip_name(name) ||
-        sync_expand(local ? local : "~/.ai-space/skills", root, sizeof(root)) != 0) return -1;
+        sync_expand(local ? local : "~/.skillboard/skills", root, sizeof(root)) != 0) return -1;
     if (cb) cb(0.1f, "正在获取 Git 远端分支", user);
     int revision = git_repo_refresh(repo, error, sizeof(error));
     if (revision < 0 || (pull && revision == GIT_REPO_EMPTY)) {
@@ -126,7 +126,7 @@ static int git_transfer_batch(sync_backend_t *self, const char *local, bool pull
                               sync_progress_cb cb, void *user, sync_drift_summary_t *unchanged) {
     git_priv_t *repo = self->priv_data;
     char root[SYNC_PATH_CAP], error[256] = "";
-    if (sync_expand(local ? local : "~/.ai-space/skills", root, sizeof(root)) != 0) return -1;
+    if (sync_expand(local ? local : "~/.skillboard/skills", root, sizeof(root)) != 0) return -1;
     if (cb) cb(0.1f, "正在获取 Git 远端分支", user);
     int revision = git_repo_refresh(repo, error, sizeof(error));
     sync_remote_manifest_t remote = {0};

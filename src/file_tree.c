@@ -40,7 +40,7 @@ int sync_expand(const char *path, char *out, size_t cap) {
 int sync_make_stage(const char *root, char *out, size_t cap) {
     /* 放在目标目录所在的文件系统，允许后续通过 rename 替换。 */
     for (int attempt = 0; attempt < 128; attempt++) {
-        int n = snprintf(out, cap, "%s/.ai-space-stage-%ld-%d", root, (long)getpid(), attempt);
+        int n = snprintf(out, cap, "%s/.skillboard-stage-%ld-%d", root, (long)getpid(), attempt);
         if (n < 0 || (size_t)n >= cap) return -1;
 #ifdef _WIN32
         if (AI_MKDIR(out) == 0) return 0;

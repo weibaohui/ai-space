@@ -98,15 +98,15 @@ static void snapshots_contain(const char *backup, const char *part, const char *
 }
 
 int main(void) {
-    char root[] = "/tmp/ai-space-tool-clear-XXXXXX";
+    char root[] = "/tmp/skillboard-tool-clear-XXXXXX";
     assert(mkdtemp(root));
-    /* 备份目录和工具扫描都落在临时 HOME 内，不触碰真实的 ~/.ai-space。 */
+    /* 备份目录和工具扫描都落在临时 HOME 内，不触碰真实的 ~/.skillboard。 */
     assert(ai_setenv("HOME", root) == 0);
 
     char skills[SYNC_PATH_CAP], backup[SYNC_PATH_CAP], guard[SYNC_PATH_CAP], alias[SYNC_PATH_CAP];
     char readonly[SYNC_PATH_CAP], path[SYNC_PATH_CAP], nested[SYNC_PATH_CAP];
     join_path(skills, sizeof(skills), root, ".demo/skills");
-    join_path(backup, sizeof(backup), root, ".ai-space/backups");
+    join_path(backup, sizeof(backup), root, ".skillboard/backups");
     join_path(guard, sizeof(guard), root, ".guard/skills");
     join_path(alias, sizeof(alias), root, ".alias/skills");
     join_path(readonly, sizeof(readonly), root, ".ro/skills");
@@ -217,7 +217,7 @@ int main(void) {
 
     /* 按技能的备份与清空共用快照命名：覆盖和卸载前各留一份旧版本。 */
     char hub[SYNC_PATH_CAP], pkg[SYNC_PATH_CAP];
-    join_path(hub, sizeof(hub), root, ".ai-space/skills");
+    join_path(hub, sizeof(hub), root, ".skillboard/skills");
     join_path(pkg, sizeof(pkg), root, ".pkg/skills");
     make_skill(hub, "pkg");
     assert(hub_sync_master_to_tool(pkg, "pkg", "pkg") == 0);

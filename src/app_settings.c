@@ -9,8 +9,8 @@
 void app_init_settings(app_state_t *s) {
     if (!s || !s->db) return;
 
-    db_get_setting(s->db, "master_hub_dir", s->setting_hub_dir, sizeof(s->setting_hub_dir), "~/.ai-space/skills");
-    db_get_setting(s->db, "backup_dir", s->setting_backup_dir, sizeof(s->setting_backup_dir), "~/.ai-space/backups");
+    db_get_setting(s->db, "master_hub_dir", s->setting_hub_dir, sizeof(s->setting_hub_dir), "~/.skillboard/skills");
+    db_get_setting(s->db, "backup_dir", s->setting_backup_dir, sizeof(s->setting_backup_dir), "~/.skillboard/backups");
 
     char val[64];
     db_get_setting(s->db, "auto_backup", val, sizeof(val), "1");
@@ -48,7 +48,7 @@ void app_init_settings(app_state_t *s) {
     db_get_setting(s->db, "sync_webdav_pass", s->sync_cfg.webdav_pass, sizeof(s->sync_cfg.webdav_pass), "");
     db_get_setting(s->db, "sync_webdav_path", s->sync_cfg.webdav_remote_path, sizeof(s->sync_cfg.webdav_remote_path), "/ai-space/skills");
 
-    db_get_setting(s->db, "sync_nfs_path", s->sync_cfg.nfs_mount_path, sizeof(s->sync_cfg.nfs_mount_path), "~/.ai-space/remote-share");
+    db_get_setting(s->db, "sync_nfs_path", s->sync_cfg.nfs_mount_path, sizeof(s->sync_cfg.nfs_mount_path), "~/.skillboard/remote-share");
     char share_mode[16];
     db_get_setting(s->db, "sync_share_mode", share_mode, sizeof(share_mode),
                    s->sync_cfg.type == SYNC_BACKEND_NFS ? "0" : "1");

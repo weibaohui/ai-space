@@ -14,7 +14,7 @@ SRCS = src/main.c src/view_dashboard.c src/view_common.c src/view_tools.c src/vi
        src/db.c src/scanner.c src/skill_scanner.c src/file_tree.c src/hub_files.c src/hub_paths.c src/hub_bulk.c src/skill_fingerprint.c src/hub_manager.c
 OBJS = $(SRCS:.c=.o)
 HEADERS = $(wildcard include/*.h src/*.h)
-TARGET = ai_space
+TARGET = skillboard
 TEST_TARGET = test_sync
 SYNC_TEST_OBJS = src/skill_metadata.o src/sync_webdav_listing.o src/sync_git_repository.o src/sync_git_process.o src/sync_git_merge.o src/sync_manager.o src/sync_directory.o src/sync_local_files.o src/sync_driver_share.o src/sync_network_share.o src/sync_driver_webdav.o src/sync_driver_git.o src/file_tree.o src/hub_files.o src/hub_paths.o src/hub_bulk.o src/skill_fingerprint.o src/hub_manager.o
 

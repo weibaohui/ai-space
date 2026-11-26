@@ -1,4 +1,4 @@
-/* AI-Space Windows resources.
+/* SkillBoard Windows resources.
  * Resource ID 1 is what CUI's win32 backend loads for the window/taskbar icon
  * (LoadIconW(inst, MAKEINTRESOURCEW(1)) in cui_app_win32.c). */
 1 ICON "app.ico"

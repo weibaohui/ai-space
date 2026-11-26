@@ -22,7 +22,7 @@ void render_op_progress_modal(cui_ctx *ui, app_state_t *s) {
                 cui_icon(ui, CUI_ICON_SHIELD, 13, CUI_COLOR_TEXT_MUTED);
                 const char *sub = (s->op_progress.sub_message[0] != '\0')
                     ? s->op_progress.sub_message
-                    : "正在进行纯物理复制，覆盖前已自动在 ~/.ai-space/backups/ 保存备份快照";
+                    : "正在进行纯物理复制，覆盖前已自动在 ~/.skillboard/backups/ 保存备份快照";
                 cui_text(ui, sub, .size = 11, .color = CUI_COLOR_TEXT_MUTED);
             }
         }

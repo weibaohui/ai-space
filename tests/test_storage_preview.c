@@ -71,7 +71,7 @@ static void check_directory_cache(const char *backup, const char *empty) {
 }
 
 int main(void) {
-    char root[] = "/tmp/ai-space-storage-preview-XXXXXX";
+    char root[] = "/tmp/skillboard-storage-preview-XXXXXX";
     assert(mkdtemp(root));
     check_legacy_migration(root);
     char backup[SYNC_PATH_CAP], cache[SYNC_PATH_CAP], hub[SYNC_PATH_CAP];

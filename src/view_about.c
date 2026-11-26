@@ -49,8 +49,8 @@ void render_about_page(cui_ctx *ui, app_state_t *s) {
                 }
                 cui_column(ui, .width = CUI_FILL, .gap = 4) {
                     cui_row(ui, .width = CUI_FILL, .gap = 10, .align = CUI_ALIGN_CENTER) {
-                        cui_heading(ui, "AI-Space", 2);
-                        cui_badge(ui, g_ai_space_version, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
+                        cui_heading(ui, "SkillBoard", 2);
+                        cui_badge(ui, g_skillboard_version, .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
                     }
                     cui_text(ui, "在本机管理各 AI 工具的技能，并通过主仓统一分发和同步。",
                              .width = CUI_FILL, .size = 13, .color = CUI_COLOR_TEXT_SECONDARY);

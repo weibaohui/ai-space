@@ -109,7 +109,7 @@ def main() -> int:
         return 1
 
     backend_bin = find_git_http_backend()
-    tmp_dir = tempfile.mkdtemp(prefix="ai-space-git-merge-")
+    tmp_dir = tempfile.mkdtemp(prefix="skillboard-git-merge-")
     try:
         bare_repo = os.path.join(tmp_dir, "remote.git")
         subprocess.run(["git", "init", "--bare", "-b", "main", bare_repo], check=True, stdout=subprocess.DEVNULL)

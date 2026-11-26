@@ -65,7 +65,7 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
 
             /* Path input field */
             cui_input(ui, "input_setting_hub_dir", s->setting_hub_dir, sizeof(s->setting_hub_dir),
-                      .placeholder = "~/.ai-space/skills",
+                      .placeholder = "~/.skillboard/skills",
                       .icon = CUI_ICON_FOLDER, .disabled = busy,
                       .width = CUI_FILL);
 
@@ -89,7 +89,7 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
             cui_push_id(ui, "hub_path_actions");
             cui_row(ui, .width = CUI_FILL, .gap = 8, .justify = CUI_JUSTIFY_END) {
                 if (cui_button(ui, "恢复默认", .variant = CUI_BUTTON_GHOST, .icon = CUI_ICON_ROTATE_CCW, .disabled = busy)) {
-                    snprintf(s->setting_hub_dir, sizeof(s->setting_hub_dir), "~/.ai-space/skills");
+                    snprintf(s->setting_hub_dir, sizeof(s->setting_hub_dir), "~/.skillboard/skills");
                     app_save_storage_settings(s);
                     cui_toast(ui, "已恢复默认主仓路径", .tone = CUI_TONE_SUCCESS);
                 }
@@ -121,7 +121,7 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
 
             /* Path input field */
             cui_input(ui, "input_setting_backup_dir", s->setting_backup_dir, sizeof(s->setting_backup_dir),
-                      .placeholder = "~/.ai-space/backups",
+                      .placeholder = "~/.skillboard/backups",
                       .icon = CUI_ICON_FOLDER, .disabled = busy,
                       .width = CUI_FILL);
 
@@ -145,7 +145,7 @@ static void render_tab_storage(cui_ctx *ui, app_state_t *s) {
             cui_push_id(ui, "backup_path_actions");
             cui_row(ui, .width = CUI_FILL, .gap = 8, .justify = CUI_JUSTIFY_END) {
                 if (cui_button(ui, "恢复默认", .variant = CUI_BUTTON_GHOST, .icon = CUI_ICON_ROTATE_CCW, .disabled = busy)) {
-                    snprintf(s->setting_backup_dir, sizeof(s->setting_backup_dir), "~/.ai-space/backups");
+                    snprintf(s->setting_backup_dir, sizeof(s->setting_backup_dir), "~/.skillboard/backups");
                     app_save_storage_settings(s);
                     cui_toast(ui, "已恢复默认备份路径", .tone = CUI_TONE_SUCCESS);
                 }
