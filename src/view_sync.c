@@ -1,7 +1,9 @@
 #include "app_sync.h"
 #include "view_sync.h"
 #include "view_common.h"
+#include <cui/cui_app.h>
 #include <stdio.h>
+#include <string.h>
 
 static void render_sync_result(cui_ctx *ui, app_state_t *s, const sync_drift_item_t *item, bool busy) {
     static const char *labels[] = {
@@ -50,30 +52,89 @@ static void render_sync_result(cui_ctx *ui, app_state_t *s, const sync_drift_ite
             if (item->status == SYNC_DRIFT_CONFLICT &&
                 cui_button(ui, "处理冲突", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM,
                            .icon = CUI_ICON_TRIANGLE_ALERT, .disabled = busy)) {
-                snprintf(s->sync_conflict_skill, sizeof(s->sync_conflict_skill), "%s", item->skill_name);
-                s->show_sync_conflict_modal = true;
+                app_sync_open_conflict(s, item->skill_name);
             }
         }
     }
 }
 
 /* 覆盖操作需要用户先选择保留的一侧，最终写入仍会校验指纹。 */
+static void open_merge_workspace(cui_ctx *ui, const char *path) {
+    static const char hex[] = "0123456789ABCDEF";
+    char url[3 * SYNC_PATH_CAP + 10];
+    size_t used = (size_t)snprintf(url, sizeof(url), "%s", path[0] == '/' ? "file://" : "file:///");
+    for (const unsigned char *p = (const unsigned char *)path; *p; p++) {
+        unsigned char c = *p;
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || strchr("-._~/:", c)) url[used++] = (char)c;
+        else {
+            url[used++] = '%';
+            url[used++] = hex[c >> 4];
+            url[used++] = hex[c & 15];
+        }
+    }
+    url[used] = '\0';
+    if (!cui_app_open_url(url)) {
+        cui_set_clipboard_text(ui, path);
+        cui_toast(ui, "无法打开文件管理器，已复制工作区路径", .tone = CUI_TONE_WARNING);
+    }
+}
+
 static void render_conflict_dialog(cui_ctx *ui, app_state_t *s, bool busy) {
     if (!s->show_sync_conflict_modal) return;
-    cui_dialog(ui, "选择保留的技能版本", &s->show_sync_conflict_modal, .width = 480) {
+    const sync_git_draft_t *draft = &s->sync_conflict_draft;
+    bool has_draft = draft->workspace[0] != '\0';
+    cui_dialog(ui, "处理技能冲突", &s->show_sync_conflict_modal, .width = 540) {
         cui_column(ui, .width = CUI_FILL, .gap = 12) {
             cui_text(ui, s->sync_conflict_skill, .width = CUI_FILL, .font = CUI_FONT_MEDIUM);
-            cui_text(ui, "保留主仓将覆盖远端副本。保留远端将覆盖本地主仓副本。", .width = CUI_FILL);
-            cui_row(ui, .width = CUI_FILL, .gap = 8, .justify = CUI_JUSTIFY_END) {
-                if (cui_button(ui, "取消", .variant = CUI_BUTTON_GHOST))
-                    s->show_sync_conflict_modal = false;
-                if (cui_button(ui, "保留主仓并推送", .variant = CUI_BUTTON_OUTLINE, .disabled = busy)) {
-                    s->show_sync_conflict_modal = false;
-                    start_sync_resolve_conflict_thread(s, s->sync_conflict_skill, false);
+            if (has_draft) {
+                if (draft->conflicts[0]) {
+                    cui_text(ui, "打开工作区，在编辑器中解决列出的文件冲突，再暂存解决结果。",
+                             .width = CUI_FILL);
+                    cui_scroll(ui, .id = "merge_conflict_files", .width = CUI_FILL, .height = CUI_PX(82)) {
+                        cui_text(ui, draft->conflicts, .width = CUI_FILL);
+                    }
+                } else {
+                    cui_text(ui, "合并草稿已准备。可以在工作区检查结果，确认后发布并同步到本地主仓。",
+                             .width = CUI_FILL);
                 }
-                if (cui_button(ui, "保留远端并拉取", .variant = CUI_BUTTON_OUTLINE, .disabled = busy)) {
-                    s->show_sync_conflict_modal = false;
-                    start_sync_resolve_conflict_thread(s, s->sync_conflict_skill, true);
+                cui_row(ui, .width = CUI_FILL, .gap = 8, .wrap = true) {
+                    if (cui_button(ui, "打开工作区", .variant = CUI_BUTTON_OUTLINE, .icon = CUI_ICON_FOLDER_OPEN))
+                        open_merge_workspace(ui, draft->workspace);
+                    if (cui_button(ui, "复制工作区路径", .variant = CUI_BUTTON_GHOST))
+                        cui_set_clipboard_text(ui, draft->workspace);
+                }
+                cui_row(ui, .width = CUI_FILL, .gap = 8, .wrap = true) {
+                    if (cui_button(ui, "放弃草稿（保留文件）", .variant = CUI_BUTTON_GHOST, .disabled = busy))
+                        app_sync_discard_git_merge(s, s->sync_conflict_skill);
+                    cui_spacer(ui);
+                    if (!draft->result_oid[0] &&
+                        cui_button(ui, draft->conflicts[0] ? "暂存解决结果" : "暂存修改",
+                                   .variant = draft->conflicts[0] ? CUI_BUTTON_PRIMARY : CUI_BUTTON_OUTLINE,
+                                   .disabled = busy))
+                        start_sync_git_merge_stage_thread(s, s->sync_conflict_skill);
+                    if (!draft->conflicts[0] &&
+                        cui_button(ui, "发布合并结果", .variant = CUI_BUTTON_PRIMARY, .disabled = busy))
+                        start_sync_git_merge_thread(s, s->sync_conflict_skill, true);
+                }
+            } else {
+                if (s->sync_cfg.type == SYNC_BACKEND_GIT) {
+                    cui_text(ui, "用共同版本尝试合并，先生成草稿，确认后再发布。", .width = CUI_FILL);
+                    if (cui_button(ui, "尝试合并", .variant = CUI_BUTTON_PRIMARY, .disabled = busy))
+                        start_sync_git_merge_thread(s, s->sync_conflict_skill, false);
+                }
+                cui_text(ui, "保留主仓将覆盖远端副本。保留远端将覆盖本地主仓副本。", .width = CUI_FILL);
+                cui_row(ui, .width = CUI_FILL, .gap = 8, .justify = CUI_JUSTIFY_END) {
+                    if (cui_button(ui, "取消", .variant = CUI_BUTTON_GHOST))
+                        s->show_sync_conflict_modal = false;
+                    if (cui_button(ui, "保留主仓并推送", .variant = CUI_BUTTON_OUTLINE, .disabled = busy)) {
+                        s->show_sync_conflict_modal = false;
+                        start_sync_resolve_conflict_thread(s, s->sync_conflict_skill, false);
+                    }
+                    if (cui_button(ui, "保留远端并拉取", .variant = CUI_BUTTON_OUTLINE, .disabled = busy)) {
+                        s->show_sync_conflict_modal = false;
+                        start_sync_resolve_conflict_thread(s, s->sync_conflict_skill, true);
+                    }
                 }
             }
         }
@@ -81,6 +142,7 @@ static void render_conflict_dialog(cui_ctx *ui, app_state_t *s, bool busy) {
 }
 
 void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
+    if (!s->sync_drafts_loaded) app_sync_refresh_git_drafts(s);
     char endpoint[1060];
     switch (s->sync_cfg.type) {
     case SYNC_BACKEND_GIT:
@@ -108,6 +170,10 @@ void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
     bool busy = s->sync_is_busy || s->op_progress.active || s->hub_scan.is_scanning;
     cui_row(ui, .width = CUI_FILL, .gap = 12, .align = CUI_ALIGN_CENTER) {
         render_workspace_heading(ui, ICON_SYNC, "同步管理", endpoint);
+        if (s->sync_pending_merge_skill[0] &&
+            cui_button(ui, "合并草稿", .variant = CUI_BUTTON_OUTLINE,
+                       .icon = CUI_ICON_GIT_BRANCH, .disabled = busy))
+            app_sync_open_conflict(s, s->sync_pending_merge_skill);
         if (offline) {
             if (cui_button(ui, "配置远端", .variant = CUI_BUTTON_GHOST, .icon = CUI_ICON_SETTINGS)) {
                 s->current_page = PAGE_SETTINGS;
@@ -143,6 +209,7 @@ void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
                 }
             }
         }
+        render_conflict_dialog(ui, s, busy);
         return;
     }
 
@@ -186,6 +253,7 @@ void render_sync_manager_page(cui_ctx *ui, app_state_t *s) {
                 cui_empty_state(ui, "两端技能库已一致", .icon = CUI_ICON_CIRCLE_CHECK);
             }
         }
+        render_conflict_dialog(ui, s, busy);
         return;
     }
 

@@ -169,7 +169,7 @@ static int prepare_cache(git_priv_t *repo, const char *auth_url) {
     return 0;
 }
 
-static int git_repo_prepare(git_priv_t *repo, char *error, size_t cap) {
+int git_repo_open_cache(git_priv_t *repo, char *error, size_t cap) {
     /* 同步任务持有缓存锁直到销毁后端，避免同时操作同一工作区。 */
     if (repo->cache_lock) return 0;
     char ref[sizeof(repo->branch) + sizeof("refs/heads/")];
@@ -202,7 +202,7 @@ static int git_repo_prepare(git_priv_t *repo, char *error, size_t cap) {
 }
 
 int git_repo_refresh(git_priv_t *repo, char *error, size_t cap) {
-    if (git_repo_prepare(repo, error, cap) != 0) return -1;
+    if (git_repo_open_cache(repo, error, cap) != 0) return -1;
     char ref[sizeof(repo->branch) + sizeof("refs/heads/")];
     snprintf(ref, sizeof(ref), "refs/heads/%s", repo->branch);
     const char *dir = repo->git_cache_dir;
@@ -227,18 +227,28 @@ int git_repo_stage(const git_priv_t *repo, const char *skill_name) {
     return GIT(repo->git_cache_dir, "--literal-pathspecs", "add", "--", skill_name) == 0 ? 0 : -1;
 }
 
+int git_repo_head(const char *dir, char out[SYNC_GIT_OID_CAP]) {
+    return sync_git_run(dir, (const char *const[]){"rev-parse", "--verify", "HEAD", NULL},
+                        out, SYNC_GIT_OID_CAP);
+}
+
+int git_repo_commit_message(const git_priv_t *repo, const char *dir, const char *message) {
+    char name[sizeof(repo->user_name) + 16], email[sizeof(repo->user_email) + 16];
+    snprintf(name, sizeof(name), "user.name=%s", repo->user_name);
+    snprintf(email, sizeof(email), "user.email=%s", repo->user_email);
+    return GIT(dir, "-c", name, "-c", email, "commit", "-m", message) == 0 ? 0 : -1;
+}
+
 int git_repo_commit(const git_priv_t *repo, const char *skill_name, int count) {
     const char *dir = repo->git_cache_dir;
     int dirty = GIT(dir, "diff", "--cached", "--quiet");
     if (dirty == 0) return 0;
     if (dirty != 1) return -1;
 
-    char message[256], name[sizeof(repo->user_name) + 16], email[sizeof(repo->user_email) + 16];
+    char message[256];
     if (skill_name) snprintf(message, sizeof(message), "sync(skill): update %.127s [AI-Space]", skill_name);
     else snprintf(message, sizeof(message), "sync(all): full sync of %d skills [AI-Space]", count);
-    snprintf(name, sizeof(name), "user.name=%s", repo->user_name);
-    snprintf(email, sizeof(email), "user.email=%s", repo->user_email);
-    return GIT(dir, "-c", name, "-c", email, "commit", "-m", message) == 0 ? 0 : -1;
+    return git_repo_commit_message(repo, dir, message);
 }
 
 void git_repo_restore(const git_priv_t *repo, int revision) {
@@ -246,8 +256,12 @@ void git_repo_restore(const git_priv_t *repo, int revision) {
     else GIT(repo->git_cache_dir, "reset", "--hard", "HEAD");
 }
 
-int git_repo_push(const git_priv_t *repo) {
+int git_repo_push_from(const git_priv_t *repo, const char *dir) {
     char refspec[sizeof(repo->branch) + sizeof("HEAD:refs/heads/")];
     snprintf(refspec, sizeof(refspec), "HEAD:refs/heads/%s", repo->branch);
-    return GIT(repo->git_cache_dir, "push", "origin", refspec) == 0 ? 0 : -1;
+    return GIT(dir, "push", "origin", refspec) == 0 ? 0 : -1;
+}
+
+int git_repo_push(const git_priv_t *repo) {
+    return git_repo_push_from(repo, repo->git_cache_dir);
 }

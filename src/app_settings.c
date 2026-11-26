@@ -98,6 +98,8 @@ void app_save_storage_settings(app_state_t *s) {
     s->hub_matrix_loaded = false;
     s->hub_scan.failed = false;
     s->sync_drift_loaded = false;
+    s->sync_drafts_loaded = false;
+    s->show_sync_conflict_modal = false;
 }
 
 int app_store_sync_settings(sqlite3 *db, const sync_config_t *cfg) {

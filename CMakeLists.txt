@@ -41,6 +41,7 @@ set(AI_SPACE_SRCS
     src/sync_webdav_listing.c
     src/sync_git_repository.c
     src/sync_git_process.c
+    src/sync_git_merge.c
     src/app_task.c
     src/app_settings.c
     src/app_sync.c

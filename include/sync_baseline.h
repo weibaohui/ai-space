@@ -2,6 +2,7 @@
 #define AI_SYNC_BASELINE_H
 
 #include "sync_backend.h"
+#include "sync_git_merge.h"
 #include <sqlite3.h>
 
 #define SYNC_SCOPE_CAP 2600
@@ -11,5 +12,9 @@ int sync_baseline_scope(const sync_config_t *cfg, const char *local, char *out, 
 /* 调用方拥有加载后的条目数组，使用完毕后释放。 */
 int sync_baseline_load(sqlite3 *db, const char *scope, sync_baseline_t *baseline);
 int sync_baseline_record(sqlite3 *db, const char *scope, const sync_drift_summary_t *drift);
+int sync_git_draft_load(sqlite3 *db, const char *scope, const char *skill, sync_git_draft_t *draft);
+int sync_git_draft_first(sqlite3 *db, const char *scope, char skill[128]);
+int sync_git_draft_save(sqlite3 *db, const char *scope, const char *skill, const char *previous,
+                        const sync_git_draft_t *draft);
 
 #endif

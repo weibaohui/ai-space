@@ -11,6 +11,7 @@
 #include "skill_file_tree.h"
 #include "hub_manager.h"
 #include "sync_backend.h"
+#include "sync_git_merge.h"
 #include "skill_diff.h"
 #include "app_storage.h"
 
@@ -202,6 +203,9 @@ typedef struct app_state_t {
     bool sync_drift_loaded;
     bool show_sync_conflict_modal;
     char sync_conflict_skill[128];
+    sync_git_draft_t sync_conflict_draft;
+    bool sync_drafts_loaded;
+    char sync_pending_merge_skill[128];
     bool sync_is_busy;
     char sync_status_msg[256];
 

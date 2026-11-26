@@ -10,17 +10,18 @@ SRCS = src/main.c src/view_dashboard.c src/view_common.c src/view_tools.c src/vi
        src/sync_driver_webdav.c src/sync_driver_git.c \
        src/app_task.c src/app_settings.c src/app_sync.c src/sync_baseline.c src/app_hub_tasks.c src/app_diff.c src/skill_diff.c \
        src/view_about.c src/view_progress.c src/view_distribute.c src/view_uninstall.c src/view_sync_settings.c \
-       src/storage_manager.c src/app_storage.c src/skill_metadata.c src/skill_file_tree.c src/file_preview.c src/sync_webdav_listing.c src/sync_git_repository.c src/sync_git_process.c \
+       src/storage_manager.c src/app_storage.c src/skill_metadata.c src/skill_file_tree.c src/file_preview.c src/sync_webdav_listing.c src/sync_git_repository.c src/sync_git_process.c src/sync_git_merge.c \
        src/db.c src/scanner.c src/skill_scanner.c src/file_tree.c src/hub_files.c src/hub_paths.c src/hub_bulk.c src/skill_fingerprint.c src/hub_manager.c
 OBJS = $(SRCS:.c=.o)
 HEADERS = $(wildcard include/*.h src/*.h)
 TARGET = ai_space
 TEST_TARGET = test_sync
-SYNC_TEST_OBJS = src/skill_metadata.o src/sync_webdav_listing.o src/sync_git_repository.o src/sync_git_process.o src/sync_manager.o src/sync_directory.o src/sync_local_files.o src/sync_driver_share.o src/sync_network_share.o src/sync_driver_webdav.o src/sync_driver_git.o src/file_tree.o src/hub_files.o src/hub_paths.o src/hub_bulk.o src/skill_fingerprint.o src/hub_manager.o
+SYNC_TEST_OBJS = src/skill_metadata.o src/sync_webdav_listing.o src/sync_git_repository.o src/sync_git_process.o src/sync_git_merge.o src/sync_manager.o src/sync_directory.o src/sync_local_files.o src/sync_driver_share.o src/sync_network_share.o src/sync_driver_webdav.o src/sync_driver_git.o src/file_tree.o src/hub_files.o src/hub_paths.o src/hub_bulk.o src/skill_fingerprint.o src/hub_manager.o
 
-TEST_OBJS = tests/test_sync_git.o tests/test_sync_backends.o tests/test_storage_preview.o
+TEST_OBJS = tests/test_sync_git.o tests/test_sync_backends.o tests/test_storage_preview.o tests/test_git_merge.o
 BACKEND_TEST_TARGET = test_sync_backends
 STORAGE_TEST_TARGET = test_storage_preview
+GIT_MERGE_TEST_TARGET = test_git_merge
 VENDOR_STAMP = build/.sync-client-libraries
 VENDOR_SOURCES = $(shell find vendor -type f)
 
@@ -45,6 +46,9 @@ $(TEST_TARGET): tests/test_sync_git.o $(SYNC_TEST_OBJS) $(VENDOR_STAMP)
 $(BACKEND_TEST_TARGET): tests/test_sync_backends.o $(SYNC_TEST_OBJS) src/sync_baseline.o src/db.o src/scanner.o $(VENDOR_STAMP)
 	$(CC) $(filter %.o,$^) -lsqlite3 $(SHARE_LDFLAGS) -o $@
 
+$(GIT_MERGE_TEST_TARGET): tests/test_git_merge.o $(SYNC_TEST_OBJS) src/sync_baseline.o src/db.o src/scanner.o $(VENDOR_STAMP)
+	$(CC) $(filter %.o,$^) -lsqlite3 $(SHARE_LDFLAGS) -o $@
+
 $(STORAGE_TEST_TARGET): tests/test_storage_preview.o src/app_storage.o src/storage_manager.o src/file_tree.o src/file_preview.o src/db.o src/scanner.o
 	$(CC) $^ -lsqlite3 -o $@
 
@@ -55,7 +59,7 @@ tests/%.o: tests/%.c $(HEADERS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(VENDOR_STAMP) $(OBJS) $(TEST_OBJS) $(TARGET) $(TEST_TARGET) $(BACKEND_TEST_TARGET) $(STORAGE_TEST_TARGET) shot*.png
+	rm -f $(VENDOR_STAMP) $(OBJS) $(TEST_OBJS) $(TARGET) $(TEST_TARGET) $(BACKEND_TEST_TARGET) $(STORAGE_TEST_TARGET) $(GIT_MERGE_TEST_TARGET) shot*.png
 
 run: $(TARGET)
 	./$(TARGET)

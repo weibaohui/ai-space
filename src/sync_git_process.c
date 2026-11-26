@@ -91,7 +91,7 @@ static int spawn_git(char *const *args, FILE *output) {
 }
 #endif
 
-int sync_git_run(const char *cwd, const char *const *options, char *result, size_t cap) {
+static int run_git(const char *cwd, const char *const *options, char *result, size_t cap, bool multiline) {
     char *args[24] = {"git", "-c", "credential.interactive=false",
                      "-c", "core.sshCommand=ssh -o BatchMode=yes -o ConnectTimeout=8", NULL};
     size_t argc = 5;
@@ -112,10 +112,24 @@ int sync_git_run(const char *cwd, const char *const *options, char *result, size
         result[0] = '\0';
         if (rc == 0) {
             if (fseek(output, 0, SEEK_SET) != 0) rc = -1;
+            else if (multiline) {
+                size_t n = fread(result, 1, cap - 1, output);
+                result[n] = '\0';
+                if (ferror(output)) rc = -1;
+            }
             else if (fgets(result, (int)cap, output)) result[strcspn(result, "\r\n")] = '\0';
             else if (ferror(output)) rc = -1;
         }
         fclose(output);
     }
     return rc;
+}
+
+int sync_git_run(const char *cwd, const char *const *options, char *result, size_t cap) {
+    return run_git(cwd, options, result, cap, false);
+}
+
+int sync_git_read_text(const char *cwd, const char *const *options, char *result, size_t cap) {
+    if (!result || !cap) return -1;
+    return run_git(cwd, options, result, cap, true);
 }

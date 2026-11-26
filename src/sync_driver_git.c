@@ -58,7 +58,8 @@ static int git_read_manifest(const git_priv_t *repo, int revision, sync_remote_m
     *out = (sync_remote_manifest_t){0};
     /* 空仓可以首次推送，读取清单时直接返回零项。 */
     if (revision != GIT_REPO_EMPTY &&
-        sync_scan_directory(repo->git_cache_dir, false, out, error, cap) != 0) return -1;
+        (sync_scan_directory(repo->git_cache_dir, false, out, error, cap) != 0 ||
+         git_repo_head(repo->git_cache_dir, out->revision) != 0)) return -1;
     snprintf(out->remote_root, sizeof(out->remote_root), "%s", repo->repo_url);
     out->fetched_at = time(NULL);
     return 0;

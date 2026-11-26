@@ -22,7 +22,10 @@ static void check_legacy_migration(const char *root) {
     assert(sqlite3_open(path, &db) == SQLITE_OK);
     const char *sql = "CREATE TABLE local_tools (id INTEGER PRIMARY KEY, name TEXT, path TEXT,"
                       "skill_count INTEGER, is_deleted INTEGER);"
-                      "INSERT INTO local_tools VALUES (7,'custom','/skills',3,0),(8,'removed','/old',0,1);";
+                      "INSERT INTO local_tools VALUES (7,'custom','/skills',3,0),(8,'removed','/old',0,1);"
+                      "CREATE TABLE sync_baselines (scope TEXT NOT NULL, skill TEXT NOT NULL, hash TEXT NOT NULL,"
+                      "PRIMARY KEY(scope,skill));"
+                      "INSERT INTO sync_baselines VALUES ('old-scope','existing-skill','80ff3fcf57bfcbc8');";
     assert(sqlite3_exec(db, sql, NULL, NULL, NULL) == SQLITE_OK);
     db_close(db);
     for (int i = 0; i < 2; i++) {
@@ -33,6 +36,13 @@ static void check_legacy_migration(const char *root) {
         assert(count == 1 && tools[0].id == 7 && tools[0].skill_count == 3);
         assert(strcmp(tools[0].name, "custom") == 0 && strcmp(tools[0].path, "/skills") == 0);
         free(tools);
+        sqlite3_stmt *baseline = NULL;
+        assert(sqlite3_prepare_v2(db, "SELECT hash,git_revision FROM sync_baselines WHERE skill='existing-skill'",
+                                  -1, &baseline, NULL) == SQLITE_OK);
+        assert(sqlite3_step(baseline) == SQLITE_ROW);
+        assert(strcmp((const char *)sqlite3_column_text(baseline, 0), "80ff3fcf57bfcbc8") == 0);
+        assert(sqlite3_column_bytes(baseline, 1) == 0);
+        sqlite3_finalize(baseline);
         db_close(db);
     }
 }

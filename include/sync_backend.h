@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <time.h>
 
+#define SYNC_GIT_OID_CAP 65
+
 /*
  * Supported Multi-Host Remote Synchronization Backends
  * Each host configuring the same backend endpoint shares the exact same canonical version.
@@ -45,7 +47,7 @@ typedef struct {
     int count;
     time_t fetched_at;
     char remote_root[512];
-    char revision[64];
+    char revision[SYNC_GIT_OID_CAP];
 } sync_remote_manifest_t;
 
 /* Comparison item between local Master Hub and remote shared hub */
@@ -72,6 +74,7 @@ typedef struct {
     int local_only_count;
     int conflict_count;
     char last_checked_at[32];
+    char remote_revision[SYNC_GIT_OID_CAP];
 } sync_drift_summary_t;
 
 typedef enum {
@@ -117,6 +120,7 @@ typedef struct sync_backend_t sync_backend_t;
 typedef struct {
     char skill[128];
     char hash[32];
+    char revision[SYNC_GIT_OID_CAP];
 } sync_baseline_item_t;
 
 typedef struct {

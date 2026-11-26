@@ -85,6 +85,11 @@ static int compare_baseline_name(const void *name, const void *item) {
     return strcmp(name, ((const sync_baseline_item_t *)item)->skill);
 }
 
+const sync_baseline_item_t *sync_find_baseline(const sync_baseline_t *baseline, const char *skill) {
+    if (!baseline || !baseline->count) return NULL;
+    return bsearch(skill, baseline->items, baseline->count, sizeof(*baseline->items), compare_baseline_name);
+}
+
 static void report_difference(sync_drift_summary_t *out, const sync_remote_skill_item_t *local,
                               const sync_remote_skill_item_t *remote, const sync_baseline_t *baseline) {
     sync_drift_item_t *item = &out->items[out->count++];
@@ -98,9 +103,7 @@ static void report_difference(sync_drift_summary_t *out, const sync_remote_skill
         item->remote_mtime = remote->mtime;
     }
     /* 只用上次一致的指纹判定双端改动，时间戳用于兼容未提供基线的调用方。 */
-    const sync_baseline_item_t *previous = baseline && baseline->count
-        ? bsearch(item->skill_name, baseline->items, baseline->count,
-                  sizeof(*baseline->items), compare_baseline_name) : NULL;
+    const sync_baseline_item_t *previous = sync_find_baseline(baseline, item->skill_name);
     bool local_unchanged = previous && local && strcmp(local->hash, previous->hash) == 0;
     bool remote_unchanged = previous && remote && strcmp(remote->hash, previous->hash) == 0;
 
@@ -183,6 +186,7 @@ int sync_compare_directory(const sync_remote_manifest_t *remote, const char *loc
     struct tm storage;
     const struct tm *tm = ai_localtime(&now, &storage);
     if (tm) strftime(out->last_checked_at, sizeof(out->last_checked_at), "%Y-%m-%d %H:%M:%S", tm);
+    snprintf(out->remote_revision, sizeof(out->remote_revision), "%s", remote->revision);
     return 0;
 }
 

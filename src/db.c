@@ -21,6 +21,15 @@ static void ensure_parent_dir(const char *path) {
     "created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))," \
     "updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')))"
 
+static int ensure_git_baseline_revision(sqlite3 *db) {
+    sqlite3_stmt *stmt = NULL;
+    int rc = sqlite3_prepare_v2(db, "SELECT git_revision FROM sync_baselines LIMIT 0", -1, &stmt, NULL);
+    sqlite3_finalize(stmt);
+    if (rc == SQLITE_OK) return 0;
+    return sqlite3_exec(db, "ALTER TABLE sync_baselines ADD COLUMN git_revision TEXT NOT NULL DEFAULT ''",
+                        NULL, NULL, NULL) == SQLITE_OK ? 0 : -1;
+}
+
 static int migrate_legacy_tools(sqlite3 *db) {
     sqlite3_stmt *stmt = NULL;
     if (sqlite3_prepare_v2(db, "PRAGMA table_info(local_tools)", -1, &stmt, NULL) != SQLITE_OK) return -1;
@@ -75,11 +84,17 @@ int db_init(const char *db_path, sqlite3 **out_db) {
         "CREATE INDEX IF NOT EXISTS idx_tools_name ON local_tools(name);"
         "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
         "CREATE TABLE IF NOT EXISTS sync_baselines ("
-        " scope TEXT NOT NULL, skill TEXT NOT NULL, hash TEXT NOT NULL, PRIMARY KEY(scope,skill));";
+        " scope TEXT NOT NULL, skill TEXT NOT NULL, hash TEXT NOT NULL,"
+        " git_revision TEXT NOT NULL DEFAULT '', PRIMARY KEY(scope,skill));"
+        "CREATE TABLE IF NOT EXISTS sync_git_drafts ("
+        " scope TEXT NOT NULL, skill TEXT NOT NULL, workspace TEXT NOT NULL, local_hash TEXT NOT NULL,"
+        " remote_oid TEXT NOT NULL, local_oid TEXT NOT NULL, result_oid TEXT NOT NULL, conflicts TEXT NOT NULL,"
+        " PRIMARY KEY(scope,skill));";
     /* 迁移、建表及索引在同一事务完成，任一步失败都保留原表。 */
     if (sqlite3_exec(db, "BEGIN IMMEDIATE", NULL, NULL, NULL) != SQLITE_OK ||
         migrate_legacy_tools(db) != 0 ||
         sqlite3_exec(db, schema, NULL, NULL, NULL) != SQLITE_OK ||
+        ensure_git_baseline_revision(db) != 0 ||
         sqlite3_exec(db, "COMMIT", NULL, NULL, NULL) != SQLITE_OK) {
         fprintf(stderr, "[db] Failed to initialize schema: %s\n", sqlite3_errmsg(db));
         sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
