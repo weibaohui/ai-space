@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <time.h>
 #include <sqlite3.h>
+#include "skill_tokens.h"
 
 #define HUB_STATUS_IN_SYNC        0   /* 🟢 物理副本与主仓内容完全一致 */
 #define HUB_STATUS_LOCAL_MODIFIED 1   /* 🟡 该工具中的副本被修改过（比主仓新或改动） */
@@ -33,6 +34,7 @@ typedef struct {
     char hub_hash[32];
     time_t hub_mtime;
     char description[256];
+    skill_token_usage_t tokens;
 
     int installed_count;        /* count of tools that have this skill */
     int modified_count;         /* count of tools where copy is modified */

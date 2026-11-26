@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include "skill_tokens.h"
 
 /* Information about a single skill folder inside ~/.xxx/skills/ */
 typedef struct {
@@ -11,6 +12,7 @@ typedef struct {
     int file_count;             /* count of files in this skill */
     bool has_skill_md;          /* whether SKILL.md exists */
     char description[256];      /* summary description parsed from SKILL.md */
+    skill_token_usage_t tokens; /* context token estimates */
 } skill_item_t;
 
 /*

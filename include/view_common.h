@@ -19,6 +19,7 @@
 void apply_workspace_theme(cui_ctx *ui);
 void render_workspace_heading(cui_ctx *ui, const char *icon, const char *title,
                               const char *subtitle);
+void render_skill_token_badge(cui_ctx *ui, const skill_token_usage_t *tokens);
 
 /* Render sidebar navigation, theme switch and accent palette */
 void render_app_sidebar(cui_ctx *ui, app_state_t *s);

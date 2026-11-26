@@ -347,16 +347,19 @@ void render_master_hub_skills_view(cui_ctx *ui, app_state_t *s) {
                         cui_column(ui, .width = CUI_FILL, .gap = 4) {
                             cui_text(ui, entry->skill_name, .font = CUI_FONT_MEDIUM, .size = 15,
                                      .width = CUI_FILL, .nowrap = true);
-                            if (entry->hub_unreadable || entry->unreadable_count > 0) {
-                                cui_badge(ui, "无法比较", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
-                            } else if (entry->modified_count > 0) {
-                                cui_badge(ui, "副本有改动", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
-                            } else if (entry->outdated_count > 0) {
-                                cui_badge(ui, "副本待更新", .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
-                            } else if (entry->installed_count > 0) {
-                                cui_badge(ui, "副本已一致", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                            } else {
-                                cui_badge(ui, "未分发", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
+                            cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                                if (entry->hub_unreadable || entry->unreadable_count > 0) {
+                                    cui_badge(ui, "无法比较", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
+                                } else if (entry->modified_count > 0) {
+                                    cui_badge(ui, "副本有改动", .tone = CUI_TONE_WARNING, .size = CUI_SIZE_SM);
+                                } else if (entry->outdated_count > 0) {
+                                    cui_badge(ui, "副本待更新", .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
+                                } else if (entry->installed_count > 0) {
+                                    cui_badge(ui, "副本已一致", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
+                                } else {
+                                    cui_badge(ui, "未分发", .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
+                                }
+                                render_skill_token_badge(ui, &entry->tokens);
                             }
                         }
 

@@ -1,5 +1,6 @@
 #include "skill_scanner.h"
 #include "skill_metadata.h"
+#include "skill_tokens.h"
 #include "file_tree.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -90,6 +91,7 @@ int scan_tool_skills(const char *tool_skills_path, skill_item_t **out_items, int
             }
 
             item->file_count = count_files_recursive(skill_path, 0);
+            skill_measure_directory_tokens(skill_path, item->name, &item->tokens);
         }
     }
     closedir(dir);

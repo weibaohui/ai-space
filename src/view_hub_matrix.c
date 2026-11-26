@@ -158,9 +158,10 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
 
     const cui_table_column hub_cols[] = {
         { "",               CUI_PX(36),  CUI_TEXT_CENTER, false },
-        { "技能名称与描述", CUI_PX(compact ? 195 : 280), CUI_TEXT_LEFT, true },
-        { "主仓状态",       CUI_PX(compact ? 94 : 130), CUI_TEXT_LEFT,   true  },
-        { "工具分布", CUI_FILL,    CUI_TEXT_LEFT,   false },
+        { "技能名称与描述", CUI_PX(compact ? 200 : 320), CUI_TEXT_LEFT, true },
+        { "注入开销",       CUI_PX(compact ? 96 : 112),  CUI_TEXT_LEFT, true },
+        { "主仓状态",       CUI_PX(compact ? 88 : 110),  CUI_TEXT_LEFT, true },
+        { "工具分布",       CUI_FILL,                    CUI_TEXT_LEFT, false },
         { "操作",           CUI_PX(compact ? 162 : 193), CUI_TEXT_CENTER, false },
     };
 
@@ -184,7 +185,7 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
                 }
             }
         } else {
-            cui_table(ui, "hub_matrix_table", hub_cols, 5,
+            cui_table(ui, "hub_matrix_table", hub_cols, 6,
                       .striped = true, .compact = true, .selectable = true, .height = CUI_FILL) {
                 for (int i = 0; i < s->hub_matrix.skill_count; i++) {
                     hub_skill_entry_t *e = &s->hub_matrix.skills[i];
@@ -215,17 +216,22 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
 
                     /* Col 1: Skill Name & Description */
                     cui_table_cell(ui);
-                    cui_column(ui, .gap = 2) {
-                        cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                    cui_column(ui, .width = CUI_FILL, .gap = 2) {
+                        cui_row(ui, .width = CUI_FILL, .gap = 6, .align = CUI_ALIGN_CENTER) {
                             cui_icon(ui, ICON_SKILLS, 14, CUI_COLOR_TEXT_SECONDARY);
-                            cui_text(ui, e->skill_name, .font = CUI_FONT_MEDIUM);
+                            cui_text(ui, e->skill_name, .width = CUI_FILL, .nowrap = true, .font = CUI_FONT_MEDIUM);
                         }
                         if (e->description[0] != '\0') {
-                            cui_text(ui, e->description, .size = 11, .color = CUI_COLOR_TEXT_SECONDARY);
+                            cui_text(ui, e->description, .width = CUI_FILL, .size = 11,
+                                     .color = CUI_COLOR_TEXT_SECONDARY);
                         }
                     }
 
-                    /* Col 2: Master Hub Status */
+                    /* Col 2: Token Usage */
+                    cui_table_cell(ui);
+                    render_skill_token_badge(ui, &e->tokens);
+
+                    /* Col 3: Master Hub Status */
                     cui_table_cell(ui);
                     if (!e->in_hub) {
                         cui_badge(ui, "未收录", .tone = CUI_TONE_VIOLET, .size = CUI_SIZE_SM);

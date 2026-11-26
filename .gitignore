@@ -18,3 +18,4 @@ data/*.db-shm
 /test_storage_preview
 /test_git_merge
 /test_tool_clear
+/test_skill_tokens

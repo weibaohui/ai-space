@@ -114,6 +114,9 @@ static int build_entry(hub_matrix_t *matrix, const skill_location_t *locations, 
         entry->hub_unreadable = hub_compute_skill_hash(entry->hub_path, entry->hub_hash,
                                                        sizeof(entry->hub_hash), &entry->hub_mtime) != 0;
         read_description(entry->hub_path, entry->description, sizeof(entry->description));
+        if (!entry->hub_unreadable) {
+            skill_measure_directory_tokens(entry->hub_path, entry->skill_name, &entry->tokens);
+        }
         matrix->hub_managed_skills++;
         locations++;
         count--;
@@ -151,6 +154,9 @@ static int build_entry(hub_matrix_t *matrix, const skill_location_t *locations, 
                                               sizeof(copy->hash), &copy->mtime) == 0;
         }
         if (!entry->description[0]) read_description(copy->skill_path, entry->description, sizeof(entry->description));
+        if (readable && entry->tokens.full_tokens == 0 && entry->tokens.prompt_tokens == 0) {
+            skill_measure_directory_tokens(copy->skill_path, entry->skill_name, &entry->tokens);
+        }
         if (!readable || entry->hub_unreadable) {
             copy->status = HUB_STATUS_UNREADABLE;
             entry->unreadable_count++;

@@ -202,9 +202,22 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
             /* Left Pane: Skills List */
             cui_card(ui, .width = compact ? CUI_FILL : CUI_PX(skill_list_width),
                      .height = CUI_FILL, .pad = 12, .gap = 10) {
-                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER, .gap = 6) {
                     cui_label(ui, "技能目录");
                     cui_spacer(ui);
+                    int total_prompt_tokens = 0;
+                    for (int i = 0; i < s->skill_count; i++) {
+                        total_prompt_tokens += s->skill_items[i].tokens.prompt_tokens;
+                    }
+                    if (total_prompt_tokens > 0) {
+                        char tok_num[24], tok_badge[48];
+                        skill_format_tokens(total_prompt_tokens, tok_num, sizeof(tok_num));
+                        snprintf(tok_badge, sizeof(tok_badge), "常驻 ≈%s", tok_num);
+                        cui_badge(ui, tok_badge,
+                                  .tone = total_prompt_tokens > 4000 ? CUI_TONE_WARNING : CUI_TONE_NEUTRAL,
+                                  .size = CUI_SIZE_SM);
+                        cui_tooltip(ui, "该工具全部技能常驻注入（name + description）估算总 Token");
+                    }
                     char cnt_badge[32];
                     snprintf(cnt_badge, sizeof(cnt_badge), "%d 项", s->skill_count);
                     cui_badge(ui, cnt_badge, .tone = CUI_TONE_NEUTRAL, .size = CUI_SIZE_SM);
@@ -226,8 +239,10 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
                             cui_push_id_int(ui, i);
                             bool is_sel = (strcmp(s->active_skill_name, sk->name) == 0);
                             bool clicked = cui_list_item(ui, sk->name, .icon = ICON_SKILLS, .selected = is_sel);
-                            char tooltip[sizeof sk->name + 40];
-                            snprintf(tooltip, sizeof(tooltip), "%s\n%d 个文件", sk->name, sk->file_count);
+                            char tooltip[sizeof sk->name + 96];
+                            snprintf(tooltip, sizeof(tooltip), "%s\n%d 个文件 · 注入 ≈%d tok · 全文 ≈%d tok",
+                                     sk->name, sk->file_count,
+                                     sk->tokens.prompt_tokens, sk->tokens.full_tokens);
                             cui_tooltip(ui, tooltip);
                             if (clicked) {
                                 select_active_skill(s, sk->name, sk->path);
@@ -283,7 +298,15 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
                         if (s->selected_file_size > 0) {
                             char sz_txt[32];
                             format_size(s->selected_file_size, sz_txt, sizeof(sz_txt));
-                            cui_textf(ui, "%s · %d 行", sz_txt, s->selected_file_lines);
+                            if (!s->selected_file_is_binary && s->selected_file_content) {
+                                char tok_txt[24];
+                                int ftok = skill_estimate_tokens(s->selected_file_content,
+                                                                 strlen(s->selected_file_content));
+                                skill_format_tokens(ftok, tok_txt, sizeof(tok_txt));
+                                cui_textf(ui, "%s · %d 行 · ≈%s tok", sz_txt, s->selected_file_lines, tok_txt);
+                            } else {
+                                cui_textf(ui, "%s · %d 行", sz_txt, s->selected_file_lines);
+                            }
                         }
                     }
                 }

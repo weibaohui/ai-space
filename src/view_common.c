@@ -133,3 +133,18 @@ void render_app_sidebar(cui_ctx *ui, app_state_t *s) {
         }
     }
 }
+
+void render_skill_token_badge(cui_ctx *ui, const skill_token_usage_t *tokens) {
+    if (!tokens || (tokens->prompt_tokens <= 0 && tokens->full_tokens <= 0)) return;
+    char tok_num[24], tok_label[48], tok_tip[160];
+    skill_format_tokens(tokens->prompt_tokens, tok_num, sizeof(tok_num));
+    snprintf(tok_label, sizeof(tok_label), "注入 ≈%s tok", tok_num);
+    cui_badge(ui, tok_label,
+              .tone = tokens->prompt_tokens > 200 ? CUI_TONE_WARNING : CUI_TONE_NEUTRAL,
+              .size = CUI_SIZE_SM);
+    snprintf(tok_tip, sizeof(tok_tip),
+             "常驻注入: ≈%d tok (%zu 字符)\nSKILL.md: ≈%d tok\n目录总计: ≈%d tok",
+             tokens->prompt_tokens, tokens->prompt_chars,
+             tokens->full_tokens, tokens->total_tokens);
+    cui_tooltip(ui, tok_tip);
+}
