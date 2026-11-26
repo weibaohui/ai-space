@@ -16,3 +16,4 @@ data/*.db-shm
 /test_sync_backends
 /test_storage_preview
 /test_git_merge
+/test_tool_clear

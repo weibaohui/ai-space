@@ -9,6 +9,7 @@ typedef enum {
     STORAGE_PATH_HUB,
     STORAGE_PATH_BACKUP,
     STORAGE_PATH_DASHBOARD_BACKUP,
+    STORAGE_PATH_TOOL_SKILLS,
     STORAGE_PATH_COUNT,
 } app_storage_path_t;
 

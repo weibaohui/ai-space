@@ -1,5 +1,6 @@
 #include "view_tools.h"
 #include "view_tool_skills.h"
+#include "view_uninstall.h"
 #include "view_common.h"
 #include "db.h"
 #include <stdio.h>
@@ -80,7 +81,7 @@ void render_tools_list_page(cui_ctx *ui, app_state_t *s) {
         { "工具名称", CUI_PX(200), CUI_TEXT_LEFT,   true  },
         { "技能数",   CUI_PX(100), CUI_TEXT_RIGHT,  true  },
         { "存储路径", CUI_FILL,   CUI_TEXT_LEFT,   false },
-        { "操作",     CUI_PX(120), CUI_TEXT_CENTER, false },
+        { "操作",     CUI_PX(190), CUI_TEXT_CENTER, false },
     };
 
     cui_card(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 0, .gap = 0) {
@@ -123,8 +124,12 @@ void render_tools_list_page(cui_ctx *ui, app_state_t *s) {
                              .color = CUI_COLOR_TEXT_SECONDARY);
                     cui_tooltip(ui, r->path);
 
-                    /* Col 3: Action Button */
+                    /* Col 3: Action Buttons */
                     cui_table_cell(ui);
+                    if (cui_button(ui, "清空", .variant = CUI_BUTTON_GHOST, .size = CUI_SIZE_SM,
+                                   .icon = CUI_ICON_TRASH_2, .color = CUI_COLOR_DANGER)) {
+                        request_clear_tool(s, r->name, r->path);
+                    }
                     if (cui_button(ui, "查看技能", .variant = CUI_BUTTON_GHOST,
                                    .size = CUI_SIZE_SM, .icon_right = CUI_ICON_CHEVRON_RIGHT) || open_tool) {
                         open_tool_skills_page(s, r->name, r->path);

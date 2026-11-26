@@ -1,6 +1,7 @@
 #include "skill_file_tree.h"
 #include "file_preview.h"
 #include "view_tool_skills.h"
+#include "view_uninstall.h"
 #include "view_common.h"
 #include "view_skill_tree.h"
 #include <stdio.h>
@@ -175,6 +176,12 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
                 strncpy(s->uninstall_tool_skill_name, s->active_skill_name, sizeof(s->uninstall_tool_skill_name) - 1);
                 s->uninstall_tool_skill_name[sizeof(s->uninstall_tool_skill_name) - 1] = '\0';
             }
+        }
+
+        /* 清空针对整个工具目录，不依赖当前选中的技能。 */
+        if (cui_button(ui, "清空", .variant = CUI_BUTTON_GHOST,
+                       .icon = CUI_ICON_TRASH_2, .color = CUI_COLOR_DANGER)) {
+            request_clear_tool(s, s->active_tool_name, s->active_tool_path);
         }
     }
 

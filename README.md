@@ -14,6 +14,7 @@ AI-Space 是一款专为 AI 编码助手（如 Claude、Gemini CLI、Cursor、Co
 - **多工具本地技能自动扫描与识别**
   - 自动发现各工具目录（`~/.<tool>/skills`）下的 Skill，提取元数据并持久化到本地 SQLite。
   - 支持多维度搜索、列排序与状态统计。
+  - 工具列表和工具详情页提供「清空」：确认后把该工具技能目录内的全部内容整体移入一份快照，目录本身保留。
 
 - **集中主仓管理 (Master Hub) 与全景关系矩阵**
   - 以标准化主仓基准目录（默认 `~/.ai-space/skills`）作为唯一真相源。
@@ -92,7 +93,7 @@ cmake --build build --parallel
 ./test_sync_backends smb nas.local share isolated-fixture /tmp/hub-a /tmp/hub-b
 ```
 
-本地存储与文件预览回归可运行 `make test_storage_preview && ./test_storage_preview`。
+本地存储与文件预览回归可运行 `make test_storage_preview && ./test_storage_preview`，清空工具技能目录可运行 `make test_tool_clear && ./test_tool_clear`。
 
 测试认证 WebDAV 时，可通过 `AI_SPACE_TEST_WEBDAV_USER` 和 `AI_SPACE_TEST_WEBDAV_PASSWORD` 提供凭据。
 

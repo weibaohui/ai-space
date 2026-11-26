@@ -212,3 +212,103 @@ void render_uninstall_tool_modal(cui_ctx *ui, app_state_t *s) {
         }
     }
 }
+
+void request_clear_tool(app_state_t *s, const char *tool_name, const char *tool_path) {
+    snprintf(s->clear_tool_name, sizeof(s->clear_tool_name), "%s", tool_name);
+    snprintf(s->clear_tool_path, sizeof(s->clear_tool_path), "%s", tool_path);
+    s->show_clear_tool_modal = true;
+}
+
+void render_clear_tool_modal(cui_ctx *ui, app_state_t *s) {
+    if (!s || !s->show_clear_tool_modal || s->clear_tool_name[0] == '\0') return;
+
+    /* 目录情况实时读取，不依赖列表里可能过期的技能数。 */
+    const char *path = s->clear_tool_path;
+    const storage_directory_info_t *info = app_storage_directory(s, STORAGE_PATH_TOOL_SKILLS, path);
+    bool busy = s->hub_scan.is_scanning || s->sync_is_busy || s->op_progress.active;
+    const char *backup = s->setting_backup_dir[0] ? s->setting_backup_dir : STORAGE_DEFAULT_BACKUP;
+
+    cui_dialog(ui, "清空工具技能目录", &s->show_clear_tool_modal, .width = 540, .persistent = false) {
+        cui_column(ui, .width = CUI_FILL, .gap = 14) {
+            /* 1. Warning Box */
+            cui_box(ui, .width = CUI_FILL, .radius = 6, .pad = 12, .gap = 8,
+                    .bg = cui_alpha(cui_color_of(ui, CUI_COLOR_DANGER), 0.08f),
+                    .border = 1, .border_color = cui_alpha(cui_color_of(ui, CUI_COLOR_DANGER), 0.35f)) {
+                cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
+                    cui_icon(ui, CUI_ICON_TRIANGLE_ALERT, 22, CUI_COLOR_DANGER);
+                    cui_column(ui, .gap = 2) {
+                        char prompt_h[192];
+                        snprintf(prompt_h, sizeof(prompt_h), "确认清空工具【%s】的全部技能？", s->clear_tool_name);
+                        cui_heading(ui, prompt_h, 4);
+                        cui_text(ui, "该目录下的全部技能目录都会被移除，主仓基准库和其他工具不受影响。",
+                                 .size = 12, .color = CUI_COLOR_DANGER);
+                    }
+                }
+            }
+
+            /* 2. Path details */
+            cui_column(ui, .gap = 4) {
+                cui_textf(ui, "目标工具: %s", s->clear_tool_name);
+                cui_textf(ui, "目录路径: %s", path);
+                cui_tooltip(ui, path);
+                if (info->exists) {
+                    cui_textf(ui, "技能目录: %d 个", info->subdirs);
+                } else {
+                    cui_text(ui, "技能目录: 已不存在", .size = 12, .color = CUI_COLOR_WARNING);
+                }
+                cui_textf(ui, "快照目录: %s", backup);
+            }
+
+            /* 3. Safety Notice */
+            cui_row(ui, .gap = 6, .align = CUI_ALIGN_CENTER) {
+                cui_icon(ui, CUI_ICON_SHIELD, 14, CUI_COLOR_TEXT_MUTED);
+                cui_text(ui, "安全保障：清空前目录内的全部内容会整体移入快照，可随时找回",
+                         .size = 11, .color = CUI_COLOR_TEXT_MUTED);
+            }
+
+            cui_separator(ui);
+
+            /* 4. Action Buttons (<= 4 chars each) */
+            cui_row(ui, .width = CUI_FILL, .justify = CUI_JUSTIFY_END, .gap = 8) {
+                if (cui_button(ui, "取消", .variant = CUI_BUTTON_SECONDARY)) {
+                    s->show_clear_tool_modal = false;
+                }
+
+                if (cui_button(ui, "确认清空", .variant = CUI_BUTTON_DANGER, .icon = CUI_ICON_TRASH_2,
+                               .disabled = busy || !info->exists)) {
+                    s->show_clear_tool_modal = false;
+                    int cleared = 0;
+                    int rc = hub_clear_tool_skills(path, s->clear_tool_name, &cleared);
+
+                    char message[256];
+                    cui_tone tone = CUI_TONE_SUCCESS;
+                    if (cleared == 0 && rc == 0) {
+                        snprintf(message, sizeof(message), "【%s】的技能目录已经是空的", s->clear_tool_name);
+                    } else if (rc == 0) {
+                        /* 技能数不含隐藏条目和悬空链接，这里不报条目数以免与弹窗对不上。 */
+                        snprintf(message, sizeof(message), "已清空【%s】的技能目录，内容已移入快照",
+                                 s->clear_tool_name);
+                    } else {
+                        tone = CUI_TONE_WARNING;
+                        if (rc == HUB_CLEAR_CROSS_DEVICE) {
+                            snprintf(message, sizeof(message), "备份目录与技能目录不在同一磁盘，未清空");
+                        } else if (cleared > 0) {
+                            snprintf(message, sizeof(message), "已清空 %d 项，其余条目未能移出，请检查目录权限", cleared);
+                        } else {
+                            snprintf(message, sizeof(message), "清空未完成，请检查技能目录和备份目录的权限");
+                        }
+                    }
+                    cui_toast(ui, message, .tone = tone);
+
+                    do_scan_sync(s);
+                    app_storage_invalidate(s);
+                    start_hub_scan_thread(s);
+                    /* 正在浏览该工具时重新读取技能列表。 */
+                    if (s->current_page == PAGE_TOOL_SKILLS && strcmp(s->active_tool_path, path) == 0) {
+                        open_tool_skills_page(s, s->clear_tool_name, path);
+                    }
+                }
+            }
+        }
+    }
+}

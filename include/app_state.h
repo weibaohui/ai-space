@@ -228,6 +228,11 @@ typedef struct app_state_t {
     bool show_uninstall_tool_modal;
     char uninstall_tool_skill_name[128];
 
+    /* 清空工具技能目录的确认状态 */
+    bool show_clear_tool_modal;
+    char clear_tool_name[128];
+    char clear_tool_path[512];
+
     /* Master repository removal confirmation */
     bool show_remove_master_modal;
     char remove_master_skill[128]; /* Empty for the selected batch */

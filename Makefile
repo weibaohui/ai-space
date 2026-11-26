@@ -18,10 +18,11 @@ TARGET = ai_space
 TEST_TARGET = test_sync
 SYNC_TEST_OBJS = src/skill_metadata.o src/sync_webdav_listing.o src/sync_git_repository.o src/sync_git_process.o src/sync_git_merge.o src/sync_manager.o src/sync_directory.o src/sync_local_files.o src/sync_driver_share.o src/sync_network_share.o src/sync_driver_webdav.o src/sync_driver_git.o src/file_tree.o src/hub_files.o src/hub_paths.o src/hub_bulk.o src/skill_fingerprint.o src/hub_manager.o
 
-TEST_OBJS = tests/test_sync_git.o tests/test_sync_backends.o tests/test_storage_preview.o tests/test_git_merge.o
+TEST_OBJS = tests/test_sync_git.o tests/test_sync_backends.o tests/test_storage_preview.o tests/test_git_merge.o tests/test_tool_clear.o
 BACKEND_TEST_TARGET = test_sync_backends
 STORAGE_TEST_TARGET = test_storage_preview
 GIT_MERGE_TEST_TARGET = test_git_merge
+TOOL_CLEAR_TEST_TARGET = test_tool_clear
 VENDOR_STAMP = build/.sync-client-libraries
 VENDOR_SOURCES = $(shell find vendor -type f)
 
@@ -52,6 +53,9 @@ $(GIT_MERGE_TEST_TARGET): tests/test_git_merge.o $(SYNC_TEST_OBJS) src/sync_base
 $(STORAGE_TEST_TARGET): tests/test_storage_preview.o src/app_storage.o src/storage_manager.o src/file_tree.o src/file_preview.o src/db.o src/scanner.o
 	$(CC) $^ -lsqlite3 -o $@
 
+$(TOOL_CLEAR_TEST_TARGET): tests/test_tool_clear.o src/hub_files.o src/hub_paths.o src/skill_metadata.o src/file_tree.o src/scanner.o
+	$(CC) $^ -o $@
+
 tests/%.o: tests/%.c $(HEADERS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -59,10 +63,15 @@ tests/%.o: tests/%.c $(HEADERS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(VENDOR_STAMP) $(OBJS) $(TEST_OBJS) $(TARGET) $(TEST_TARGET) $(BACKEND_TEST_TARGET) $(STORAGE_TEST_TARGET) $(GIT_MERGE_TEST_TARGET) shot*.png
+	rm -f $(VENDOR_STAMP) $(OBJS) $(TEST_OBJS) $(TARGET) $(TEST_TARGET) $(BACKEND_TEST_TARGET) $(STORAGE_TEST_TARGET) $(GIT_MERGE_TEST_TARGET) $(TOOL_CLEAR_TEST_TARGET) shot*.png
 
 run: $(TARGET)
 	./$(TARGET)
+
+test: $(STORAGE_TEST_TARGET) $(TOOL_CLEAR_TEST_TARGET) $(GIT_MERGE_TEST_TARGET)
+	./$(STORAGE_TEST_TARGET)
+	./$(TOOL_CLEAR_TEST_TARGET)
+	python3 tests/run_git_merge_test.py ./$(GIT_MERGE_TEST_TARGET)
 
 shot: $(TARGET)
 	CUI_SCREENSHOT=shot.png CUI_SCREENSHOT_FRAMES=10 ./$(TARGET)
