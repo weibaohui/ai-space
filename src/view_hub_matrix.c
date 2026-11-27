@@ -159,7 +159,7 @@ void render_all_skills_page(cui_ctx *ui, app_state_t *s) {
     const cui_table_column hub_cols[] = {
         { "",               CUI_PX(36),  CUI_TEXT_CENTER, false },
         { "技能名称与描述", CUI_PX(compact ? 200 : 320), CUI_TEXT_LEFT, true },
-        { "注入开销",       CUI_PX(compact ? 96 : 112),  CUI_TEXT_LEFT, true },
+        { "注入开销(tok)",  CUI_PX(compact ? 92 : 108),  CUI_TEXT_LEFT, true },
         { "主仓状态",       CUI_PX(compact ? 88 : 110),  CUI_TEXT_LEFT, true },
         { "工具分布",       CUI_FILL,                    CUI_TEXT_LEFT, false },
         { "操作",           CUI_PX(compact ? 162 : 193), CUI_TEXT_CENTER, false },
