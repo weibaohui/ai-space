@@ -1,5 +1,6 @@
 /* 预览模块负责按字节上限读取，并把文本与二进制信息交给展示层。 */
 #include "file_preview.h"
+#include "portability.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,6 +68,67 @@ char *read_file_preview(const char *file_path, size_t max_bytes, size_t *out_rea
     if (out_is_binary) *out_is_binary = is_bin;
 
     return buf;
+}
+
+char *read_file_for_edit(const char *file_path, size_t max_bytes, size_t headroom, size_t min_cap,
+                         size_t *out_cap, size_t *out_size, int *out_lines,
+                         bool *out_is_binary, bool *out_editable) {
+    if (out_cap) *out_cap = 0;
+    if (out_editable) *out_editable = false;
+
+    size_t read_len = 0, disk_size = 0;
+    int lines = 0;
+    bool is_bin = false;
+    char *preview = read_file_preview(file_path, max_bytes, &read_len, &disk_size, &lines, &is_bin);
+    if (out_size) *out_size = disk_size;
+    if (out_lines) *out_lines = lines;
+    if (out_is_binary) *out_is_binary = is_bin;
+    if (!preview) return NULL;
+
+    bool editable = !is_bin && disk_size <= max_bytes;
+    if (out_editable) *out_editable = editable;
+    if (!editable) {
+        if (out_cap) *out_cap = read_len + 1;
+        return preview;
+    }
+
+    size_t cap = read_len + headroom + 1;
+    if (cap < min_cap) cap = min_cap;
+    if (cap > max_bytes + 1) cap = max_bytes + 1;
+    if (cap <= read_len) cap = read_len + 1;
+
+    char *buf = (char *)realloc(preview, cap);
+    if (!buf) {
+        if (out_cap) *out_cap = read_len + 1;
+        return preview;
+    }
+    if (out_cap) *out_cap = cap;
+    return buf;
+}
+
+int write_file_atomic(const char *file_path, const char *content, size_t len) {
+    if (!file_path || !file_path[0] || (!content && len > 0)) return -1;
+
+    char tmp_path[1100];
+    int n = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp.%ld", file_path, (long)getpid());
+    if (n < 0 || (size_t)n >= sizeof(tmp_path)) return -1;
+
+    FILE *f = fopen(tmp_path, "wb");
+    if (!f) return -1;
+
+    bool ok = (len == 0 || fwrite(content, 1, len, f) == len);
+    if (fflush(f) != 0) ok = false;
+    if (fclose(f) != 0) ok = false;
+
+#ifdef _WIN32
+    if (!ok || !MoveFileExA(tmp_path, file_path, MOVEFILE_REPLACE_EXISTING)) {
+#else
+    if (!ok || rename(tmp_path, file_path) != 0) {
+#endif
+        remove(tmp_path);
+        return -1;
+    }
+    return 0;
 }
 
 const char *detect_syntax_lang(const char *filename) {

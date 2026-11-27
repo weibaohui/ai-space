@@ -1,53 +1,13 @@
 #include "skill_file_tree.h"
 #include "file_preview.h"
 #include "view_tool_skills.h"
+#include "view_file_editor.h"
 #include "view_uninstall.h"
 #include "view_common.h"
 #include "view_skill_tree.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-static void load_skill_file(app_state_t *s, const char *path, const char *name) {
-    if (!path || path[0] == '\0') {
-        s->selected_file_path[0] = '\0';
-        s->selected_file_name[0] = '\0';
-        if (s->selected_file_content) {
-            free(s->selected_file_content);
-            s->selected_file_content = NULL;
-        }
-        s->selected_file_size = 0;
-        s->selected_file_lines = 0;
-        s->selected_file_is_binary = false;
-        return;
-    }
-
-    strncpy(s->selected_file_path, path, sizeof(s->selected_file_path) - 1);
-    s->selected_file_path[sizeof(s->selected_file_path) - 1] = '\0';
-
-    if (name && name[0] != '\0') {
-        strncpy(s->selected_file_name, name, sizeof(s->selected_file_name) - 1);
-        s->selected_file_name[sizeof(s->selected_file_name) - 1] = '\0';
-    } else {
-        const char *slash = strrchr(path, '/');
-        strncpy(s->selected_file_name, slash ? slash + 1 : path, sizeof(s->selected_file_name) - 1);
-        s->selected_file_name[sizeof(s->selected_file_name) - 1] = '\0';
-    }
-
-    if (s->selected_file_content) {
-        free(s->selected_file_content);
-        s->selected_file_content = NULL;
-    }
-
-    size_t sz = 0;
-    int lines = 0;
-    bool is_bin = false;
-    s->selected_file_content = read_file_preview(path, 1024 * 1024, NULL, &sz, &lines, &is_bin);
-    s->selected_file_size = sz;
-    s->selected_file_lines = lines;
-    s->selected_file_is_binary = is_bin;
-    s->doc_render_mode = 0;
-}
 
 void select_active_skill(app_state_t *s, const char *skill_name, const char *skill_path) {
     strncpy(s->active_skill_name, skill_name, sizeof(s->active_skill_name) - 1);
@@ -70,7 +30,7 @@ void select_active_skill(app_state_t *s, const char *skill_name, const char *ski
     FILE *f = fopen(skill_md, "r");
     if (f) {
         fclose(f);
-        load_skill_file(s, skill_md, "SKILL.md");
+        app_load_skill_file_force(s, skill_md, "SKILL.md");
         return;
     }
 
@@ -84,12 +44,12 @@ void select_active_skill(app_state_t *s, const char *skill_name, const char *ski
             }
         }
         if (first_f) {
-            load_skill_file(s, first_f->abs_path, first_f->name);
+            app_load_skill_file_force(s, first_f->abs_path, first_f->name);
             return;
         }
     }
 
-    load_skill_file(s, NULL, "");
+    app_load_skill_file_force(s, NULL, "");
 }
 
 void open_tool_skills_page(app_state_t *s, const char *tool_name, const char *tool_path) {
@@ -122,7 +82,7 @@ void open_tool_skills_page(app_state_t *s, const char *tool_name, const char *to
             free(s->skill_file_tree);
             s->skill_file_tree = NULL;
         }
-        load_skill_file(s, NULL, "");
+        app_load_skill_file_force(s, NULL, "");
     }
 
     s->current_page = PAGE_TOOL_SKILLS;
@@ -131,7 +91,7 @@ void open_tool_skills_page(app_state_t *s, const char *tool_name, const char *to
 static void on_tool_skill_file_select(file_node_t *node, void *user_data) {
     app_state_t *s = (app_state_t *)user_data;
     if (s && node && !node->is_dir) {
-        load_skill_file(s, node->abs_path, node->name);
+        app_select_skill_file(s, node->abs_path, node->name);
         s->tool_detail_tab = 0;
     }
 }
@@ -269,90 +229,7 @@ void render_tool_skills_page(cui_ctx *ui, app_state_t *s) {
         }
 
         if (!compact || tab == 0) {
-            /* Right Pane: 右具体内容 (File Content Viewer) */
-            cui_card(ui, .width = CUI_FILL, .height = CUI_FILL, .pad = 14, .gap = 10) {
-                /* Top file metadata bar */
-                bool is_md = (strstr(s->selected_file_name, ".md") != NULL ||
-                              strstr(s->selected_file_name, ".markdown") != NULL);
-                cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
-                    cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
-                        cui_icon(ui, CUI_ICON_FILE_TEXT, 18, CUI_COLOR_ACCENT);
-                        cui_label(ui, s->selected_file_name[0] ? s->selected_file_name : "选择文件");
-
-                        /* File kind badge */
-                        bool is_script = (strstr(s->selected_file_name, ".sh") != NULL ||
-                                          strstr(s->selected_file_name, ".bash") != NULL ||
-                                          strstr(s->selected_file_name, ".zsh") != NULL ||
-                                          strstr(s->selected_file_name, ".py") != NULL ||
-                                          strstr(s->selected_file_name, ".js") != NULL ||
-                                          strstr(s->selected_file_name, ".ts") != NULL);
-
-                        if (is_md) {
-                            cui_badge(ui, "Markdown", .tone = CUI_TONE_ACCENT, .size = CUI_SIZE_SM);
-                        } else if (is_script) {
-                            cui_badge(ui, "脚本文件", .tone = CUI_TONE_SUCCESS, .size = CUI_SIZE_SM);
-                        } else if (s->selected_file_name[0] != '\0') {
-                            cui_badge(ui, "文本配置", .tone = CUI_TONE_INFO, .size = CUI_SIZE_SM);
-                        }
-
-                        if (s->selected_file_size > 0) {
-                            char sz_txt[32];
-                            format_size(s->selected_file_size, sz_txt, sizeof(sz_txt));
-                            if (!s->selected_file_is_binary && s->selected_file_content) {
-                                char tok_txt[24];
-                                int ftok = skill_estimate_tokens(s->selected_file_content,
-                                                                 strlen(s->selected_file_content));
-                                skill_format_tokens(ftok, tok_txt, sizeof(tok_txt));
-                                cui_textf(ui, "%s · %d 行 · ≈%s tok", sz_txt, s->selected_file_lines, tok_txt);
-                            } else {
-                                cui_textf(ui, "%s · %d 行", sz_txt, s->selected_file_lines);
-                            }
-                        }
-                    }
-                }
-
-                if (is_md) {
-                    static const char *doc_modes[] = { "预览", "源码" };
-                    cui_tabs(ui, "doc_render_mode_tabs", doc_modes, 2, &s->doc_render_mode);
-                }
-
-                if (s->selected_file_path[0] != '\0') {
-                    cui_text(ui, s->selected_file_path, .width = CUI_FILL, .nowrap = true,
-                             .size = 11, .color = CUI_COLOR_TEXT_MUTED);
-                }
-
-                cui_separator(ui);
-
-                /* Viewer body */
-                if (s->selected_file_content && s->selected_file_content[0] != '\0') {
-                    if (is_md && s->doc_render_mode == 0) {
-                        cui_scroll(ui, .id = "md_preview_scroll", .width = CUI_FILL, .height = CUI_FILL) {
-                            cui_markdown(ui, "md_preview", s->selected_file_content);
-                        }
-                    } else {
-                        const char *lang = detect_syntax_lang(s->selected_file_name);
-                        cui_scroll(ui, .id = "code_block_scroll", .width = CUI_FILL, .height = CUI_FILL) {
-                            cui_code_block(ui, "code_view", s->selected_file_content,
-                                           .lang = lang,
-                                           .line_numbers = true);
-                        }
-                    }
-                } else if (s->selected_file_path[0] != '\0') {
-                    cui_column(ui, .width = CUI_FILL, .height = CUI_FILL,
-                               .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
-                        cui_icon(ui, CUI_ICON_INFO, 28, CUI_COLOR_TEXT_MUTED);
-                        cui_gap(ui, 8);
-                        cui_muted(ui, "该文件为空或不支持直接预览");
-                    }
-                } else {
-                    cui_column(ui, .width = CUI_FILL, .height = CUI_FILL,
-                               .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER) {
-                        cui_icon(ui, CUI_ICON_FILE_TEXT, 36, CUI_COLOR_TEXT_MUTED);
-                        cui_gap(ui, 8);
-                        cui_text(ui, "从文件树选择要预览的文件", .color = CUI_COLOR_TEXT_MUTED);
-                    }
-                }
-            }
+            render_skill_file_pane(ui, s, "tool", "从文件树选择要预览或编辑的文件");
         }
     }
 }

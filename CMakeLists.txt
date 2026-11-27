@@ -54,6 +54,7 @@ set(AI_SPACE_SRCS
     src/view_progress.c
     src/view_distribute.c
     src/view_uninstall.c
+    src/view_file_editor.c
     src/view_sync_settings.c
     src/view_dashboard.c
     src/view_common.c

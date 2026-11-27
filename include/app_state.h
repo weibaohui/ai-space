@@ -180,10 +180,16 @@ typedef struct app_state_t {
     char selected_file_path[1024];
     char selected_file_name[128];
     char *selected_file_content;
+    size_t selected_file_cap;
     size_t selected_file_size;
     int selected_file_lines;
     bool selected_file_is_binary;
-    int doc_render_mode;        /* 0: 预览/高亮, 1: 源码/代码 */
+    bool selected_file_editable;
+    bool selected_file_dirty;
+    bool show_unsaved_file_modal;
+    char pending_file_path[1024];
+    char pending_file_name[128];
+    int doc_render_mode;        /* 0: 预览, 1: 编辑 */
 
     /* Settings Page state */
     int settings_active_tab;

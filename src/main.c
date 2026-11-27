@@ -2,6 +2,7 @@
 #include "skill_file_tree.h"
 #include "app_sync.h"
 #include "view_uninstall.h"
+#include "view_file_editor.h"
 #include "view_distribute.h"
 #include "view_progress.h"
 #include "app_settings.h"
@@ -94,6 +95,7 @@ static void frame(cui_ctx *ui, void *user) {
     render_uninstall_tool_modal(ui, s);
     render_remove_master_modal(ui, s);
     render_clear_tool_modal(ui, s);
+    render_unsaved_file_modal(ui, s);
 }
 
 int main(int argc, char **argv) {

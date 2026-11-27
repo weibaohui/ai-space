@@ -19,3 +19,4 @@ data/*.db-shm
 /test_git_merge
 /test_tool_clear
 /test_skill_tokens
+/test_file_edit
