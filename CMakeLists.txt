@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 # Cross-platform build used by GitHub Actions (Linux/macOS/Windows, x64 & arm64).
 # Local macOS development can keep using the Makefile; this file mirrors it.
 project(skillboard
-    VERSION 1.12.0
+    VERSION 1.13.0
     DESCRIPTION "Local-First Agent Skills Manager & Multi-Host Sync Hub"
     LANGUAGES C)
 
